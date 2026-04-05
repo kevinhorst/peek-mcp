@@ -3,6 +3,7 @@ package parser
 import (
 	"testing"
 
+	"github.com/kevinhorst/peek-mcp/models"
 	"github.com/kevinhorst/peek-mcp/store"
 	"github.com/stretchr/testify/assert"
 )
@@ -27,7 +28,7 @@ func TestCodex_SessionMeta(t *testing.T) {
 
 	sess, ok := s.Get("sess-codex-1")
 	assert.True(t, ok, "session not created")
-	assert.Equal(t, "codex", sess.Meta.Source)
+	assert.Equal(t, models.SourceCodex, sess.Meta.Source)
 	assert.Equal(t, "/home/user/project", sess.Meta.CWD)
 	assert.Equal(t, "abc123", sess.Meta.GitBranch)
 }

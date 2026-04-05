@@ -3,42 +3,10 @@ package parser
 import (
 	"encoding/json"
 	"strings"
-	"time"
 
 	"github.com/kevinhorst/peek-mcp/models"
 	"github.com/kevinhorst/peek-mcp/store"
 )
-
-type claudeEntry struct {
-	Type        string          `json:"type"`
-	SessionID   string          `json:"sessionId"`
-	Timestamp   time.Time       `json:"timestamp"`
-	CWD         string          `json:"cwd"`
-	GitBranch   string          `json:"gitBranch"`
-	IsSidechain bool            `json:"isSidechain"`
-	PromptID    string          `json:"promptId"`
-	RequestID   string          `json:"requestId"`
-	Message     json.RawMessage `json:"message"`
-}
-
-type claudeMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
-	Model   string          `json:"model"`
-	Usage   *claudeUsage    `json:"usage"`
-}
-
-type claudeUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-}
-
-type claudeContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
 
 type ClaudeParser struct {
 	store          *store.Store
@@ -52,8 +20,11 @@ func NewClaudeParser(s *store.Store) *ClaudeParser {
 }
 
 func (p *ClaudeParser) ParseLine(line []byte) {
-	var entry claudeEntry
+	var entry models.ClaudeEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
+		return
+	}
+	if err := entry.Validate(); err != nil {
 		return
 	}
 
@@ -62,9 +33,9 @@ func (p *ClaudeParser) ParseLine(line []byte) {
 	}
 
 	switch entry.Type {
-	case "user":
+	case models.ClaudeEntryTypeUser:
 		p.handleUser(&entry)
-	case "assistant":
+	case models.ClaudeEntryTypeAssistant:
 		p.handleAssistant(&entry)
 	}
 }
@@ -73,13 +44,16 @@ func (p *ClaudeParser) Flush() {
 	p.flushPending()
 }
 
-func (p *ClaudeParser) handleUser(entry *claudeEntry) {
+func (p *ClaudeParser) handleUser(entry *models.ClaudeEntry) {
 	if entry.PromptID == "" {
 		return
 	}
 
-	var msg claudeMessage
+	var msg models.ClaudeMessage
 	if err := json.Unmarshal(entry.Message, &msg); err != nil {
+		return
+	}
+	if err := msg.Validate(); err != nil {
 		return
 	}
 
@@ -106,9 +80,12 @@ func (p *ClaudeParser) handleUser(entry *claudeEntry) {
 	})
 }
 
-func (p *ClaudeParser) handleAssistant(entry *claudeEntry) {
-	var msg claudeMessage
+func (p *ClaudeParser) handleAssistant(entry *models.ClaudeEntry) {
+	var msg models.ClaudeMessage
 	if err := json.Unmarshal(entry.Message, &msg); err != nil {
+		return
+	}
+	if err := msg.Validate(); err != nil {
 		return
 	}
 
@@ -176,7 +153,7 @@ func (p *ClaudeParser) flushPending() {
 	p.lastRequestID = ""
 }
 
-func (p *ClaudeParser) updateMeta(sess *models.Session, entry *claudeEntry, model string) {
+func (p *ClaudeParser) updateMeta(sess *models.Session, entry *models.ClaudeEntry, model string) {
 	if !entry.Timestamp.IsZero() {
 		sess.Meta.LastActive = entry.Timestamp
 	}
@@ -192,7 +169,7 @@ func (p *ClaudeParser) updateMeta(sess *models.Session, entry *claudeEntry, mode
 }
 
 func extractTextBlocks(raw json.RawMessage) string {
-	var blocks []claudeContentBlock
+	var blocks []models.ClaudeContentBlock
 	if err := json.Unmarshal(raw, &blocks); err != nil {
 		return ""
 	}
@@ -209,7 +186,7 @@ func extractTextBlocks(raw json.RawMessage) string {
 	return sb.String()
 }
 
-func convertUsage(cu *claudeUsage) *models.Usage {
+func convertUsage(cu *models.ClaudeUsage) *models.Usage {
 	if cu == nil {
 		return nil
 	}

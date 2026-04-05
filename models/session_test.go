@@ -10,8 +10,8 @@ import (
 func provideCompleteSession() *Session {
 	return &Session{
 		Meta: &SessionMeta{
-			ID:         "sess-123",
-			Source:     "claude",
+			ID:         SessionID("sess-123"),
+			Source:     SourceClaude,
 			LastActive: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
 		},
 		Turns: NewTurnBuffer(20),

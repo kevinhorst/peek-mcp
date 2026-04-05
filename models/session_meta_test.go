@@ -9,8 +9,8 @@ import (
 
 func provideCompleteSessionMeta() *SessionMeta {
 	return &SessionMeta{
-		ID:         "sess-123",
-		Source:     "claude",
+		ID:         SessionID("sess-123"),
+		Source:     SourceClaude,
 		CWD:        "/home/user/project",
 		GitBranch:  "main",
 		Model:      "claude-opus-4-6",
@@ -56,7 +56,7 @@ func TestSessionMeta_Validate(t *testing.T) {
 
 	// fail-invalid-source
 	form = provideCompleteSessionMeta()
-	form.Source = "openai"
+	form.Source = SessionSource("openai")
 	test = &testCase{
 		_id:         "fail-invalid-source",
 		_shouldPass: false,
@@ -86,7 +86,7 @@ func TestSessionMeta_Validate(t *testing.T) {
 
 	// pass-codex-source
 	form = provideCompleteSessionMeta()
-	form.Source = "codex"
+	form.Source = SourceCodex
 	test = &testCase{
 		_id:         "pass-codex-source",
 		_shouldPass: true,

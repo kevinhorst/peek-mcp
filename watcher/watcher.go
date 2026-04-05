@@ -15,6 +15,12 @@ import (
 	"github.com/kevinhorst/peek-mcp/store"
 )
 
+const (
+	claudeProjectsDir = "projects"
+	codexSessionsDir  = "sessions"
+	jsonlSuffix       = ".jsonl"
+)
+
 type Watcher struct {
 	store      *store.Store
 	claudeHome string
@@ -47,8 +53,8 @@ func (w *Watcher) Run(ctx context.Context) error {
 	defer fsw.Close()
 
 	// Add root directories and backfill existing files
-	claudeProjects := filepath.Join(w.claudeHome, "projects")
-	codexSessions := filepath.Join(w.codexHome, "sessions")
+	claudeProjects := filepath.Join(w.claudeHome, claudeProjectsDir)
+	codexSessions := filepath.Join(w.codexHome, codexSessionsDir)
 
 	w.walkAndWatch(fsw, claudeProjects)
 	w.walkAndWatch(fsw, codexSessions)
@@ -85,7 +91,7 @@ func (w *Watcher) walkAndWatch(fsw *fsnotify.Watcher, root string) {
 			fsw.Add(path)
 			return nil
 		}
-		if strings.HasSuffix(path, ".jsonl") {
+		if strings.HasSuffix(path, jsonlSuffix) {
 			w.readNewLines(path)
 		}
 		return nil
@@ -102,12 +108,12 @@ func (w *Watcher) handleEvent(fsw *fsnotify.Watcher, event fsnotify.Event) {
 			fsw.Add(event.Name)
 			return
 		}
-		if strings.HasSuffix(event.Name, ".jsonl") {
+		if strings.HasSuffix(event.Name, jsonlSuffix) {
 			w.readNewLines(event.Name)
 		}
 	}
 
-	if event.Has(fsnotify.Write) && strings.HasSuffix(event.Name, ".jsonl") {
+	if event.Has(fsnotify.Write) && strings.HasSuffix(event.Name, jsonlSuffix) {
 		w.readNewLines(event.Name)
 	}
 }
@@ -166,6 +172,6 @@ func (w *Watcher) getOrCreateParser(path string) lineParser {
 }
 
 func (w *Watcher) isClaude(path string) bool {
-	claudeProjects := filepath.Join(w.claudeHome, "projects")
+	claudeProjects := filepath.Join(w.claudeHome, claudeProjectsDir)
 	return strings.HasPrefix(path, claudeProjects)
 }

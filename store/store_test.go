@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -12,8 +13,8 @@ func TestGetOrCreate_New(t *testing.T) {
 	s := New(10)
 	sess := s.GetOrCreate("s1", "claude")
 
-	assert.Equal(t, "s1", sess.Meta.ID)
-	assert.Equal(t, "claude", sess.Meta.Source)
+	assert.Equal(t, models.SessionID("s1"), sess.Meta.ID)
+	assert.Equal(t, models.SourceClaude, sess.Meta.Source)
 	assert.NotNil(t, sess.Turns)
 }
 
@@ -37,7 +38,7 @@ func TestGet_Found(t *testing.T) {
 
 	sess, ok := s.Get("s1")
 	assert.True(t, ok)
-	assert.Equal(t, "s1", sess.Meta.ID)
+	assert.Equal(t, models.SessionID("s1"), sess.Meta.ID)
 }
 
 func TestList_Empty(t *testing.T) {
@@ -60,9 +61,9 @@ func TestList_SortedByLastActive(t *testing.T) {
 
 	list := s.List()
 	assert.Len(t, list, 3)
-	assert.Equal(t, "s2", list[0].ID)
-	assert.Equal(t, "s3", list[1].ID)
-	assert.Equal(t, "s1", list[2].ID)
+	assert.Equal(t, models.SessionID("s2"), list[0].ID)
+	assert.Equal(t, models.SessionID("s3"), list[1].ID)
+	assert.Equal(t, models.SessionID("s1"), list[2].ID)
 }
 
 func TestMostRecent_Empty(t *testing.T) {
@@ -83,7 +84,7 @@ func TestMostRecent(t *testing.T) {
 
 	sess, ok := s.MostRecent()
 	assert.True(t, ok)
-	assert.Equal(t, "s2", sess.Meta.ID)
+	assert.Equal(t, models.SessionID("s2"), sess.Meta.ID)
 }
 
 func TestConcurrentAccess(t *testing.T) {

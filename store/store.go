@@ -9,13 +9,13 @@ import (
 
 type Store struct {
 	mu       sync.RWMutex
-	sessions map[string]*models.Session
+	sessions map[models.SessionID]*models.Session
 	depth    int
 }
 
 func New(depth int) *Store {
 	return &Store{
-		sessions: make(map[string]*models.Session),
+		sessions: make(map[models.SessionID]*models.Session),
 		depth:    depth,
 	}
 }
@@ -24,25 +24,28 @@ func (s *Store) GetOrCreate(id, source string) *models.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if sess, ok := s.sessions[id]; ok {
+	sessionID := models.SessionID(id)
+	sessionSource := models.SessionSource(source)
+
+	if sess, ok := s.sessions[sessionID]; ok {
 		return sess
 	}
 
 	sess := &models.Session{
 		Meta: &models.SessionMeta{
-			ID:     id,
-			Source: source,
+			ID:     sessionID,
+			Source: sessionSource,
 		},
 		Turns: models.NewTurnBuffer(s.depth),
 	}
-	s.sessions[id] = sess
+	s.sessions[sessionID] = sess
 	return sess
 }
 
 func (s *Store) Get(id string) (*models.Session, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sess, ok := s.sessions[id]
+	sess, ok := s.sessions[models.SessionID(id)]
 	return sess, ok
 }
 

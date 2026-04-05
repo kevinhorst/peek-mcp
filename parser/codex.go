@@ -9,39 +9,6 @@ import (
 	"github.com/kevinhorst/peek-mcp/store"
 )
 
-type codexEntry struct {
-	Timestamp time.Time       `json:"timestamp"`
-	Type      string          `json:"type"`
-	Payload   json.RawMessage `json:"payload"`
-}
-
-type codexSessionMeta struct {
-	ID         string `json:"id"`
-	CWD        string `json:"cwd"`
-	CLIVersion string `json:"cli_version"`
-	Git        *struct {
-		CommitHash    string `json:"commit_hash"`
-		RepositoryURL string `json:"repository_url"`
-	} `json:"git"`
-}
-
-type codexTurnContext struct {
-	TurnID string `json:"turn_id"`
-	Model  string `json:"model"`
-	CWD    string `json:"cwd"`
-}
-
-type codexResponseItem struct {
-	Type    string              `json:"type"`
-	Role    string              `json:"role"`
-	Content []codexContentBlock `json:"content"`
-}
-
-type codexContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
 type CodexParser struct {
 	store     *store.Store
 	sessionID string
@@ -53,24 +20,30 @@ func NewCodexParser(s *store.Store) *CodexParser {
 }
 
 func (p *CodexParser) ParseLine(line []byte) {
-	var entry codexEntry
+	var entry models.CodexEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
+		return
+	}
+	if err := entry.Validate(); err != nil {
 		return
 	}
 
 	switch entry.Type {
-	case "session_meta":
+	case models.CodexEntryTypeSessionMeta:
 		p.handleSessionMeta(entry.Payload, entry.Timestamp)
-	case "turn_context":
+	case models.CodexEntryTypeTurnContext:
 		p.handleTurnContext(entry.Payload)
-	case "response_item":
+	case models.CodexEntryTypeResponseItem:
 		p.handleResponseItem(entry.Payload, entry.Timestamp)
 	}
 }
 
 func (p *CodexParser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
-	var meta codexSessionMeta
+	var meta models.CodexSessionMeta
 	if err := json.Unmarshal(payload, &meta); err != nil {
+		return
+	}
+	if err := meta.Validate(); err != nil {
 		return
 	}
 
@@ -87,8 +60,11 @@ func (p *CodexParser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
 }
 
 func (p *CodexParser) handleTurnContext(payload json.RawMessage) {
-	var ctx codexTurnContext
+	var ctx models.CodexTurnContext
 	if err := json.Unmarshal(payload, &ctx); err != nil {
+		return
+	}
+	if err := ctx.Validate(); err != nil {
 		return
 	}
 	if ctx.Model != "" {
@@ -101,8 +77,11 @@ func (p *CodexParser) handleResponseItem(payload json.RawMessage, ts time.Time) 
 		return
 	}
 
-	var item codexResponseItem
+	var item models.CodexResponseItem
 	if err := json.Unmarshal(payload, &item); err != nil {
+		return
+	}
+	if err := item.Validate(); err != nil {
 		return
 	}
 
@@ -118,7 +97,7 @@ func (p *CodexParser) handleResponseItem(payload json.RawMessage, ts time.Time) 
 	}
 }
 
-func (p *CodexParser) handleUserMessage(item *codexResponseItem, ts time.Time) {
+func (p *CodexParser) handleUserMessage(item *models.CodexResponseItem, ts time.Time) {
 	text := p.extractText(item.Content, "input_text")
 	if text == "" {
 		return
@@ -136,7 +115,7 @@ func (p *CodexParser) handleUserMessage(item *codexResponseItem, ts time.Time) {
 	})
 }
 
-func (p *CodexParser) handleAssistantMessage(item *codexResponseItem, ts time.Time) {
+func (p *CodexParser) handleAssistantMessage(item *models.CodexResponseItem, ts time.Time) {
 	text := p.extractText(item.Content, "output_text")
 	if text == "" {
 		return
@@ -158,7 +137,7 @@ func (p *CodexParser) handleAssistantMessage(item *codexResponseItem, ts time.Ti
 	})
 }
 
-func (p *CodexParser) extractText(blocks []codexContentBlock, targetType string) string {
+func (p *CodexParser) extractText(blocks []models.CodexContentBlock, targetType string) string {
 	var sb strings.Builder
 	for _, b := range blocks {
 		if b.Type == targetType && b.Text != "" {
