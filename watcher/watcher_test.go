@@ -26,7 +26,7 @@ func (p *stubParser) Flush() {
 func provideStubWatcher(path string) (*Watcher, *stubParser) {
 	p := &stubParser{}
 	w := New(store.New(5), "", "")
-	w.files[path] = &watchedFile{
+	w.files[watchedFilePath(path)] = &watchedFile{
 		parser: p,
 	}
 	return w, p
@@ -97,7 +97,7 @@ func TestWatcherReadNewLines_HoldsPartialLine(t *testing.T) {
 	w.readNewLines(path)
 
 	assert.Equal(t, []string{"first"}, parser.lines)
-	assert.Equal(t, []byte("second"), w.files[path].partial)
+	assert.Equal(t, []byte("second"), w.files[watchedFilePath(path)].partial)
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
 	require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestWatcherReadNewLines_HoldsPartialLine(t *testing.T) {
 	w.readNewLines(path)
 
 	assert.Equal(t, []string{"first", "second line"}, parser.lines)
-	assert.Nil(t, w.files[path].partial)
+	assert.Nil(t, w.files[watchedFilePath(path)].partial)
 	assert.Equal(t, 2, parser.flushCount)
 }
 
@@ -122,5 +122,5 @@ func TestWatcherReadNewLines_DoesNotDuplicateParsedLines(t *testing.T) {
 	w.readNewLines(path)
 
 	assert.Equal(t, []string{"first"}, parser.lines)
-	assert.Equal(t, int64(len([]byte("first\n"))), w.files[path].offset)
+	assert.Equal(t, int64(len([]byte("first\n"))), w.files[watchedFilePath(path)].offset)
 }

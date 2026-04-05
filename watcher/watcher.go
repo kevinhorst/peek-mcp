@@ -29,8 +29,10 @@ type Watcher struct {
 	codexHome  string
 
 	mu    sync.Mutex
-	files map[string]*watchedFile
+	files map[watchedFilePath]*watchedFile
 }
+
+type watchedFilePath string
 
 type watchedFile struct {
 	offset  int64
@@ -48,7 +50,7 @@ func New(s *store.Store, claudeHome, codexHome string) *Watcher {
 		store:      s,
 		claudeHome: claudeHome,
 		codexHome:  codexHome,
-		files:      make(map[string]*watchedFile),
+		files:      make(map[watchedFilePath]*watchedFile),
 	}
 }
 
@@ -147,7 +149,7 @@ func (w *Watcher) readNewLines(path string) {
 
 	fileInfo := w.getOrCreateFile(path)
 	if fileInfo.offset > 0 {
-		if _, err := file.Seek(fileInfo.offset, 0); err != nil {
+		if _, err := file.Seek(fileInfo.offset, io.SeekStart); err != nil {
 			return
 		}
 	}
@@ -159,6 +161,8 @@ func (w *Watcher) readNewLines(path string) {
 
 	fileInfo.offset += int64(len(appended))
 
+	// Keep the unfinished trailing fragment, if any, and only send complete
+	// newline-delimited records to the parser.
 	buffer := make([]byte, 0, len(fileInfo.partial)+len(appended))
 	buffer = append(buffer, fileInfo.partial...)
 	buffer = append(buffer, appended...)
@@ -176,6 +180,8 @@ func parseCompleteLines(buffer []byte, parser lineParser) []byte {
 		if len(part) == 0 {
 			continue
 		}
+		// The last chunk may not have a newline yet, which means the writer has
+		// not finished the JSONL record. Keep it for the next append.
 		if part[len(part)-1] != '\n' {
 			return bytes.Clone(part)
 		}
@@ -191,7 +197,8 @@ func parseCompleteLines(buffer []byte, parser lineParser) []byte {
 }
 
 func (w *Watcher) getOrCreateFile(path string) *watchedFile {
-	if file, ok := w.files[path]; ok {
+	key := watchedFilePath(path)
+	if file, ok := w.files[key]; ok {
 		return file
 	}
 
@@ -201,7 +208,7 @@ func (w *Watcher) getOrCreateFile(path string) *watchedFile {
 	} else {
 		file.parser = parser.NewCodexParser(w.store)
 	}
-	w.files[path] = file
+	w.files[key] = file
 	return file
 }
 

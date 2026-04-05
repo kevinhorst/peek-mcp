@@ -51,7 +51,7 @@ func (p *CodexParser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
 
 	p.sessionID = meta.ID
 
-	sess := p.store.GetOrCreate(meta.ID, "codex")
+	sess := p.store.GetOrCreate(meta.ID, string(models.SourceCodex))
 	sess.Meta.CWD = meta.CWD
 	if !ts.IsZero() {
 		sess.Meta.LastActive = ts
@@ -105,7 +105,7 @@ func (p *CodexParser) handleUserMessage(item *models.CodexResponseItem, ts time.
 		return
 	}
 
-	sess := p.store.GetOrCreate(p.sessionID, "codex")
+	sess := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
 	if !ts.IsZero() {
 		sess.Meta.LastActive = ts
 	}
@@ -123,7 +123,7 @@ func (p *CodexParser) handleAssistantMessage(item *models.CodexResponseItem, ts 
 		return
 	}
 
-	sess := p.store.GetOrCreate(p.sessionID, "codex")
+	sess := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
 	if !ts.IsZero() {
 		sess.Meta.LastActive = ts
 	}
