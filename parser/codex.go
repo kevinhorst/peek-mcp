@@ -19,6 +19,8 @@ func NewCodexParser(s *store.Store) *CodexParser {
 	return &CodexParser{store: s}
 }
 
+func (p *CodexParser) Flush() {}
+
 func (p *CodexParser) ParseLine(line []byte) {
 	var entry models.CodexEntry
 	if err := json.Unmarshal(line, &entry); err != nil {

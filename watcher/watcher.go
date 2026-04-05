@@ -1,8 +1,10 @@
 package watcher
 
 import (
-	"bufio"
+	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -26,13 +28,19 @@ type Watcher struct {
 	claudeHome string
 	codexHome  string
 
-	mu      sync.Mutex
-	offsets map[string]int64
-	parsers map[string]lineParser
+	mu    sync.Mutex
+	files map[string]*watchedFile
+}
+
+type watchedFile struct {
+	offset  int64
+	partial []byte
+	parser  lineParser
 }
 
 type lineParser interface {
 	ParseLine(line []byte)
+	Flush()
 }
 
 func New(s *store.Store, claudeHome, codexHome string) *Watcher {
@@ -40,8 +48,7 @@ func New(s *store.Store, claudeHome, codexHome string) *Watcher {
 		store:      s,
 		claudeHome: claudeHome,
 		codexHome:  codexHome,
-		offsets:    make(map[string]int64),
-		parsers:    make(map[string]lineParser),
+		files:      make(map[string]*watchedFile),
 	}
 }
 
@@ -77,18 +84,22 @@ func (w *Watcher) Run(ctx context.Context) error {
 	}
 }
 
-func (w *Watcher) walkAndWatch(fsw *fsnotify.Watcher, root string) {
+func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 	info, err := os.Stat(root)
 	if err != nil || !info.IsDir() {
+		log.Printf("watcher %s is not a directory", root)
 		return
 	}
 
-	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if d.IsDir() {
-			fsw.Add(path)
+			err = watcher.Add(path)
+			if err != nil {
+				return err
+			}
 			return nil
 		}
 		if strings.HasSuffix(path, jsonlSuffix) {
@@ -96,16 +107,22 @@ func (w *Watcher) walkAndWatch(fsw *fsnotify.Watcher, root string) {
 		}
 		return nil
 	})
+	if err != nil {
+		log.Printf("watcher error: %v", err)
+	}
 }
 
-func (w *Watcher) handleEvent(fsw *fsnotify.Watcher, event fsnotify.Event) {
+func (w *Watcher) handleEvent(watcher *fsnotify.Watcher, event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
 		info, err := os.Stat(event.Name)
 		if err != nil {
 			return
 		}
 		if info.IsDir() {
-			fsw.Add(event.Name)
+			err = watcher.Add(event.Name)
+			if err != nil {
+				fmt.Println(err)
+			}
 			return
 		}
 		if strings.HasSuffix(event.Name, jsonlSuffix) {
@@ -122,53 +139,70 @@ func (w *Watcher) readNewLines(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	f, err := os.Open(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer file.Close()
 
-	offset := w.offsets[path]
-	if offset > 0 {
-		if _, err := f.Seek(offset, 0); err != nil {
+	fileInfo := w.getOrCreateFile(path)
+	if fileInfo.offset > 0 {
+		if _, err := file.Seek(fileInfo.offset, 0); err != nil {
 			return
 		}
 	}
 
-	p := w.getOrCreateParser(path)
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 10MB max line
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-		p.ParseLine(line)
+	appended, err := io.ReadAll(file)
+	if err != nil {
+		return
 	}
 
-	newOffset, _ := f.Seek(0, 1) // current position
-	w.offsets[path] = newOffset
+	fileInfo.offset += int64(len(appended))
 
-	// Flush Claude parsers to commit any pending assistant turns
-	if cp, ok := p.(*parser.ClaudeParser); ok {
-		cp.Flush()
-	}
+	buffer := make([]byte, 0, len(fileInfo.partial)+len(appended))
+	buffer = append(buffer, fileInfo.partial...)
+	buffer = append(buffer, appended...)
+
+	fileInfo.partial = parseCompleteLines(buffer, fileInfo.parser)
+	fileInfo.parser.Flush()
 }
 
-func (w *Watcher) getOrCreateParser(path string) lineParser {
-	if p, ok := w.parsers[path]; ok {
-		return p
+func parseCompleteLines(buffer []byte, parser lineParser) []byte {
+	if len(buffer) == 0 {
+		return nil
 	}
 
-	var p lineParser
-	if w.isClaude(path) {
-		p = parser.NewClaudeParser(w.store)
-	} else {
-		p = parser.NewCodexParser(w.store)
+	for _, part := range bytes.SplitAfter(buffer, []byte{'\n'}) {
+		if len(part) == 0 {
+			continue
+		}
+		if part[len(part)-1] != '\n' {
+			return bytes.Clone(part)
+		}
+
+		line := bytes.TrimSuffix(part, []byte{'\n'})
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		if len(line) > 0 {
+			parser.ParseLine(line)
+		}
 	}
-	w.parsers[path] = p
-	return p
+
+	return nil
+}
+
+func (w *Watcher) getOrCreateFile(path string) *watchedFile {
+	if file, ok := w.files[path]; ok {
+		return file
+	}
+
+	file := &watchedFile{}
+	if w.isClaude(path) {
+		file.parser = parser.NewClaudeParser(w.store)
+	} else {
+		file.parser = parser.NewCodexParser(w.store)
+	}
+	w.files[path] = file
+	return file
 }
 
 func (w *Watcher) isClaude(path string) bool {
