@@ -4,14 +4,14 @@ A lightweight MCP server that reads Claude Code and Codex CLI sessions directly 
 
 ## The problem
 
-Opus finishes a task. I often are in the situation that I want to have a quick follow-up question or analysis on the output, which, when Opus or another bigger model is prompted, eats up valuable tokens and especially much more time than necessary. So I want to use Sonnet or GPT-5-mini to review it immediately, but copying the context by hand is cumbersome and time consuming. 
+Opus finishes a task. I am quite often in the situation that I want to have a quick follow-up question or analysis on the output. If I then prompt Opus or another bigger model, it eats up valuable tokens and especially much more time than necessary. So I want to use Sonnet or GPT5-mini to review it quickly, but copying the context by hand is cumbersome. 
 
-As of the 05.04.2026, there seems to be (could be wrong) no way to do cross-session communication with the tools provided by Anthropic or OpenAI and definetly not between both of them without any MCP magic. 
+As of the 05.04.2026, there seems to be (could be wrong) no other way to do cross-session communication between different integration than to either copy or prompt the model to read the respective session directory directly, which works, but is also slow.
 
-There seem to be some MCP servers that kinda, maybe do what I need, but they seemed a bit bloated, so I wrote my own, which is more tailored to my current workflow.
+There seem to be some MCP servers that kinda, maybe do what I need, but they did not quite fit my case, so I wrote my own, which is more tailored to my current workflow.
 
-I wanted to avoid any interruption in said workflow, so an approach where the agent pushes to an MCP was ruled out. 
-The session files are on disk, so I figured that should be a good starting point.
+I wanted to avoid any interruption in said workflow, so an approach where the agent pushes to an MCP was ruled out.
+The session files are on disk, so I figured that should be a good starting point and took it from there. It is also an experiment for a codebase with heavy use of agentic development (but not vibe coding).
 
 ## The solution
 
@@ -22,11 +22,11 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
                     |
              fsnotify file watcher
                     |
-          in-memory ring buffer per session
+          in-memory buffer per session
                     |
         MCP server over streamable HTTP
                     |
-    Sonnet / GPT-5-mini calls session_latest(5)
+    Sonnet / GPT-5-mini calls session_latest(n)
 ```
 
 ## MCP Tools
@@ -109,6 +109,9 @@ Add to `.claude/settings.json` in your project:
 2. Run Claude Code with Opus on a task.
 3. Open Claude Chat (Sonnet) and ask: "Use session_latest to review what was just built and flag any issues."
 4. Sonnet calls the tool, reads the last 5 turns, responds. Done in under 30 seconds.
+
+## Limitations
+TBD
 
 ## Requirements
 
