@@ -9,7 +9,10 @@ import (
 func provideCompleteUsage() *Usage {
 	return &Usage{
 		InputTokens:              100,
+		CachedInputTokens:        60,
 		OutputTokens:             50,
+		ReasoningOutputTokens:    10,
+		TotalTokens:              160,
 		CacheCreationInputTokens: 200,
 		CacheReadInputTokens:     300,
 	}
@@ -61,6 +64,33 @@ func TestUsage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
+	form = provideCompleteUsage()
+	form.CachedInputTokens = -1
+	test = &testCase{
+		_id:         "fail-negative-cached-input-tokens",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	form = provideCompleteUsage()
+	form.ReasoningOutputTokens = -1
+	test = &testCase{
+		_id:         "fail-negative-reasoning-output-tokens",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	form = provideCompleteUsage()
+	form.TotalTokens = -1
+	test = &testCase{
+		_id:         "fail-negative-total-tokens",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
 	// pass-zero-tokens
 	form = provideCompleteUsage()
 	form.InputTokens = 0
@@ -84,14 +114,20 @@ func TestUsage_Add(t *testing.T) {
 	u := provideCompleteUsage()
 	other := &Usage{
 		InputTokens:              10,
+		CachedInputTokens:        5,
 		OutputTokens:             5,
+		ReasoningOutputTokens:    2,
+		TotalTokens:              20,
 		CacheCreationInputTokens: 20,
 		CacheReadInputTokens:     30,
 	}
 	u.Add(other)
 
 	assert.Equal(t, 110, u.InputTokens)
+	assert.Equal(t, 65, u.CachedInputTokens)
 	assert.Equal(t, 55, u.OutputTokens)
+	assert.Equal(t, 12, u.ReasoningOutputTokens)
+	assert.Equal(t, 180, u.TotalTokens)
 	assert.Equal(t, 220, u.CacheCreationInputTokens)
 	assert.Equal(t, 330, u.CacheReadInputTokens)
 }

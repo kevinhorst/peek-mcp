@@ -193,6 +193,15 @@ func TestCodexResponseItem_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
+	form := provideCompleteCodexResponseItem()
+	form.Role = RoleDeveloper
+	test = &testCase{
+		_id:         "pass-developer-role",
+		_shouldPass: true,
+		form:        form,
+	}
+	tests = append(tests, test)
+
 	test = &testCase{
 		_id:         "fail-nil-item",
 		_shouldPass: false,
@@ -200,7 +209,7 @@ func TestCodexResponseItem_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteCodexResponseItem()
+	form = provideCompleteCodexResponseItem()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",
@@ -213,6 +222,71 @@ func TestCodexResponseItem_Validate(t *testing.T) {
 	form.Role = "system"
 	test = &testCase{
 		_id:         "fail-invalid-role",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			err := test.form.Validate()
+			assert.Equalf(t, test._shouldPass, err == nil, "Err: %v", err)
+		})
+	}
+}
+
+func provideCompleteCodexEventMessage() *CodexEventMessage {
+	return &CodexEventMessage{
+		Type: CodexEventTypeTokenCount,
+		Info: &CodexEventInfo{
+			TotalTokenUsage: &CodexTokenUsage{
+				InputTokens:           100,
+				CachedInputTokens:     60,
+				OutputTokens:          20,
+				ReasoningOutputTokens: 5,
+				TotalTokens:           125,
+			},
+		},
+	}
+}
+
+func TestCodexEventMessage_Validate(t *testing.T) {
+	type testCase struct {
+		_id         string
+		_shouldPass bool
+
+		form *CodexEventMessage
+	}
+
+	tests := make([]*testCase, 0)
+
+	test := &testCase{
+		_id:         "pass-all-ok",
+		_shouldPass: true,
+		form:        provideCompleteCodexEventMessage(),
+	}
+	tests = append(tests, test)
+
+	test = &testCase{
+		_id:         "fail-nil-event-message",
+		_shouldPass: false,
+		form:        nil,
+	}
+	tests = append(tests, test)
+
+	form := provideCompleteCodexEventMessage()
+	form.Type = ""
+	test = &testCase{
+		_id:         "fail-empty-type",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	form = provideCompleteCodexEventMessage()
+	form.Info.TotalTokenUsage.TotalTokens = -1
+	test = &testCase{
+		_id:         "fail-invalid-token-usage",
 		_shouldPass: false,
 		form:        form,
 	}

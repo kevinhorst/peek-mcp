@@ -221,6 +221,41 @@ func TestCodex_EventMsgSkipped(t *testing.T) {
 	assert.Equal(t, 0, sess.Turns.Len(), "event_msg should not create a turn")
 }
 
+func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.T) {
+	s := store.New(20)
+	p := NewCodexParser(s)
+
+	p.ParseLine([]byte(`{
+		"timestamp": "2026-03-29T23:45:22.019Z",
+		"type": "session_meta",
+		"payload": {"id": "sess-codex-1", "cwd": "/project"}
+	}`))
+	p.ParseLine([]byte(`{
+		"timestamp": "2026-03-29T23:47:40.000Z",
+		"type": "event_msg",
+		"payload": {
+			"type": "token_count",
+			"info": {
+				"total_token_usage": {
+					"input_tokens": 100,
+					"cached_input_tokens": 60,
+					"output_tokens": 20,
+					"reasoning_output_tokens": 5,
+					"total_tokens": 125
+				}
+			}
+		}
+	}`))
+
+	session, _ := s.Get("sess-codex-1")
+	assert.Equal(t, 0, session.Turns.Len(), "token_count event should not create a turn")
+	assert.Equal(t, 100, session.Meta.TotalUsage.InputTokens)
+	assert.Equal(t, 60, session.Meta.TotalUsage.CachedInputTokens)
+	assert.Equal(t, 20, session.Meta.TotalUsage.OutputTokens)
+	assert.Equal(t, 5, session.Meta.TotalUsage.ReasoningOutputTokens)
+	assert.Equal(t, 125, session.Meta.TotalUsage.TotalTokens)
+}
+
 func TestCodex_InvalidJSON(t *testing.T) {
 	s := store.New(20)
 	p := NewCodexParser(s)

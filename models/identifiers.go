@@ -8,6 +8,7 @@ type (
 const (
 	RoleUser                    = "user"
 	RoleAssistant               = "assistant"
+	RoleDeveloper               = "developer"
 	SourceClaude  SessionSource = "claude"
 	SourceCodex   SessionSource = "codex"
 )

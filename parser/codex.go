@@ -43,6 +43,8 @@ func (p *CodexParser) ParseLine(line []byte) {
 		p.handleTurnContext(entry.Payload)
 	case models.CodexEntryTypeResponseItem:
 		p.handleResponseItem(entry.Payload, entry.Timestamp)
+	case models.CodexEntryTypeEventMessage:
+		p.handleEventMessage(entry.Payload, entry.Timestamp)
 	}
 }
 
@@ -105,6 +107,29 @@ func (p *CodexParser) handleResponseItem(payload json.RawMessage, ts time.Time) 
 	}
 }
 
+func (p *CodexParser) handleEventMessage(payload json.RawMessage, ts time.Time) {
+	if p.sessionID == "" {
+		return
+	}
+
+	var eventMessage models.CodexEventMessage
+	if err := json.Unmarshal(payload, &eventMessage); err != nil {
+		return
+	}
+	if err := eventMessage.Validate(); err != nil {
+		return
+	}
+	if eventMessage.Type != models.CodexEventTypeTokenCount || eventMessage.Info == nil || eventMessage.Info.TotalTokenUsage == nil {
+		return
+	}
+
+	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
+	if !ts.IsZero() {
+		session.Meta.LastActive = ts
+	}
+	session.Meta.TotalUsage = convertCodexUsage(eventMessage.Info.TotalTokenUsage)
+}
+
 func (p *CodexParser) handleUserMessage(item *models.CodexResponseItem, ts time.Time) {
 	text := p.extractText(item.Content, codexInputTextType)
 	if text == "" {
@@ -156,4 +181,18 @@ func (p *CodexParser) extractText(blocks []models.CodexContentBlock, targetType 
 		}
 	}
 	return builder.String()
+}
+
+func convertCodexUsage(codexUsage *models.CodexTokenUsage) models.Usage {
+	if codexUsage == nil {
+		return models.Usage{}
+	}
+
+	return models.Usage{
+		InputTokens:           codexUsage.InputTokens,
+		CachedInputTokens:     codexUsage.CachedInputTokens,
+		OutputTokens:          codexUsage.OutputTokens,
+		ReasoningOutputTokens: codexUsage.ReasoningOutputTokens,
+		TotalTokens:           codexUsage.TotalTokens,
+	}
 }
