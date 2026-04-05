@@ -9,6 +9,12 @@ import (
 	"github.com/kevinhorst/peek-mcp/store"
 )
 
+const (
+	codexMessageType    = "message"
+	codexInputTextType  = "input_text"
+	codexOutputTextType = "output_text"
+)
+
 type CodexParser struct {
 	store     *store.Store
 	sessionID string
@@ -51,26 +57,26 @@ func (p *CodexParser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
 
 	p.sessionID = meta.ID
 
-	sess := p.store.GetOrCreate(meta.ID, string(models.SourceCodex))
-	sess.Meta.CWD = meta.CWD
+	session := p.store.GetOrCreate(meta.ID, string(models.SourceCodex))
+	session.Meta.CWD = meta.CWD
 	if !ts.IsZero() {
-		sess.Meta.LastActive = ts
+		session.Meta.LastActive = ts
 	}
 	if meta.Git != nil {
-		sess.Meta.GitBranch = meta.Git.CommitHash
+		session.Meta.GitBranch = meta.Git.CommitHash
 	}
 }
 
 func (p *CodexParser) handleTurnContext(payload json.RawMessage) {
-	var ctx models.CodexTurnContext
-	if err := json.Unmarshal(payload, &ctx); err != nil {
+	var turnContext models.CodexTurnContext
+	if err := json.Unmarshal(payload, &turnContext); err != nil {
 		return
 	}
-	if err := ctx.Validate(); err != nil {
+	if err := turnContext.Validate(); err != nil {
 		return
 	}
-	if ctx.Model != "" {
-		p.model = ctx.Model
+	if turnContext.Model != "" {
+		p.model = turnContext.Model
 	}
 }
 
@@ -87,52 +93,52 @@ func (p *CodexParser) handleResponseItem(payload json.RawMessage, ts time.Time) 
 		return
 	}
 
-	if item.Type != "message" {
+	if item.Type != codexMessageType {
 		return
 	}
 
 	switch item.Role {
-	case "user":
+	case models.RoleUser:
 		p.handleUserMessage(&item, ts)
-	case "assistant":
+	case models.RoleAssistant:
 		p.handleAssistantMessage(&item, ts)
 	}
 }
 
 func (p *CodexParser) handleUserMessage(item *models.CodexResponseItem, ts time.Time) {
-	text := p.extractText(item.Content, "input_text")
+	text := p.extractText(item.Content, codexInputTextType)
 	if text == "" {
 		return
 	}
 
-	sess := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
+	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
 	if !ts.IsZero() {
-		sess.Meta.LastActive = ts
+		session.Meta.LastActive = ts
 	}
 
-	sess.Turns.Push(models.Turn{
-		Role:      "user",
+	session.Turns.Push(models.Turn{
+		Role:      models.RoleUser,
 		Text:      text,
 		Timestamp: ts,
 	})
 }
 
 func (p *CodexParser) handleAssistantMessage(item *models.CodexResponseItem, ts time.Time) {
-	text := p.extractText(item.Content, "output_text")
+	text := p.extractText(item.Content, codexOutputTextType)
 	if text == "" {
 		return
 	}
 
-	sess := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
+	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
 	if !ts.IsZero() {
-		sess.Meta.LastActive = ts
+		session.Meta.LastActive = ts
 	}
 	if p.model != "" {
-		sess.Meta.Model = p.model
+		session.Meta.Model = p.model
 	}
 
-	sess.Turns.Push(models.Turn{
-		Role:      "assistant",
+	session.Turns.Push(models.Turn{
+		Role:      models.RoleAssistant,
 		Text:      text,
 		Timestamp: ts,
 		Model:     p.model,
@@ -140,14 +146,14 @@ func (p *CodexParser) handleAssistantMessage(item *models.CodexResponseItem, ts 
 }
 
 func (p *CodexParser) extractText(blocks []models.CodexContentBlock, targetType string) string {
-	var sb strings.Builder
-	for _, b := range blocks {
-		if b.Type == targetType && b.Text != "" {
-			if sb.Len() > 0 {
-				sb.WriteString("\n")
+	var builder strings.Builder
+	for _, block := range blocks {
+		if block.Type == targetType && block.Text != "" {
+			if builder.Len() > 0 {
+				builder.WriteString("\n")
 			}
-			sb.WriteString(b.Text)
+			builder.WriteString(block.Text)
 		}
 	}
-	return sb.String()
+	return builder.String()
 }

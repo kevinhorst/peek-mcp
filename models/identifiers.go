@@ -1,10 +1,13 @@
 package models
 
-type SessionID string
-
-type SessionSource string
+type (
+	SessionID     string
+	SessionSource string
+)
 
 const (
-	SourceClaude SessionSource = "claude"
-	SourceCodex  SessionSource = "codex"
+	RoleUser                    = "user"
+	RoleAssistant               = "assistant"
+	SourceClaude  SessionSource = "claude"
+	SourceCodex   SessionSource = "codex"
 )

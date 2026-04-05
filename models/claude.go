@@ -47,7 +47,7 @@ func (m *ClaudeMessage) Validate() error {
 	if m == nil {
 		return errors.New("claude message is nil")
 	}
-	if m.Role != "" && m.Role != "user" && m.Role != "assistant" {
+	if m.Role != "" && m.Role != RoleUser && m.Role != RoleAssistant {
 		return errors.New("role must be empty, \"user\", or \"assistant\"")
 	}
 	if m.Usage != nil {

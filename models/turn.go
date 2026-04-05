@@ -17,7 +17,7 @@ func (t *Turn) Validate() error {
 	if t == nil {
 		return errors.New("turn is nil")
 	}
-	if t.Role != "user" && t.Role != "assistant" {
+	if t.Role != RoleUser && t.Role != RoleAssistant {
 		return errors.New("role must be \"user\" or \"assistant\"")
 	}
 	if t.Text == "" {

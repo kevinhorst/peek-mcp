@@ -47,12 +47,12 @@ func sessionLatestHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		n := getIntParam(request, "n", 5)
 
-		sess, ok := s.MostRecent()
+		session, ok := s.MostRecent()
 		if !ok {
 			return mcp.NewToolResultText("No sessions found"), nil
 		}
 
-		turns := sess.Turns.Last(n)
+		turns := session.Turns.Last(n)
 		data, err := json.Marshal(turns)
 		if err != nil {
 			return nil, fmt.Errorf("marshaling turns: %w", err)
@@ -82,12 +82,12 @@ func sessionGetHandler(s *store.Store) server.ToolHandlerFunc {
 
 		n := getIntParam(request, "n", 5)
 
-		sess, ok := s.Get(id)
+		session, ok := s.Get(id)
 		if !ok {
 			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
 		}
 
-		turns := sess.Turns.Last(n)
+		turns := session.Turns.Last(n)
 		data, err := json.Marshal(turns)
 		if err != nil {
 			return nil, fmt.Errorf("marshaling turns: %w", err)

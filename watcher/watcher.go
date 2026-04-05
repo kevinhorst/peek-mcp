@@ -55,29 +55,29 @@ func New(s *store.Store, claudeHome, codexHome string) *Watcher {
 }
 
 func (w *Watcher) Run(ctx context.Context) error {
-	fsw, err := fsnotify.NewWatcher()
+	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
-	defer fsw.Close()
+	defer watcher.Close()
 
 	// Add root directories and backfill existing files
 	claudeProjects := filepath.Join(w.claudeHome, claudeProjectsDir)
 	codexSessions := filepath.Join(w.codexHome, codexSessionsDir)
 
-	w.walkAndWatch(fsw, claudeProjects)
-	w.walkAndWatch(fsw, codexSessions)
+	w.walkAndWatch(watcher, claudeProjects)
+	w.walkAndWatch(watcher, codexSessions)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case event, ok := <-fsw.Events:
+		case event, ok := <-watcher.Events:
 			if !ok {
 				return nil
 			}
-			w.handleEvent(fsw, event)
-		case err, ok := <-fsw.Errors:
+			w.handleEvent(watcher, event)
+		case err, ok := <-watcher.Errors:
 			if !ok {
 				return nil
 			}
@@ -87,8 +87,8 @@ func (w *Watcher) Run(ctx context.Context) error {
 }
 
 func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
-	info, err := os.Stat(root)
-	if err != nil || !info.IsDir() {
+	rootInfo, err := os.Stat(root)
+	if err != nil || !rootInfo.IsDir() {
 		log.Printf("watcher %s is not a directory", root)
 		return
 	}
@@ -115,25 +115,26 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 }
 
 func (w *Watcher) handleEvent(watcher *fsnotify.Watcher, event fsnotify.Event) {
+	filePath := event.Name
 	if event.Has(fsnotify.Create) {
-		info, err := os.Stat(event.Name)
+		info, err := os.Stat(filePath)
 		if err != nil {
 			return
 		}
 		if info.IsDir() {
-			err = watcher.Add(event.Name)
+			err = watcher.Add(filePath)
 			if err != nil {
 				fmt.Println(err)
 			}
 			return
 		}
-		if strings.HasSuffix(event.Name, jsonlSuffix) {
-			w.readNewLines(event.Name)
+		if strings.HasSuffix(filePath, jsonlSuffix) {
+			w.readNewLines(filePath)
 		}
 	}
 
-	if event.Has(fsnotify.Write) && strings.HasSuffix(event.Name, jsonlSuffix) {
-		w.readNewLines(event.Name)
+	if event.Has(fsnotify.Write) && strings.HasSuffix(filePath, jsonlSuffix) {
+		w.readNewLines(filePath)
 	}
 }
 
@@ -147,9 +148,9 @@ func (w *Watcher) readNewLines(path string) {
 	}
 	defer file.Close()
 
-	fileInfo := w.getOrCreateFile(path)
-	if fileInfo.offset > 0 {
-		if _, err := file.Seek(fileInfo.offset, io.SeekStart); err != nil {
+	info := w.getOrCreateFile(path)
+	if info.offset > 0 {
+		if _, err := file.Seek(info.offset, io.SeekStart); err != nil {
 			return
 		}
 	}
@@ -159,16 +160,16 @@ func (w *Watcher) readNewLines(path string) {
 		return
 	}
 
-	fileInfo.offset += int64(len(appended))
+	info.offset += int64(len(appended))
 
 	// Keep the unfinished trailing fragment, if any, and only send complete
 	// newline-delimited records to the parser.
-	buffer := make([]byte, 0, len(fileInfo.partial)+len(appended))
-	buffer = append(buffer, fileInfo.partial...)
+	buffer := make([]byte, 0, len(info.partial)+len(appended))
+	buffer = append(buffer, info.partial...)
 	buffer = append(buffer, appended...)
 
-	fileInfo.partial = parseCompleteLines(buffer, fileInfo.parser)
-	fileInfo.parser.Flush()
+	info.partial = parseCompleteLines(buffer, info.parser)
+	info.parser.Flush()
 }
 
 func parseCompleteLines(buffer []byte, parser lineParser) []byte {

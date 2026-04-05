@@ -82,7 +82,7 @@ func (i *CodexResponseItem) Validate() error {
 	if i.Type == "" {
 		return errors.New("type must not be empty")
 	}
-	if i.Role != "" && i.Role != "user" && i.Role != "assistant" {
+	if i.Role != "" && i.Role != RoleUser && i.Role != RoleAssistant {
 		return errors.New("role must be empty, \"user\", or \"assistant\"")
 	}
 	return nil
