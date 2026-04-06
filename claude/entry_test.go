@@ -7,19 +7,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func provideCompleteClaudeEntry() *ClaudeEntry {
-	return &ClaudeEntry{
-		Type:      ClaudeEntryTypeUser,
+func provideCompleteEntry() *Entry {
+	return &Entry{
+		Type:      EntryTypeUser,
 		SessionID: "sess-123",
 	}
 }
 
-func TestClaudeEntry_Validate(t *testing.T) {
+func TestEntry_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *ClaudeEntry
+		form *Entry
 	}
 
 	tests := make([]*testCase, 0)
@@ -27,7 +27,7 @@ func TestClaudeEntry_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteClaudeEntry(),
+		form:        provideCompleteEntry(),
 	}
 	tests = append(tests, test)
 
@@ -38,7 +38,7 @@ func TestClaudeEntry_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteClaudeEntry()
+	form := provideCompleteEntry()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",
@@ -47,7 +47,7 @@ func TestClaudeEntry_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteClaudeEntry()
+	form = provideCompleteEntry()
 	form.SessionID = ""
 	test = &testCase{
 		_id:         "fail-empty-session-id",
@@ -56,7 +56,7 @@ func TestClaudeEntry_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteClaudeEntry()
+	form = provideCompleteEntry()
 	form.Type = "queue-operation"
 	form.SessionID = ""
 	test = &testCase{
@@ -74,23 +74,23 @@ func TestClaudeEntry_Validate(t *testing.T) {
 	}
 }
 
-func provideCompleteClaudeMessage() *ClaudeMessage {
-	return &ClaudeMessage{
+func provideCompleteMessage() *Message {
+	return &Message{
 		Role:    "assistant",
 		Content: json.RawMessage(`[]`),
-		Usage: &ClaudeUsage{
+		Usage: &Usage{
 			InputTokens:  1,
 			OutputTokens: 2,
 		},
 	}
 }
 
-func TestClaudeMessage_Validate(t *testing.T) {
+func TestMessage_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *ClaudeMessage
+		form *Message
 	}
 
 	tests := make([]*testCase, 0)
@@ -98,7 +98,7 @@ func TestClaudeMessage_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteClaudeMessage(),
+		form:        provideCompleteMessage(),
 	}
 	tests = append(tests, test)
 
@@ -109,7 +109,7 @@ func TestClaudeMessage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteClaudeMessage()
+	form := provideCompleteMessage()
 	form.Role = "system"
 	test = &testCase{
 		_id:         "fail-invalid-role",
@@ -118,8 +118,8 @@ func TestClaudeMessage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteClaudeMessage()
-	form.Usage = &ClaudeUsage{InputTokens: -1}
+	form = provideCompleteMessage()
+	form.Usage = &Usage{InputTokens: -1}
 	test = &testCase{
 		_id:         "fail-invalid-usage",
 		_shouldPass: false,
@@ -135,8 +135,8 @@ func TestClaudeMessage_Validate(t *testing.T) {
 	}
 }
 
-func provideCompleteClaudeUsage() *ClaudeUsage {
-	return &ClaudeUsage{
+func provideCompleteUsage() *Usage {
+	return &Usage{
 		InputTokens:              1,
 		OutputTokens:             2,
 		CacheCreationInputTokens: 3,
@@ -144,12 +144,12 @@ func provideCompleteClaudeUsage() *ClaudeUsage {
 	}
 }
 
-func TestClaudeUsage_Validate(t *testing.T) {
+func TestUsage_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *ClaudeUsage
+		form *Usage
 	}
 
 	tests := make([]*testCase, 0)
@@ -157,7 +157,7 @@ func TestClaudeUsage_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteClaudeUsage(),
+		form:        provideCompleteUsage(),
 	}
 	tests = append(tests, test)
 
@@ -168,7 +168,7 @@ func TestClaudeUsage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteClaudeUsage()
+	form := provideCompleteUsage()
 	form.InputTokens = -1
 	test = &testCase{
 		_id:         "fail-negative-input-tokens",
@@ -177,7 +177,7 @@ func TestClaudeUsage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteClaudeUsage()
+	form = provideCompleteUsage()
 	form.OutputTokens = -1
 	test = &testCase{
 		_id:         "fail-negative-output-tokens",
@@ -186,7 +186,7 @@ func TestClaudeUsage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteClaudeUsage()
+	form = provideCompleteUsage()
 	form.CacheCreationInputTokens = -1
 	test = &testCase{
 		_id:         "fail-negative-cache-creation-tokens",
@@ -195,7 +195,7 @@ func TestClaudeUsage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteClaudeUsage()
+	form = provideCompleteUsage()
 	form.CacheReadInputTokens = -1
 	test = &testCase{
 		_id:         "fail-negative-cache-read-tokens",
@@ -212,19 +212,19 @@ func TestClaudeUsage_Validate(t *testing.T) {
 	}
 }
 
-func provideCompleteClaudeContentBlock() *ClaudeContentBlock {
-	return &ClaudeContentBlock{
+func provideCompleteContentBlock() *ContentBlock {
+	return &ContentBlock{
 		Type: "text",
 		Text: "hello",
 	}
 }
 
-func TestClaudeContentBlock_Validate(t *testing.T) {
+func TestContentBlock_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *ClaudeContentBlock
+		form *ContentBlock
 	}
 
 	tests := make([]*testCase, 0)
@@ -232,7 +232,7 @@ func TestClaudeContentBlock_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteClaudeContentBlock(),
+		form:        provideCompleteContentBlock(),
 	}
 	tests = append(tests, test)
 
@@ -243,7 +243,7 @@ func TestClaudeContentBlock_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteClaudeContentBlock()
+	form := provideCompleteContentBlock()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",

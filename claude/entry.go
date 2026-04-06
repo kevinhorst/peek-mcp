@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	ClaudeEntryTypeUser      = "user"
-	ClaudeEntryTypeAssistant = "assistant"
+	EntryTypeUser      = "user"
+	EntryTypeAssistant = "assistant"
 )
 
-type ClaudeEntry struct {
+type Entry struct {
 	CWD         string          `json:"cwd"`
 	GitBranch   string          `json:"gitBranch"`
 	IsSidechain bool            `json:"isSidechain"`
@@ -25,27 +25,27 @@ type ClaudeEntry struct {
 	Type        string          `json:"type"`
 }
 
-func (e *ClaudeEntry) Validate() error {
+func (e *Entry) Validate() error {
 	if e == nil {
 		return errors.New("claude entry is nil")
 	}
 	if e.Type == "" {
 		return errors.New("type must not be empty")
 	}
-	if (e.Type == ClaudeEntryTypeUser || e.Type == ClaudeEntryTypeAssistant) && e.SessionID == "" {
+	if (e.Type == EntryTypeUser || e.Type == EntryTypeAssistant) && e.SessionID == "" {
 		return errors.New("session_id must not be empty")
 	}
 	return nil
 }
 
-type ClaudeMessage struct {
+type Message struct {
 	Role    string          `json:"role"`
 	Content json.RawMessage `json:"content"`
 	Model   string          `json:"model"`
-	Usage   *ClaudeUsage    `json:"usage"`
+	Usage   *Usage          `json:"usage"`
 }
 
-func (m *ClaudeMessage) Validate() error {
+func (m *Message) Validate() error {
 	if m == nil {
 		return errors.New("claude message is nil")
 	}
@@ -60,14 +60,14 @@ func (m *ClaudeMessage) Validate() error {
 	return nil
 }
 
-type ClaudeUsage struct {
+type Usage struct {
 	InputTokens              int `json:"input_tokens"`
 	OutputTokens             int `json:"output_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
-func (u *ClaudeUsage) Validate() error {
+func (u *Usage) Validate() error {
 	if u == nil {
 		return errors.New("claude usage is nil")
 	}
@@ -91,12 +91,12 @@ func (u *ClaudeUsage) Validate() error {
 	return nil
 }
 
-type ClaudeContentBlock struct {
+type ContentBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
-func (b *ClaudeContentBlock) Validate() error {
+func (b *ContentBlock) Validate() error {
 	if b == nil {
 		return errors.New("claude content block is nil")
 	}

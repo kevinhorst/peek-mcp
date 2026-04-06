@@ -24,7 +24,7 @@ func NewParser(s *store.Store) *Parser {
 }
 
 func (p *Parser) ParseLine(line []byte) {
-	var entry ClaudeEntry
+	var entry Entry
 	if err := json.Unmarshal(line, &entry); err != nil {
 		return
 	}
@@ -35,12 +35,12 @@ func (p *Parser) ParseLine(line []byte) {
 	if entry.IsSidechain {
 		return
 	}
-	log.Printf("ClaudeParser: [%s], entry: %s", spew.Sdump(p), entry)
+	log.Printf("ClaudeParser: [%s], entry: %v", spew.Sdump(p), entry)
 
 	switch entry.Type {
-	case ClaudeEntryTypeUser:
+	case EntryTypeUser:
 		p.handleUser(&entry)
-	case ClaudeEntryTypeAssistant:
+	case EntryTypeAssistant:
 		p.handleAssistant(&entry)
 	}
 }
@@ -49,12 +49,12 @@ func (p *Parser) Flush() {
 	p.flushPending()
 }
 
-func (p *Parser) handleUser(entry *ClaudeEntry) {
+func (p *Parser) handleUser(entry *Entry) {
 	if entry.PromptID == "" {
 		return
 	}
 
-	var message ClaudeMessage
+	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
 		return
 	}
@@ -85,8 +85,8 @@ func (p *Parser) handleUser(entry *ClaudeEntry) {
 	})
 }
 
-func (p *Parser) handleAssistant(entry *ClaudeEntry) {
-	var message ClaudeMessage
+func (p *Parser) handleAssistant(entry *Entry) {
+	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
 		return
 	}
@@ -158,7 +158,7 @@ func (p *Parser) flushPending() {
 	p.lastRequestID = ""
 }
 
-func (p *Parser) updateMeta(session *models.Session, entry *ClaudeEntry, model string) {
+func (p *Parser) updateMeta(session *models.Session, entry *Entry, model string) {
 	if !entry.Timestamp.IsZero() {
 		session.Info.LastActive = entry.Timestamp
 	}
@@ -174,7 +174,7 @@ func (p *Parser) updateMeta(session *models.Session, entry *ClaudeEntry, model s
 }
 
 func extractTextBlocks(raw json.RawMessage) string {
-	var blocks []ClaudeContentBlock
+	var blocks []ContentBlock
 	if err := json.Unmarshal(raw, &blocks); err != nil {
 		return ""
 	}
@@ -191,7 +191,7 @@ func extractTextBlocks(raw json.RawMessage) string {
 	return builder.String()
 }
 
-func convertUsage(claudeUsage *ClaudeUsage) *models.Usage {
+func convertUsage(claudeUsage *Usage) *models.Usage {
 	if claudeUsage == nil {
 		return nil
 	}
