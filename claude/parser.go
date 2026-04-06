@@ -9,8 +9,6 @@ import (
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
-const claudeTextContentType = "text"
-
 type Parser struct {
 	store            *session.Store
 	lastRequestId    string
@@ -114,7 +112,7 @@ func (p *Parser) handleAssistant(entry *Entry) {
 	}
 
 	// Same requestId means this is a continuation of the same logical response
-	if entry.RequestI != "" && entry.RequestI == p.lastRequestId && p.pendingTurn != nil {
+	if entry.RequestId != "" && entry.RequestId == p.lastRequestId && p.pendingTurn != nil {
 		p.pendingTurn.Text += text
 		if usage != nil {
 			p.pendingTurn.Usage = usage
@@ -128,7 +126,7 @@ func (p *Parser) handleAssistant(entry *Entry) {
 	// Different requestId — flush previous and start new pending turn
 	p.flushPending()
 
-	p.lastRequestId = entry.RequestI
+	p.lastRequestId = entry.RequestId
 	p.pendingSessionId = entry.SessionId
 	p.pendingTurn = &session.Turn{
 		Role:      session.RoleAssistant,
@@ -156,7 +154,7 @@ func (p *Parser) flushPending() {
 	}
 
 	if p.pendingTurn.Usage != nil {
-		current.Info.TotalUsage.Add(p.pendingTurn.Usage)
+		current.TotalUsage.Add(p.pendingTurn.Usage)
 	}
 
 	current.Turns.Push(p.pendingTurn)
@@ -167,16 +165,16 @@ func (p *Parser) flushPending() {
 
 func (p *Parser) updateMeta(session *session.Session, entry *Entry, model string) {
 	if !entry.Timestamp.IsZero() {
-		session.Info.LastActive = entry.Timestamp
+		session.LastActive = entry.Timestamp
 	}
 	if entry.CurrentWorkingDir != "" {
-		session.Info.CWD = entry.CurrentWorkingDir
+		session.CurrentWorkingDir = entry.CurrentWorkingDir
 	}
 	if entry.GitBranch != "" {
-		session.Info.GitBranch = entry.GitBranch
+		session.GitBranch = entry.GitBranch
 	}
 	if model != "" {
-		session.Info.Model = model
+		session.Model = model
 	}
 }
 
@@ -188,7 +186,7 @@ func extractTextBlocks(raw json.RawMessage) string {
 
 	var builder strings.Builder
 	for _, block := range blocks {
-		if block.Type == claudeTextContentType && block.Text != "" {
+		if block.Type == "text" && block.Text != "" {
 			if builder.Len() > 0 {
 				builder.WriteString("\n")
 			}

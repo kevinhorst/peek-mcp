@@ -19,7 +19,7 @@ type Entry struct {
 	IsSidechain       bool            `json:"isSidechain"`
 	Message           json.RawMessage `json:"message"`
 	PromptId          string          `json:"promptId"`
-	RequestI          string          `json:"requestId"`
+	RequestId         string          `json:"requestId"`
 	SessionId         session.Id      `json:"sessionId"`
 	Timestamp         time.Time       `json:"timestamp"`
 	Type              string          `json:"type"`
