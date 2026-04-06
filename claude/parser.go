@@ -104,7 +104,15 @@ func (p *Parser) handleAssistant(entry *Entry) {
 		return
 	}
 
-	usage := convertUsage(message.Usage)
+	var usage *models.Usage
+	if message.Usage != nil {
+		usage = &models.Usage{
+			InputTokens:              message.Usage.InputTokens,
+			OutputTokens:             message.Usage.OutputTokens,
+			CacheCreationInputTokens: message.Usage.CacheCreationInputTokens,
+			CacheReadInputTokens:     message.Usage.CacheReadInputTokens,
+		}
+	}
 
 	// Same requestId means this is a continuation of the same logical response
 	if entry.RequestID != "" && entry.RequestID == p.lastRequestID && p.pendingTurn != nil {
@@ -189,16 +197,4 @@ func extractTextBlocks(raw json.RawMessage) string {
 		}
 	}
 	return builder.String()
-}
-
-func convertUsage(claudeUsage *Usage) *models.Usage {
-	if claudeUsage == nil {
-		return nil
-	}
-	return &models.Usage{
-		InputTokens:              claudeUsage.InputTokens,
-		OutputTokens:             claudeUsage.OutputTokens,
-		CacheCreationInputTokens: claudeUsage.CacheCreationInputTokens,
-		CacheReadInputTokens:     claudeUsage.CacheReadInputTokens,
-	}
 }

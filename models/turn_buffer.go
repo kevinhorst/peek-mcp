@@ -2,6 +2,7 @@ package models
 
 import "errors"
 
+// TurnBuffer behaves like a circular buffer if full
 type TurnBuffer struct {
 	items []*Turn
 	max   int
@@ -26,12 +27,14 @@ func (b *TurnBuffer) Validate() error {
 	return nil
 }
 
-func (b *TurnBuffer) Push(t *Turn) {
+func (b *TurnBuffer) Push(turn *Turn) {
 	if len(b.items) < b.max {
-		b.items = append(b.items, t)
+		b.items = append(b.items, turn)
 		return
 	}
-	b.items = append(b.items[1:], t)
+
+	noFirst := b.items[1:]
+	b.items = append(noFirst, turn)
 }
 
 func (b *TurnBuffer) Last(n int) []*Turn {
