@@ -249,11 +249,11 @@ func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.
 
 	session, _ := s.Get("sess-codex-1")
 	assert.Equal(t, 0, session.Turns.Len(), "token_count event should not create a turn")
-	assert.Equal(t, 100, session.Meta.TotalUsage.InputTokens)
-	assert.Equal(t, 60, session.Meta.TotalUsage.CachedInputTokens)
-	assert.Equal(t, 20, session.Meta.TotalUsage.OutputTokens)
-	assert.Equal(t, 5, session.Meta.TotalUsage.ReasoningOutputTokens)
-	assert.Equal(t, 125, session.Meta.TotalUsage.TotalTokens)
+	assert.Equal(t, 100, session.Info.TotalUsage.InputTokens)
+	assert.Equal(t, 60, session.Info.TotalUsage.CachedInputTokens)
+	assert.Equal(t, 20, session.Info.TotalUsage.OutputTokens)
+	assert.Equal(t, 5, session.Info.TotalUsage.ReasoningOutputTokens)
+	assert.Equal(t, 125, session.Info.TotalUsage.TotalTokens)
 }
 
 func TestCodex_InvalidJSON(t *testing.T) {
