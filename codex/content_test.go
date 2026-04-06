@@ -1,27 +1,24 @@
 package codex
 
 import (
-	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func provideCompleteEntry() *Entry {
-	return &Entry{
-		Timestamp: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
-		Type:      EntryTypeSessionMeta,
-		Payload:   json.RawMessage(`{"id":"sess-123"}`),
+func provideCompleteContentBlock() *ContentBlock {
+	return &ContentBlock{
+		Type: "input_text",
+		Text: "hello",
 	}
 }
 
-func TestEntry_Validate(t *testing.T) {
+func TestContentBlock_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *Entry
+		form *ContentBlock
 	}
 
 	tests := make([]*testCase, 0)
@@ -29,30 +26,21 @@ func TestEntry_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteEntry(),
+		form:        provideCompleteContentBlock(),
 	}
 	tests = append(tests, test)
 
 	test = &testCase{
-		_id:         "fail-nil-entry",
+		_id:         "fail-nil-block",
 		_shouldPass: false,
 		form:        nil,
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteEntry()
+	form := provideCompleteContentBlock()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",
-		_shouldPass: false,
-		form:        form,
-	}
-	tests = append(tests, test)
-
-	form = provideCompleteEntry()
-	form.Payload = nil
-	test = &testCase{
-		_id:         "fail-empty-payload",
 		_shouldPass: false,
 		form:        form,
 	}

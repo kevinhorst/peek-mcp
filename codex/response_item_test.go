@@ -1,27 +1,28 @@
 package codex
 
 import (
-	"encoding/json"
 	"testing"
-	"time"
 
+	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
 )
 
-func provideCompleteEntry() *Entry {
-	return &Entry{
-		Timestamp: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
-		Type:      EntryTypeSessionMeta,
-		Payload:   json.RawMessage(`{"id":"sess-123"}`),
+func provideCompleteResponseItem() *ResponseItem {
+	return &ResponseItem{
+		Type: "message",
+		Role: "assistant",
+		Content: []ContentBlock{
+			{Type: "output_text", Text: "done"},
+		},
 	}
 }
 
-func TestEntry_Validate(t *testing.T) {
+func TestResponseItem_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *Entry
+		form *ResponseItem
 	}
 
 	tests := make([]*testCase, 0)
@@ -29,18 +30,27 @@ func TestEntry_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteEntry(),
+		form:        provideCompleteResponseItem(),
+	}
+	tests = append(tests, test)
+
+	form := provideCompleteResponseItem()
+	form.Role = session.RoleDeveloper
+	test = &testCase{
+		_id:         "pass-developer-role",
+		_shouldPass: true,
+		form:        form,
 	}
 	tests = append(tests, test)
 
 	test = &testCase{
-		_id:         "fail-nil-entry",
+		_id:         "fail-nil-item",
 		_shouldPass: false,
 		form:        nil,
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteEntry()
+	form = provideCompleteResponseItem()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",
@@ -49,10 +59,10 @@ func TestEntry_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteEntry()
-	form.Payload = nil
+	form = provideCompleteResponseItem()
+	form.Role = "system"
 	test = &testCase{
-		_id:         "fail-empty-payload",
+		_id:         "fail-invalid-role",
 		_shouldPass: false,
 		form:        form,
 	}

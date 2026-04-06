@@ -1,27 +1,32 @@
 package codex
 
 import (
-	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func provideCompleteEntry() *Entry {
-	return &Entry{
-		Timestamp: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
-		Type:      EntryTypeSessionMeta,
-		Payload:   json.RawMessage(`{"id":"sess-123"}`),
+func provideCompleteEventMessage() *EventMessage {
+	return &EventMessage{
+		Type: EventTypeTokenCount,
+		Info: &EventInfo{
+			TotalTokenUsage: &TokenUsage{
+				InputTokens:           100,
+				CachedInputTokens:     60,
+				OutputTokens:          20,
+				ReasoningOutputTokens: 5,
+				TotalTokens:           125,
+			},
+		},
 	}
 }
 
-func TestEntry_Validate(t *testing.T) {
+func TestEventMessage_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *Entry
+		form *EventMessage
 	}
 
 	tests := make([]*testCase, 0)
@@ -29,18 +34,18 @@ func TestEntry_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteEntry(),
+		form:        provideCompleteEventMessage(),
 	}
 	tests = append(tests, test)
 
 	test = &testCase{
-		_id:         "fail-nil-entry",
+		_id:         "fail-nil-event-message",
 		_shouldPass: false,
 		form:        nil,
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteEntry()
+	form := provideCompleteEventMessage()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",
@@ -49,10 +54,10 @@ func TestEntry_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteEntry()
-	form.Payload = nil
+	form = provideCompleteEventMessage()
+	form.Info.TotalTokenUsage.TotalTokens = -1
 	test = &testCase{
-		_id:         "fail-empty-payload",
+		_id:         "fail-invalid-token-usage",
 		_shouldPass: false,
 		form:        form,
 	}

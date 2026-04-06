@@ -3,13 +3,12 @@ package codex
 import (
 	"testing"
 
-	"github.com/kevinhorst/peek-mcp/models"
-	"github.com/kevinhorst/peek-mcp/store"
+	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCodex_SessionMeta(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -28,13 +27,13 @@ func TestCodex_SessionMeta(t *testing.T) {
 
 	sess, ok := s.Get("sess-codex-1")
 	assert.True(t, ok, "session not created")
-	assert.Equal(t, models.SourceCodex, sess.Info.Source)
+	assert.Equal(t, session.SourceCodex, sess.Info.Source)
 	assert.Equal(t, "/home/user/project", sess.Info.CWD)
 	assert.Equal(t, "abc123", sess.Info.GitBranch)
 }
 
 func TestCodex_TurnContext(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -57,7 +56,7 @@ func TestCodex_TurnContext(t *testing.T) {
 }
 
 func TestCodex_UserMessage(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -84,7 +83,7 @@ func TestCodex_UserMessage(t *testing.T) {
 }
 
 func TestCodex_AssistantMessage(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -116,7 +115,7 @@ func TestCodex_AssistantMessage(t *testing.T) {
 }
 
 func TestCodex_FunctionCallSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -140,7 +139,7 @@ func TestCodex_FunctionCallSkipped(t *testing.T) {
 }
 
 func TestCodex_FunctionCallOutputSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -163,7 +162,7 @@ func TestCodex_FunctionCallOutputSkipped(t *testing.T) {
 }
 
 func TestCodex_ReasoningSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -186,7 +185,7 @@ func TestCodex_ReasoningSkipped(t *testing.T) {
 }
 
 func TestCodex_NoSessionMetaSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -203,7 +202,7 @@ func TestCodex_NoSessionMetaSkipped(t *testing.T) {
 }
 
 func TestCodex_EventMsgSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -222,7 +221,7 @@ func TestCodex_EventMsgSkipped(t *testing.T) {
 }
 
 func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -257,7 +256,7 @@ func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.
 }
 
 func TestCodex_InvalidJSON(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	assert.NotPanics(t, func() {

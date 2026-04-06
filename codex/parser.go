@@ -5,8 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kevinhorst/peek-mcp/models"
-	"github.com/kevinhorst/peek-mcp/store"
+	session "github.com/kevinhorst/peek-mcp/session"
 )
 
 const (
@@ -16,12 +15,12 @@ const (
 )
 
 type Parser struct {
-	store     *store.Store
-	sessionID string
+	store     *session.Store
+	sessionId session.Id
 	model     string
 }
 
-func NewParser(s *store.Store) *Parser {
+func NewParser(s *session.Store) *Parser {
 	return &Parser{store: s}
 }
 
@@ -57,9 +56,9 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
 		return
 	}
 
-	p.sessionID = meta.ID
+	p.sessionId = meta.Id
 
-	session := p.store.GetOrCreate(meta.ID, string(models.SourceCodex))
+	session := p.store.GetOrCreate(meta.Id, session.SourceCodex)
 	session.Info.CWD = meta.CWD
 	if !ts.IsZero() {
 		session.Info.LastActive = ts
@@ -83,7 +82,7 @@ func (p *Parser) handleTurnContext(payload json.RawMessage) {
 }
 
 func (p *Parser) handleResponseItem(payload json.RawMessage, ts time.Time) {
-	if p.sessionID == "" {
+	if p.sessionId == "" {
 		return
 	}
 
@@ -100,15 +99,15 @@ func (p *Parser) handleResponseItem(payload json.RawMessage, ts time.Time) {
 	}
 
 	switch item.Role {
-	case models.RoleUser:
+	case session.RoleUser:
 		p.handleUserMessage(&item, ts)
-	case models.RoleAssistant:
+	case session.RoleAssistant:
 		p.handleAssistantMessage(&item, ts)
 	}
 }
 
-func (p *Parser) handleEventMessage(payload json.RawMessage, ts time.Time) {
-	if p.sessionID == "" {
+func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time) {
+	if p.sessionId == "" {
 		return
 	}
 
@@ -123,11 +122,11 @@ func (p *Parser) handleEventMessage(payload json.RawMessage, ts time.Time) {
 		return
 	}
 
-	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
-	if !ts.IsZero() {
-		session.Info.LastActive = ts
+	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
+	if !timestamp.IsZero() {
+		current.Info.LastActive = timestamp
 	}
-	session.Info.TotalUsage = convertUsage(eventMessage.Info.TotalTokenUsage)
+	current.Info.TotalUsage = convertUsage(eventMessage.Info.TotalTokenUsage)
 }
 
 func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) {
@@ -136,13 +135,13 @@ func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) {
 		return
 	}
 
-	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
+	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
 	if !ts.IsZero() {
-		session.Info.LastActive = ts
+		current.Info.LastActive = ts
 	}
 
-	session.Turns.Push(&models.Turn{
-		Role:      models.RoleUser,
+	current.Turns.Push(&session.Turn{
+		Role:      session.RoleUser,
 		Text:      text,
 		Timestamp: ts,
 	})
@@ -154,16 +153,16 @@ func (p *Parser) handleAssistantMessage(item *ResponseItem, timestamp time.Time)
 		return
 	}
 
-	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
+	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
 	if !timestamp.IsZero() {
-		session.Info.LastActive = timestamp
+		current.Info.LastActive = timestamp
 	}
 	if p.model != "" {
-		session.Info.Model = p.model
+		current.Info.Model = p.model
 	}
 
-	session.Turns.Push(&models.Turn{
-		Role:      models.RoleAssistant,
+	current.Turns.Push(&session.Turn{
+		Role:      session.RoleAssistant,
 		Text:      text,
 		Timestamp: timestamp,
 		Model:     p.model,
@@ -183,12 +182,12 @@ func (p *Parser) extractText(blocks []ContentBlock, targetType string) string {
 	return builder.String()
 }
 
-func convertUsage(codexUsage *TokenUsage) models.Usage {
+func convertUsage(codexUsage *TokenUsage) session.Usage {
 	if codexUsage == nil {
-		return models.Usage{}
+		return session.Usage{}
 	}
 
-	return models.Usage{
+	return session.Usage{
 		InputTokens:           codexUsage.InputTokens,
 		CachedInputTokens:     codexUsage.CachedInputTokens,
 		OutputTokens:          codexUsage.OutputTokens,
