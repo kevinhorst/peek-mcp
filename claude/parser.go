@@ -6,20 +6,19 @@ import (
 	"strings"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/kevinhorst/peek-mcp/models"
-	"github.com/kevinhorst/peek-mcp/store"
+	"github.com/kevinhorst/peek-mcp/session"
 )
 
 const claudeTextContentType = "text"
 
 type Parser struct {
-	store          *store.Store
-	lastRequestID  string
-	pendingTurn    *models.Turn
-	pendingSession string
+	store            *session.Store
+	lastRequestID    string
+	pendingTurn      *session.Turn
+	pendingSessionId session.Id
 }
 
-func NewParser(s *store.Store) *Parser {
+func NewParser(s *session.Store) *Parser {
 	return &Parser{store: s}
 }
 
@@ -50,7 +49,7 @@ func (p *Parser) Flush() {
 }
 
 func (p *Parser) handleUser(entry *Entry) {
-	if entry.PromptID == "" {
+	if entry.PromptId == "" {
 		return
 	}
 
@@ -75,11 +74,11 @@ func (p *Parser) handleUser(entry *Entry) {
 	// Flush any pending assistant turn before adding user turn
 	p.flushPending()
 
-	session := p.store.GetOrCreate(entry.SessionID, string(models.SourceClaude))
-	p.updateMeta(session, entry, "")
+	current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
+	p.updateMeta(current, entry, "")
 
-	session.Turns.Push(&models.Turn{
-		Role:      models.RoleUser,
+	current.Turns.Push(&session.Turn{
+		Role:      session.RoleUser,
 		Text:      text,
 		Timestamp: entry.Timestamp,
 	})
@@ -97,16 +96,16 @@ func (p *Parser) handleAssistant(entry *Entry) {
 	text := extractTextBlocks(message.Content)
 	if text == "" {
 		// No text content (thinking-only or tool_use-only) — still update meta
-		if entry.SessionID != "" {
-			session := p.store.GetOrCreate(entry.SessionID, string(models.SourceClaude))
-			p.updateMeta(session, entry, message.Model)
+		if entry.SessionId != "" {
+			current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
+			p.updateMeta(current, entry, message.Model)
 		}
 		return
 	}
 
-	var usage *models.Usage
+	var usage *session.Usage
 	if message.Usage != nil {
-		usage = &models.Usage{
+		usage = &session.Usage{
 			InputTokens:              message.Usage.InputTokens,
 			OutputTokens:             message.Usage.OutputTokens,
 			CacheCreationInputTokens: message.Usage.CacheCreationInputTokens,
@@ -115,7 +114,7 @@ func (p *Parser) handleAssistant(entry *Entry) {
 	}
 
 	// Same requestId means this is a continuation of the same logical response
-	if entry.RequestID != "" && entry.RequestID == p.lastRequestID && p.pendingTurn != nil {
+	if entry.RequestI != "" && entry.RequestI == p.lastRequestID && p.pendingTurn != nil {
 		p.pendingTurn.Text += text
 		if usage != nil {
 			p.pendingTurn.Usage = usage
@@ -129,49 +128,49 @@ func (p *Parser) handleAssistant(entry *Entry) {
 	// Different requestId — flush previous and start new pending turn
 	p.flushPending()
 
-	p.lastRequestID = entry.RequestID
-	p.pendingSession = entry.SessionID
-	p.pendingTurn = &models.Turn{
-		Role:      models.RoleAssistant,
+	p.lastRequestID = entry.RequestI
+	p.pendingSessionId = entry.SessionId
+	p.pendingTurn = &session.Turn{
+		Role:      session.RoleAssistant,
 		Text:      text,
 		Timestamp: entry.Timestamp,
 		Model:     message.Model,
 		Usage:     usage,
 	}
 
-	session := p.store.GetOrCreate(entry.SessionID, string(models.SourceClaude))
-	p.updateMeta(session, entry, message.Model)
+	current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
+	p.updateMeta(current, entry, message.Model)
 }
 
 func (p *Parser) flushPending() {
-	if p.pendingTurn == nil || p.pendingSession == "" {
+	if p.pendingTurn == nil || p.pendingSessionId == "" {
 		return
 	}
 
-	session, ok := p.store.Get(p.pendingSession)
+	current, ok := p.store.Get(p.pendingSessionId)
 	if !ok {
 		p.pendingTurn = nil
-		p.pendingSession = ""
+		p.pendingSessionId = ""
 		p.lastRequestID = ""
 		return
 	}
 
 	if p.pendingTurn.Usage != nil {
-		session.Info.TotalUsage.Add(p.pendingTurn.Usage)
+		current.Info.TotalUsage.Add(p.pendingTurn.Usage)
 	}
 
-	session.Turns.Push(p.pendingTurn)
+	current.Turns.Push(p.pendingTurn)
 	p.pendingTurn = nil
-	p.pendingSession = ""
+	p.pendingSessionId = ""
 	p.lastRequestID = ""
 }
 
-func (p *Parser) updateMeta(session *models.Session, entry *Entry, model string) {
+func (p *Parser) updateMeta(session *session.Session, entry *Entry, model string) {
 	if !entry.Timestamp.IsZero() {
 		session.Info.LastActive = entry.Timestamp
 	}
-	if entry.CWD != "" {
-		session.Info.CWD = entry.CWD
+	if entry.CurrentWorkingDir != "" {
+		session.Info.CWD = entry.CurrentWorkingDir
 	}
 	if entry.GitBranch != "" {
 		session.Info.GitBranch = entry.GitBranch

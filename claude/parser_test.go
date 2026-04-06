@@ -3,12 +3,12 @@ package claude
 import (
 	"testing"
 
-	"github.com/kevinhorst/peek-mcp/store"
+	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestClaude_UserPrompt(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -38,7 +38,7 @@ func TestClaude_UserPrompt(t *testing.T) {
 }
 
 func TestClaude_ToolResultSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -61,7 +61,7 @@ func TestClaude_ToolResultSkipped(t *testing.T) {
 }
 
 func TestClaude_AssistantWithText(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -102,7 +102,7 @@ func TestClaude_AssistantWithText(t *testing.T) {
 }
 
 func TestClaude_AssistantThinkingOnlySkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -128,7 +128,7 @@ func TestClaude_AssistantThinkingOnlySkipped(t *testing.T) {
 }
 
 func TestClaude_SidechainSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -149,7 +149,7 @@ func TestClaude_SidechainSkipped(t *testing.T) {
 }
 
 func TestClaude_QueueOperationSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -165,7 +165,7 @@ func TestClaude_QueueOperationSkipped(t *testing.T) {
 }
 
 func TestClaude_NoPromptIDSkipped(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -187,7 +187,7 @@ func TestClaude_NoPromptIDSkipped(t *testing.T) {
 }
 
 func TestClaude_SameRequestIDMerged(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	// First chunk: thinking only (no text)
@@ -236,7 +236,7 @@ func TestClaude_SameRequestIDMerged(t *testing.T) {
 }
 
 func TestClaude_FullConversation(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	// User prompt
@@ -326,7 +326,7 @@ func TestClaude_FullConversation(t *testing.T) {
 }
 
 func TestClaude_InvalidJSON(t *testing.T) {
-	s := store.New(20)
+	s := session.New(20)
 	p := NewParser(s)
 
 	// Should not panic

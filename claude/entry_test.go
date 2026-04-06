@@ -9,7 +9,7 @@ import (
 func provideCompleteEntry() *Entry {
 	return &Entry{
 		Type:      EntryTypeUser,
-		SessionID: "sess-123",
+		SessionId: "sess-123",
 	}
 }
 
@@ -47,7 +47,7 @@ func TestEntry_Validate(t *testing.T) {
 	tests = append(tests, test)
 
 	form = provideCompleteEntry()
-	form.SessionID = ""
+	form.SessionId = ""
 	test = &testCase{
 		_id:         "fail-empty-session-id",
 		_shouldPass: false,
@@ -57,7 +57,7 @@ func TestEntry_Validate(t *testing.T) {
 
 	form = provideCompleteEntry()
 	form.Type = "queue-operation"
-	form.SessionID = ""
+	form.SessionId = ""
 	test = &testCase{
 		_id:         "pass-non-conversation-entry",
 		_shouldPass: true,

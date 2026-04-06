@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/kevinhorst/peek-mcp/session"
 )
 
 const (
@@ -12,15 +14,15 @@ const (
 )
 
 type Entry struct {
-	CWD         string          `json:"cwd"`
-	GitBranch   string          `json:"gitBranch"`
-	IsSidechain bool            `json:"isSidechain"`
-	Message     json.RawMessage `json:"message"`
-	PromptID    string          `json:"promptId"`
-	RequestID   string          `json:"requestId"`
-	SessionID   string          `json:"sessionId"`
-	Timestamp   time.Time       `json:"timestamp"`
-	Type        string          `json:"type"`
+	CurrentWorkingDir string          `json:"cwd"`
+	GitBranch         string          `json:"gitBranch"`
+	IsSidechain       bool            `json:"isSidechain"`
+	Message           json.RawMessage `json:"message"`
+	PromptId          string          `json:"promptId"`
+	RequestI          string          `json:"requestId"`
+	SessionId         session.Id      `json:"sessionId"`
+	Timestamp         time.Time       `json:"timestamp"`
+	Type              string          `json:"type"`
 }
 
 func (e *Entry) Validate() error {
@@ -30,7 +32,7 @@ func (e *Entry) Validate() error {
 	if e.Type == "" {
 		return errors.New("type must not be empty")
 	}
-	if (e.Type == EntryTypeUser || e.Type == EntryTypeAssistant) && e.SessionID == "" {
+	if (e.Type == EntryTypeUser || e.Type == EntryTypeAssistant) && e.SessionId == "" {
 		return errors.New("session_id must not be empty")
 	}
 	return nil
