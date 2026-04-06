@@ -29,11 +29,14 @@ func (e *Entry) Validate() error {
 	if e == nil {
 		return errors.New("claude entry is nil")
 	}
+
 	if e.Type == "" {
 		return errors.New("type must not be empty")
 	}
+
 	if (e.Type == EntryTypeUser || e.Type == EntryTypeAssistant) && e.SessionId == "" {
 		return errors.New("session_id must not be empty")
 	}
+
 	return nil
 }

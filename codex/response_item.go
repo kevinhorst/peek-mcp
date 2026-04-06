@@ -16,11 +16,14 @@ func (i *ResponseItem) Validate() error {
 	if i == nil {
 		return errors.New("codex response item is nil")
 	}
+
 	if i.Type == "" {
 		return errors.New("type must not be empty")
 	}
+
 	if i.Role != "" && i.Role != session.RoleUser && i.Role != session.RoleAssistant && i.Role != session.RoleDeveloper {
 		return errors.New("role must be empty, \"user\", \"assistant\", or \"developer\"")
 	}
+
 	return nil
 }

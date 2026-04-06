@@ -76,9 +76,10 @@ func TestCodex_UserMessage(t *testing.T) {
 	}`))
 
 	sess, _ := s.Get("sess-codex-1")
-	turns := sess.Turns.Last(10)
+	turns, ok := sess.Turns.Last(10)
+	assert.True(t, ok, "turns not created")
 	assert.Len(t, turns, 1)
-	assert.Equal(t, "user", turns[0].Role)
+	assert.Equal(t, session.RoleUser, turns[0].Role)
 	assert.Equal(t, "Fix the bug in auth", turns[0].Text)
 }
 
@@ -107,9 +108,10 @@ func TestCodex_AssistantMessage(t *testing.T) {
 	}`))
 
 	sess, _ := s.Get("sess-codex-1")
-	turns := sess.Turns.Last(10)
+	turns, ok := sess.Turns.Last(10)
+	assert.True(t, ok, "turns not created")
 	assert.Len(t, turns, 1)
-	assert.Equal(t, "assistant", turns[0].Role)
+	assert.Equal(t, session.RoleAssistant, turns[0].Role)
 	assert.Equal(t, "gpt-5.4", turns[0].Model)
 	assert.Equal(t, "I fixed the auth bug by updating the token validation.", turns[0].Text)
 }

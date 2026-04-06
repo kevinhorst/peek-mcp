@@ -11,14 +11,17 @@ func (m *EventMessage) Validate() error {
 	if m == nil {
 		return errors.New("codex event message is nil")
 	}
+
 	if m.Type == "" {
 		return errors.New("type must not be empty")
 	}
+
 	if m.Type == EventTypeTokenCount && m.Info != nil && m.Info.TotalTokenUsage != nil {
 		if err := m.Info.TotalTokenUsage.Validate(); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -38,20 +41,26 @@ func (u *TokenUsage) Validate() error {
 	if u == nil {
 		return errors.New("codex token usage is nil")
 	}
+
 	if u.InputTokens < 0 {
 		return errors.New("input_tokens must be non-negative")
 	}
+
 	if u.CachedInputTokens < 0 {
 		return errors.New("cached_input_tokens must be non-negative")
 	}
+
 	if u.OutputTokens < 0 {
 		return errors.New("output_tokens must be non-negative")
 	}
+
 	if u.ReasoningOutputTokens < 0 {
 		return errors.New("reasoning_output_tokens must be non-negative")
 	}
+
 	if u.TotalTokens < 0 {
 		return errors.New("total_tokens must be non-negative")
 	}
+
 	return nil
 }

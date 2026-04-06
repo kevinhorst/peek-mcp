@@ -26,11 +26,14 @@ func (e *Entry) Validate() error {
 	if e == nil {
 		return errors.New("codex entry is nil")
 	}
+
 	if e.Type == "" {
 		return errors.New("type must not be empty")
 	}
+
 	if len(e.Payload) == 0 {
 		return errors.New("payload must not be empty")
 	}
+
 	return nil
 }

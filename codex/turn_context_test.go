@@ -8,7 +8,7 @@ import (
 
 func provideCompleteTurnContext() *TurnContext {
 	return &TurnContext{
-		TurnID: "turn-123",
+		TurnId: "turn-123",
 		Model:  "gpt-5.4",
 		CWD:    "/project",
 	}
@@ -39,7 +39,7 @@ func TestTurnContext_Validate(t *testing.T) {
 	tests = append(tests, test)
 
 	form := provideCompleteTurnContext()
-	form.TurnID = ""
+	form.TurnId = ""
 	form.Model = ""
 	form.CWD = ""
 	test = &testCase{

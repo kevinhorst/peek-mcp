@@ -17,9 +17,11 @@ func (m *SessionMeta) Validate() error {
 	if m == nil {
 		return errors.New("codex session meta is nil")
 	}
+
 	if m.Id == "" {
 		return errors.New("id must not be empty")
 	}
+
 	return nil
 }
 
