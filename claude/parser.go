@@ -21,7 +21,7 @@ func NewParser(s *session.Store) *Parser {
 }
 
 func (p *Parser) ParseLine(line []byte) {
-	var entry Entry
+	entry := &Entry{}
 	if err := json.Unmarshal(line, &entry); err != nil {
 		return
 	}
@@ -36,9 +36,9 @@ func (p *Parser) ParseLine(line []byte) {
 
 	switch entry.Type {
 	case EntryTypeUser:
-		p.handleUser(&entry)
+		p.handleUser(entry)
 	case EntryTypeAssistant:
-		p.handleAssistant(&entry)
+		p.handleAssistant(entry)
 	}
 }
 
@@ -92,12 +92,11 @@ func (p *Parser) handleAssistant(entry *Entry) {
 	}
 
 	text := extractTextBlocks(message.Content)
-	if text == "" {
-		// No text content (thinking-only or tool_use-only) — still update meta
-		if entry.SessionId != "" {
-			current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
-			p.updateMeta(current, entry, message.Model)
-		}
+
+	// No text content (thinking-only or tool_use-only) — still update meta
+	if text == "" && entry.SessionId != "" {
+		current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
+		p.updateMeta(current, entry, message.Model)
 		return
 	}
 
@@ -167,12 +166,15 @@ func (p *Parser) updateMeta(session *session.Session, entry *Entry, model string
 	if !entry.Timestamp.IsZero() {
 		session.LastActive = entry.Timestamp
 	}
+
 	if entry.CurrentWorkingDir != "" {
 		session.CurrentWorkingDir = entry.CurrentWorkingDir
 	}
+
 	if entry.GitBranch != "" {
 		session.GitBranch = entry.GitBranch
 	}
+
 	if model != "" {
 		session.Model = model
 	}
@@ -186,12 +188,12 @@ func extractTextBlocks(raw json.RawMessage) string {
 
 	var builder strings.Builder
 	for _, block := range blocks {
-		if block.Type == "text" && block.Text != "" {
-			if builder.Len() > 0 {
-				builder.WriteString("\n")
-			}
-			builder.WriteString(block.Text)
+		if block.Type != "text" || block.Text == "" {
+			continue
 		}
+
+		builder.WriteString(block.Text + "\n")
 	}
+
 	return builder.String()
 }
