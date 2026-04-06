@@ -36,9 +36,9 @@ type Watcher struct {
 type watchedFilePath string
 
 type watchedFile struct {
-	offset  int64
-	partial []byte
-	parser  lineParser
+	offset int64
+	lines  []byte
+	parser lineParser
 }
 
 type lineParser interface {
@@ -148,28 +148,28 @@ func (w *Watcher) readNewLines(path string) {
 	}
 	defer file.Close()
 
-	info := w.getOrCreateFile(path)
-	if info.offset > 0 {
-		if _, err := file.Seek(info.offset, io.SeekStart); err != nil {
+	fileInfo := w.getOrCreateFile(path)
+	if fileInfo.offset > 0 {
+		if _, err := file.Seek(fileInfo.offset, io.SeekStart); err != nil {
 			return
 		}
 	}
 
-	appended, err := io.ReadAll(file)
+	newLines, err := io.ReadAll(file)
 	if err != nil {
 		return
 	}
 
-	info.offset += int64(len(appended))
+	fileInfo.offset += int64(len(newLines))
 
 	// Keep the unfinished trailing fragment, if any, and only send complete
 	// newline-delimited records to the parser.
-	buffer := make([]byte, 0, len(info.partial)+len(appended))
-	buffer = append(buffer, info.partial...)
-	buffer = append(buffer, appended...)
+	buffer := make([]byte, 0, len(fileInfo.lines)+len(newLines))
+	buffer = append(buffer, fileInfo.lines...)
+	buffer = append(buffer, newLines...)
 
-	info.partial = parseCompleteLines(buffer, info.parser)
-	info.parser.Flush()
+	fileInfo.lines = parseCompleteLines(buffer, fileInfo.parser)
+	fileInfo.parser.Flush()
 }
 
 func parseCompleteLines(buffer []byte, parser lineParser) []byte {
