@@ -1,4 +1,4 @@
-package models
+package session
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 )
 
 type Turn struct {
-	Role      string    `json:"role"`
+	Role      Role      `json:"role"`
 	Text      string    `json:"text"`
 	Timestamp time.Time `json:"timestamp"`
 	Model     string    `json:"model,omitempty"`

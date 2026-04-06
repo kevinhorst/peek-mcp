@@ -1,17 +1,17 @@
-package models
+package session
 
 import "errors"
 
 // TurnBuffer behaves like a circular buffer if full
 type TurnBuffer struct {
-	items []*Turn
-	max   int
+	capacity int
+	items    []*Turn
 }
 
 func NewTurnBuffer(capacity int) *TurnBuffer {
 	return &TurnBuffer{
-		items: make([]*Turn, 0, capacity),
-		max:   capacity,
+		capacity: capacity,
+		items:    make([]*Turn, 0, capacity),
 	}
 }
 
@@ -20,7 +20,7 @@ func (b *TurnBuffer) Validate() error {
 		return errors.New("turn buffer is nil")
 	}
 
-	if b.max <= 0 {
+	if b.capacity <= 0 {
 		return errors.New("turn buffer capacity must be positive")
 	}
 
@@ -28,7 +28,7 @@ func (b *TurnBuffer) Validate() error {
 }
 
 func (b *TurnBuffer) Push(turn *Turn) {
-	if len(b.items) < b.max {
+	if len(b.items) < b.capacity {
 		b.items = append(b.items, turn)
 		return
 	}
@@ -37,14 +37,14 @@ func (b *TurnBuffer) Push(turn *Turn) {
 	b.items = append(noFirst, turn)
 }
 
-func (b *TurnBuffer) Last(n int) []*Turn {
-	if n <= 0 || len(b.items) == 0 {
-		return nil
+func (b *TurnBuffer) Last(n int) ([]*Turn, bool) {
+	if len(b.items) == 0 {
+		return nil, false
 	}
 	if n > len(b.items) {
 		n = len(b.items)
 	}
-	return b.items[len(b.items)-n:]
+	return b.items[len(b.items)-n:], true
 }
 
 func (b *TurnBuffer) Len() int {

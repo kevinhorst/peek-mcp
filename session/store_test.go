@@ -1,11 +1,10 @@
-package store
+package session
 
 import (
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/kevinhorst/peek-mcp/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,8 +12,8 @@ func TestGetOrCreate_New(t *testing.T) {
 	s := New(10)
 	sess := s.GetOrCreate("s1", "claude")
 
-	assert.Equal(t, models.SessionID("s1"), sess.Info.ID)
-	assert.Equal(t, models.SourceClaude, sess.Info.Source)
+	assert.Equal(t, Id("s1"), sess.Info.Id)
+	assert.Equal(t, SourceClaude, sess.Info.Source)
 	assert.NotNil(t, sess.Turns)
 }
 
@@ -38,7 +37,7 @@ func TestGet_Found(t *testing.T) {
 
 	sess, ok := s.Get("s1")
 	assert.True(t, ok)
-	assert.Equal(t, models.SessionID("s1"), sess.Info.ID)
+	assert.Equal(t, Id("s1"), sess.Info.Id)
 }
 
 func TestList_Empty(t *testing.T) {
@@ -61,14 +60,14 @@ func TestList_SortedByLastActive(t *testing.T) {
 
 	list := s.List()
 	assert.Len(t, list, 3)
-	assert.Equal(t, models.SessionID("s2"), list[0].ID)
-	assert.Equal(t, models.SessionID("s3"), list[1].ID)
-	assert.Equal(t, models.SessionID("s1"), list[2].ID)
+	assert.Equal(t, Id("s2"), list[0].Id)
+	assert.Equal(t, Id("s3"), list[1].Id)
+	assert.Equal(t, Id("s1"), list[2].Id)
 }
 
 func TestMostRecent_Empty(t *testing.T) {
 	s := New(10)
-	_, ok := s.MostRecent()
+	_, ok := s.Last()
 	assert.False(t, ok)
 }
 
@@ -82,9 +81,9 @@ func TestMostRecent(t *testing.T) {
 	s2 := s.GetOrCreate("s2", "codex")
 	s2.Info.LastActive = now
 
-	sess, ok := s.MostRecent()
+	sess, ok := s.Last()
 	assert.True(t, ok)
-	assert.Equal(t, models.SessionID("s2"), sess.Info.ID)
+	assert.Equal(t, Id("s2"), sess.Info.Id)
 }
 
 func TestConcurrentAccess(t *testing.T) {
@@ -94,7 +93,7 @@ func TestConcurrentAccess(t *testing.T) {
 	// Concurrent readers and writers. Writers only use GetOrCreate (which holds the lock).
 	// This matches real usage: the watcher serializes all meta/turn writes behind its own mutex.
 	for i := 0; i < 50; i++ {
-		id := "session-" + string(rune('a'+i%10))
+		id := Id("session-" + string(rune('a'+i%10)))
 
 		wg.Add(1)
 		go func() {
@@ -106,7 +105,7 @@ func TestConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			s.List()
-			s.MostRecent()
+			s.Last()
 		}()
 	}
 
