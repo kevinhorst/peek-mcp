@@ -10,7 +10,7 @@ import (
 
 func TestCodex_SessionMeta(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -35,7 +35,7 @@ func TestCodex_SessionMeta(t *testing.T) {
 
 func TestCodex_TurnContext(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -58,7 +58,7 @@ func TestCodex_TurnContext(t *testing.T) {
 
 func TestCodex_UserMessage(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -85,7 +85,7 @@ func TestCodex_UserMessage(t *testing.T) {
 
 func TestCodex_AssistantMessage(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -117,7 +117,7 @@ func TestCodex_AssistantMessage(t *testing.T) {
 
 func TestCodex_FunctionCallSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -141,7 +141,7 @@ func TestCodex_FunctionCallSkipped(t *testing.T) {
 
 func TestCodex_FunctionCallOutputSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -164,7 +164,7 @@ func TestCodex_FunctionCallOutputSkipped(t *testing.T) {
 
 func TestCodex_ReasoningSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -187,7 +187,7 @@ func TestCodex_ReasoningSkipped(t *testing.T) {
 
 func TestCodex_NoSessionMetaSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:40.000Z",
@@ -204,7 +204,7 @@ func TestCodex_NoSessionMetaSkipped(t *testing.T) {
 
 func TestCodex_EventMsgSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -223,7 +223,7 @@ func TestCodex_EventMsgSkipped(t *testing.T) {
 
 func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -258,7 +258,7 @@ func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.
 
 func TestCodex_InvalidJSON(t *testing.T) {
 	s := store.New(20)
-	p := NewCodexParser(s)
+	p := NewParser(s)
 
 	assert.NotPanics(t, func() {
 		p.ParseLine([]byte(`not json`))

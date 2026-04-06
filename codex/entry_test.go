@@ -9,20 +9,20 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func provideCompleteCodexEntry() *CodexEntry {
-	return &CodexEntry{
+func provideCompleteEntry() *Entry {
+	return &Entry{
 		Timestamp: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
-		Type:      CodexEntryTypeSessionMeta,
+		Type:      EntryTypeSessionMeta,
 		Payload:   json.RawMessage(`{"id":"sess-123"}`),
 	}
 }
 
-func TestCodexEntry_Validate(t *testing.T) {
+func TestEntry_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *CodexEntry
+		form *Entry
 	}
 
 	tests := make([]*testCase, 0)
@@ -30,7 +30,7 @@ func TestCodexEntry_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteCodexEntry(),
+		form:        provideCompleteEntry(),
 	}
 	tests = append(tests, test)
 
@@ -41,7 +41,7 @@ func TestCodexEntry_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteCodexEntry()
+	form := provideCompleteEntry()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",
@@ -50,7 +50,7 @@ func TestCodexEntry_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteCodexEntry()
+	form = provideCompleteEntry()
 	form.Payload = nil
 	test = &testCase{
 		_id:         "fail-empty-payload",
@@ -67,20 +67,20 @@ func TestCodexEntry_Validate(t *testing.T) {
 	}
 }
 
-func provideCompleteCodexSessionMeta() *CodexSessionMeta {
-	return &CodexSessionMeta{
+func provideCompleteSessionMeta() *SessionMeta {
+	return &SessionMeta{
 		ID:         "sess-123",
 		CWD:        "/project",
 		CLIVersion: "1.0.0",
 	}
 }
 
-func TestCodexSessionMeta_Validate(t *testing.T) {
+func TestSessionMeta_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *CodexSessionMeta
+		form *SessionMeta
 	}
 
 	tests := make([]*testCase, 0)
@@ -88,7 +88,7 @@ func TestCodexSessionMeta_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteCodexSessionMeta(),
+		form:        provideCompleteSessionMeta(),
 	}
 	tests = append(tests, test)
 
@@ -99,7 +99,7 @@ func TestCodexSessionMeta_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteCodexSessionMeta()
+	form := provideCompleteSessionMeta()
 	form.ID = ""
 	test = &testCase{
 		_id:         "fail-empty-id",
@@ -116,20 +116,20 @@ func TestCodexSessionMeta_Validate(t *testing.T) {
 	}
 }
 
-func provideCompleteCodexTurnContext() *CodexTurnContext {
-	return &CodexTurnContext{
+func provideCompleteTurnContext() *TurnContext {
+	return &TurnContext{
 		TurnID: "turn-123",
 		Model:  "gpt-5.4",
 		CWD:    "/project",
 	}
 }
 
-func TestCodexTurnContext_Validate(t *testing.T) {
+func TestTurnContext_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *CodexTurnContext
+		form *TurnContext
 	}
 
 	tests := make([]*testCase, 0)
@@ -137,7 +137,7 @@ func TestCodexTurnContext_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteCodexTurnContext(),
+		form:        provideCompleteTurnContext(),
 	}
 	tests = append(tests, test)
 
@@ -148,7 +148,7 @@ func TestCodexTurnContext_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteCodexTurnContext()
+	form := provideCompleteTurnContext()
 	form.TurnID = ""
 	form.Model = ""
 	form.CWD = ""
@@ -167,22 +167,22 @@ func TestCodexTurnContext_Validate(t *testing.T) {
 	}
 }
 
-func provideCompleteCodexResponseItem() *CodexResponseItem {
-	return &CodexResponseItem{
+func provideCompleteResponseItem() *ResponseItem {
+	return &ResponseItem{
 		Type: "message",
 		Role: "assistant",
-		Content: []CodexContentBlock{
+		Content: []ContentBlock{
 			{Type: "output_text", Text: "done"},
 		},
 	}
 }
 
-func TestCodexResponseItem_Validate(t *testing.T) {
+func TestResponseItem_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *CodexResponseItem
+		form *ResponseItem
 	}
 
 	tests := make([]*testCase, 0)
@@ -190,11 +190,11 @@ func TestCodexResponseItem_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteCodexResponseItem(),
+		form:        provideCompleteResponseItem(),
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteCodexResponseItem()
+	form := provideCompleteResponseItem()
 	form.Role = models.RoleDeveloper
 	test = &testCase{
 		_id:         "pass-developer-role",
@@ -210,7 +210,7 @@ func TestCodexResponseItem_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteCodexResponseItem()
+	form = provideCompleteResponseItem()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",
@@ -219,7 +219,7 @@ func TestCodexResponseItem_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteCodexResponseItem()
+	form = provideCompleteResponseItem()
 	form.Role = "system"
 	test = &testCase{
 		_id:         "fail-invalid-role",
@@ -236,11 +236,11 @@ func TestCodexResponseItem_Validate(t *testing.T) {
 	}
 }
 
-func provideCompleteCodexEventMessage() *CodexEventMessage {
-	return &CodexEventMessage{
-		Type: CodexEventTypeTokenCount,
-		Info: &CodexEventInfo{
-			TotalTokenUsage: &CodexTokenUsage{
+func provideCompleteEventMessage() *EventMessage {
+	return &EventMessage{
+		Type: EventTypeTokenCount,
+		Info: &EventInfo{
+			TotalTokenUsage: &TokenUsage{
 				InputTokens:           100,
 				CachedInputTokens:     60,
 				OutputTokens:          20,
@@ -251,12 +251,12 @@ func provideCompleteCodexEventMessage() *CodexEventMessage {
 	}
 }
 
-func TestCodexEventMessage_Validate(t *testing.T) {
+func TestEventMessage_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *CodexEventMessage
+		form *EventMessage
 	}
 
 	tests := make([]*testCase, 0)
@@ -264,7 +264,7 @@ func TestCodexEventMessage_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteCodexEventMessage(),
+		form:        provideCompleteEventMessage(),
 	}
 	tests = append(tests, test)
 
@@ -275,7 +275,7 @@ func TestCodexEventMessage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteCodexEventMessage()
+	form := provideCompleteEventMessage()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",
@@ -284,7 +284,7 @@ func TestCodexEventMessage_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form = provideCompleteCodexEventMessage()
+	form = provideCompleteEventMessage()
 	form.Info.TotalTokenUsage.TotalTokens = -1
 	test = &testCase{
 		_id:         "fail-invalid-token-usage",
@@ -301,19 +301,19 @@ func TestCodexEventMessage_Validate(t *testing.T) {
 	}
 }
 
-func provideCompleteCodexContentBlock() *CodexContentBlock {
-	return &CodexContentBlock{
+func provideCompleteContentBlock() *ContentBlock {
+	return &ContentBlock{
 		Type: "input_text",
 		Text: "hello",
 	}
 }
 
-func TestCodexContentBlock_Validate(t *testing.T) {
+func TestContentBlock_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
 
-		form *CodexContentBlock
+		form *ContentBlock
 	}
 
 	tests := make([]*testCase, 0)
@@ -321,7 +321,7 @@ func TestCodexContentBlock_Validate(t *testing.T) {
 	test := &testCase{
 		_id:         "pass-all-ok",
 		_shouldPass: true,
-		form:        provideCompleteCodexContentBlock(),
+		form:        provideCompleteContentBlock(),
 	}
 	tests = append(tests, test)
 
@@ -332,7 +332,7 @@ func TestCodexContentBlock_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	form := provideCompleteCodexContentBlock()
+	form := provideCompleteContentBlock()
 	form.Type = ""
 	test = &testCase{
 		_id:         "fail-empty-type",

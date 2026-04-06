@@ -15,20 +15,20 @@ const (
 	codexOutputTextType = "output_text"
 )
 
-type CodexParser struct {
+type Parser struct {
 	store     *store.Store
 	sessionID string
 	model     string
 }
 
-func NewCodexParser(s *store.Store) *CodexParser {
-	return &CodexParser{store: s}
+func NewParser(s *store.Store) *Parser {
+	return &Parser{store: s}
 }
 
-func (p *CodexParser) Flush() {}
+func (p *Parser) Flush() {}
 
-func (p *CodexParser) ParseLine(line []byte) {
-	var entry CodexEntry
+func (p *Parser) ParseLine(line []byte) {
+	var entry Entry
 	if err := json.Unmarshal(line, &entry); err != nil {
 		return
 	}
@@ -37,19 +37,19 @@ func (p *CodexParser) ParseLine(line []byte) {
 	}
 
 	switch entry.Type {
-	case CodexEntryTypeSessionMeta:
+	case EntryTypeSessionMeta:
 		p.handleSessionMeta(entry.Payload, entry.Timestamp)
-	case CodexEntryTypeTurnContext:
+	case EntryTypeTurnContext:
 		p.handleTurnContext(entry.Payload)
-	case CodexEntryTypeResponseItem:
+	case EntryTypeResponseItem:
 		p.handleResponseItem(entry.Payload, entry.Timestamp)
-	case CodexEntryTypeEventMessage:
+	case EntryTypeEventMessage:
 		p.handleEventMessage(entry.Payload, entry.Timestamp)
 	}
 }
 
-func (p *CodexParser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
-	var meta CodexSessionMeta
+func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
+	var meta SessionMeta
 	if err := json.Unmarshal(payload, &meta); err != nil {
 		return
 	}
@@ -69,8 +69,8 @@ func (p *CodexParser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
 	}
 }
 
-func (p *CodexParser) handleTurnContext(payload json.RawMessage) {
-	var turnContext CodexTurnContext
+func (p *Parser) handleTurnContext(payload json.RawMessage) {
+	var turnContext TurnContext
 	if err := json.Unmarshal(payload, &turnContext); err != nil {
 		return
 	}
@@ -82,12 +82,12 @@ func (p *CodexParser) handleTurnContext(payload json.RawMessage) {
 	}
 }
 
-func (p *CodexParser) handleResponseItem(payload json.RawMessage, ts time.Time) {
+func (p *Parser) handleResponseItem(payload json.RawMessage, ts time.Time) {
 	if p.sessionID == "" {
 		return
 	}
 
-	var item CodexResponseItem
+	var item ResponseItem
 	if err := json.Unmarshal(payload, &item); err != nil {
 		return
 	}
@@ -107,19 +107,19 @@ func (p *CodexParser) handleResponseItem(payload json.RawMessage, ts time.Time) 
 	}
 }
 
-func (p *CodexParser) handleEventMessage(payload json.RawMessage, ts time.Time) {
+func (p *Parser) handleEventMessage(payload json.RawMessage, ts time.Time) {
 	if p.sessionID == "" {
 		return
 	}
 
-	var eventMessage CodexEventMessage
+	var eventMessage EventMessage
 	if err := json.Unmarshal(payload, &eventMessage); err != nil {
 		return
 	}
 	if err := eventMessage.Validate(); err != nil {
 		return
 	}
-	if eventMessage.Type != CodexEventTypeTokenCount || eventMessage.Info == nil || eventMessage.Info.TotalTokenUsage == nil {
+	if eventMessage.Type != EventTypeTokenCount || eventMessage.Info == nil || eventMessage.Info.TotalTokenUsage == nil {
 		return
 	}
 
@@ -127,10 +127,10 @@ func (p *CodexParser) handleEventMessage(payload json.RawMessage, ts time.Time) 
 	if !ts.IsZero() {
 		session.Info.LastActive = ts
 	}
-	session.Info.TotalUsage = convertCodexUsage(eventMessage.Info.TotalTokenUsage)
+	session.Info.TotalUsage = convertUsage(eventMessage.Info.TotalTokenUsage)
 }
 
-func (p *CodexParser) handleUserMessage(item *CodexResponseItem, ts time.Time) {
+func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) {
 	text := p.extractText(item.Content, codexInputTextType)
 	if text == "" {
 		return
@@ -148,7 +148,7 @@ func (p *CodexParser) handleUserMessage(item *CodexResponseItem, ts time.Time) {
 	})
 }
 
-func (p *CodexParser) handleAssistantMessage(item *CodexResponseItem, timestamp time.Time) {
+func (p *Parser) handleAssistantMessage(item *ResponseItem, timestamp time.Time) {
 	text := p.extractText(item.Content, codexOutputTextType)
 	if text == "" {
 		return
@@ -170,7 +170,7 @@ func (p *CodexParser) handleAssistantMessage(item *CodexResponseItem, timestamp 
 	})
 }
 
-func (p *CodexParser) extractText(blocks []CodexContentBlock, targetType string) string {
+func (p *Parser) extractText(blocks []ContentBlock, targetType string) string {
 	var builder strings.Builder
 	for _, block := range blocks {
 		if block.Type == targetType && block.Text != "" {
@@ -183,7 +183,7 @@ func (p *CodexParser) extractText(blocks []CodexContentBlock, targetType string)
 	return builder.String()
 }
 
-func convertCodexUsage(codexUsage *CodexTokenUsage) models.Usage {
+func convertUsage(codexUsage *TokenUsage) models.Usage {
 	if codexUsage == nil {
 		return models.Usage{}
 	}

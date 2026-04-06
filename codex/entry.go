@@ -9,22 +9,22 @@ import (
 )
 
 const (
-	CodexEntryTypeSessionMeta  = "session_meta"
-	CodexEntryTypeTurnContext  = "turn_context"
-	CodexEntryTypeResponseItem = "response_item"
-	CodexEntryTypeEventMessage = "event_msg"
+	EntryTypeSessionMeta  = "session_meta"
+	EntryTypeTurnContext  = "turn_context"
+	EntryTypeResponseItem = "response_item"
+	EntryTypeEventMessage = "event_msg"
 
-	CodexResponseItemTypeMessage = "message"
-	CodexEventTypeTokenCount     = "token_count"
+	ResponseItemTypeMessage = "message"
+	EventTypeTokenCount     = "token_count"
 )
 
-type CodexEntry struct {
+type Entry struct {
 	Timestamp time.Time       `json:"timestamp"`
 	Type      string          `json:"type"`
 	Payload   json.RawMessage `json:"payload"`
 }
 
-func (e *CodexEntry) Validate() error {
+func (e *Entry) Validate() error {
 	if e == nil {
 		return errors.New("codex entry is nil")
 	}
@@ -37,14 +37,14 @@ func (e *CodexEntry) Validate() error {
 	return nil
 }
 
-type CodexSessionMeta struct {
-	ID         string        `json:"id"`
-	CWD        string        `json:"cwd"`
-	CLIVersion string        `json:"cli_version"`
-	Git        *CodexGitInfo `json:"git"`
+type SessionMeta struct {
+	ID         string   `json:"id"`
+	CWD        string   `json:"cwd"`
+	CLIVersion string   `json:"cli_version"`
+	Git        *GitInfo `json:"git"`
 }
 
-func (m *CodexSessionMeta) Validate() error {
+func (m *SessionMeta) Validate() error {
 	if m == nil {
 		return errors.New("codex session meta is nil")
 	}
@@ -54,18 +54,18 @@ func (m *CodexSessionMeta) Validate() error {
 	return nil
 }
 
-type CodexGitInfo struct {
+type GitInfo struct {
 	CommitHash    string `json:"commit_hash"`
 	RepositoryURL string `json:"repository_url"`
 }
 
-type CodexTurnContext struct {
+type TurnContext struct {
 	TurnID string `json:"turn_id"`
 	Model  string `json:"model"`
 	CWD    string `json:"cwd"`
 }
 
-func (c *CodexTurnContext) Validate() error {
+func (c *TurnContext) Validate() error {
 	if c == nil {
 		return errors.New("codex turn context is nil")
 	}
@@ -75,13 +75,13 @@ func (c *CodexTurnContext) Validate() error {
 	return nil
 }
 
-type CodexResponseItem struct {
-	Type    string              `json:"type"`
-	Role    string              `json:"role"`
-	Content []CodexContentBlock `json:"content"`
+type ResponseItem struct {
+	Type    string         `json:"type"`
+	Role    string         `json:"role"`
+	Content []ContentBlock `json:"content"`
 }
 
-func (i *CodexResponseItem) Validate() error {
+func (i *ResponseItem) Validate() error {
 	if i == nil {
 		return errors.New("codex response item is nil")
 	}
@@ -94,12 +94,12 @@ func (i *CodexResponseItem) Validate() error {
 	return nil
 }
 
-type CodexContentBlock struct {
+type ContentBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
-func (b *CodexContentBlock) Validate() error {
+func (b *ContentBlock) Validate() error {
 	if b == nil {
 		return errors.New("codex content block is nil")
 	}
@@ -109,19 +109,19 @@ func (b *CodexContentBlock) Validate() error {
 	return nil
 }
 
-type CodexEventMessage struct {
-	Type string          `json:"type"`
-	Info *CodexEventInfo `json:"info"`
+type EventMessage struct {
+	Type string     `json:"type"`
+	Info *EventInfo `json:"info"`
 }
 
-func (m *CodexEventMessage) Validate() error {
+func (m *EventMessage) Validate() error {
 	if m == nil {
 		return errors.New("codex event message is nil")
 	}
 	if m.Type == "" {
 		return errors.New("type must not be empty")
 	}
-	if m.Type == CodexEventTypeTokenCount && m.Info != nil && m.Info.TotalTokenUsage != nil {
+	if m.Type == EventTypeTokenCount && m.Info != nil && m.Info.TotalTokenUsage != nil {
 		if err := m.Info.TotalTokenUsage.Validate(); err != nil {
 			return err
 		}
@@ -129,11 +129,11 @@ func (m *CodexEventMessage) Validate() error {
 	return nil
 }
 
-type CodexEventInfo struct {
-	TotalTokenUsage *CodexTokenUsage `json:"total_token_usage"`
+type EventInfo struct {
+	TotalTokenUsage *TokenUsage `json:"total_token_usage"`
 }
 
-type CodexTokenUsage struct {
+type TokenUsage struct {
 	InputTokens           int `json:"input_tokens"`
 	CachedInputTokens     int `json:"cached_input_tokens"`
 	OutputTokens          int `json:"output_tokens"`
@@ -141,7 +141,7 @@ type CodexTokenUsage struct {
 	TotalTokens           int `json:"total_tokens"`
 }
 
-func (u *CodexTokenUsage) Validate() error {
+func (u *TokenUsage) Validate() error {
 	if u == nil {
 		return errors.New("codex token usage is nil")
 	}
