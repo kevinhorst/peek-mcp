@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func provideCompleteSessionMeta() *SessionMeta {
-	return &SessionMeta{
+func provideCompleteSessionMeta() *SessionInfo {
+	return &SessionInfo{
 		ID:         SessionID("sess-123"),
 		Source:     SourceClaude,
 		CWD:        "/home/user/project",
@@ -23,7 +23,7 @@ func TestSessionMeta_Validate(t *testing.T) {
 		_id         string
 		_shouldPass bool
 
-		form *SessionMeta
+		form *SessionInfo
 	}
 
 	tests := make([]*testCase, 0)

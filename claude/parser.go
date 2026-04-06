@@ -1,28 +1,30 @@
-package parser
+package claude
 
 import (
 	"encoding/json"
+	"log"
 	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/kevinhorst/peek-mcp/models"
 	"github.com/kevinhorst/peek-mcp/store"
 )
 
 const claudeTextContentType = "text"
 
-type ClaudeParser struct {
+type Parser struct {
 	store          *store.Store
 	lastRequestID  string
 	pendingTurn    *models.Turn
 	pendingSession string
 }
 
-func NewClaudeParser(s *store.Store) *ClaudeParser {
-	return &ClaudeParser{store: s}
+func NewParser(s *store.Store) *Parser {
+	return &Parser{store: s}
 }
 
-func (p *ClaudeParser) ParseLine(line []byte) {
-	var entry models.ClaudeEntry
+func (p *Parser) ParseLine(line []byte) {
+	var entry ClaudeEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
 		return
 	}
@@ -33,25 +35,26 @@ func (p *ClaudeParser) ParseLine(line []byte) {
 	if entry.IsSidechain {
 		return
 	}
+	log.Printf("ClaudeParser: [%s], entry: %s", spew.Sdump(p), entry)
 
 	switch entry.Type {
-	case models.ClaudeEntryTypeUser:
+	case ClaudeEntryTypeUser:
 		p.handleUser(&entry)
-	case models.ClaudeEntryTypeAssistant:
+	case ClaudeEntryTypeAssistant:
 		p.handleAssistant(&entry)
 	}
 }
 
-func (p *ClaudeParser) Flush() {
+func (p *Parser) Flush() {
 	p.flushPending()
 }
 
-func (p *ClaudeParser) handleUser(entry *models.ClaudeEntry) {
+func (p *Parser) handleUser(entry *ClaudeEntry) {
 	if entry.PromptID == "" {
 		return
 	}
 
-	var message models.ClaudeMessage
+	var message ClaudeMessage
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
 		return
 	}
@@ -75,15 +78,15 @@ func (p *ClaudeParser) handleUser(entry *models.ClaudeEntry) {
 	session := p.store.GetOrCreate(entry.SessionID, string(models.SourceClaude))
 	p.updateMeta(session, entry, "")
 
-	session.Turns.Push(models.Turn{
+	session.Turns.Push(&models.Turn{
 		Role:      models.RoleUser,
 		Text:      text,
 		Timestamp: entry.Timestamp,
 	})
 }
 
-func (p *ClaudeParser) handleAssistant(entry *models.ClaudeEntry) {
-	var message models.ClaudeMessage
+func (p *Parser) handleAssistant(entry *ClaudeEntry) {
+	var message ClaudeMessage
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
 		return
 	}
@@ -132,7 +135,7 @@ func (p *ClaudeParser) handleAssistant(entry *models.ClaudeEntry) {
 	p.updateMeta(session, entry, message.Model)
 }
 
-func (p *ClaudeParser) flushPending() {
+func (p *Parser) flushPending() {
 	if p.pendingTurn == nil || p.pendingSession == "" {
 		return
 	}
@@ -146,32 +149,32 @@ func (p *ClaudeParser) flushPending() {
 	}
 
 	if p.pendingTurn.Usage != nil {
-		session.Meta.TotalUsage.Add(p.pendingTurn.Usage)
+		session.Info.TotalUsage.Add(p.pendingTurn.Usage)
 	}
 
-	session.Turns.Push(*p.pendingTurn)
+	session.Turns.Push(p.pendingTurn)
 	p.pendingTurn = nil
 	p.pendingSession = ""
 	p.lastRequestID = ""
 }
 
-func (p *ClaudeParser) updateMeta(session *models.Session, entry *models.ClaudeEntry, model string) {
+func (p *Parser) updateMeta(session *models.Session, entry *ClaudeEntry, model string) {
 	if !entry.Timestamp.IsZero() {
-		session.Meta.LastActive = entry.Timestamp
+		session.Info.LastActive = entry.Timestamp
 	}
 	if entry.CWD != "" {
-		session.Meta.CWD = entry.CWD
+		session.Info.CWD = entry.CWD
 	}
 	if entry.GitBranch != "" {
-		session.Meta.GitBranch = entry.GitBranch
+		session.Info.GitBranch = entry.GitBranch
 	}
 	if model != "" {
-		session.Meta.Model = model
+		session.Info.Model = model
 	}
 }
 
 func extractTextBlocks(raw json.RawMessage) string {
-	var blocks []models.ClaudeContentBlock
+	var blocks []ClaudeContentBlock
 	if err := json.Unmarshal(raw, &blocks); err != nil {
 		return ""
 	}
@@ -188,7 +191,7 @@ func extractTextBlocks(raw json.RawMessage) string {
 	return builder.String()
 }
 
-func convertUsage(claudeUsage *models.ClaudeUsage) *models.Usage {
+func convertUsage(claudeUsage *ClaudeUsage) *models.Usage {
 	if claudeUsage == nil {
 		return nil
 	}

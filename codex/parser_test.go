@@ -1,4 +1,4 @@
-package parser
+package codex
 
 import (
 	"testing"
@@ -28,9 +28,9 @@ func TestCodex_SessionMeta(t *testing.T) {
 
 	sess, ok := s.Get("sess-codex-1")
 	assert.True(t, ok, "session not created")
-	assert.Equal(t, models.SourceCodex, sess.Meta.Source)
-	assert.Equal(t, "/home/user/project", sess.Meta.CWD)
-	assert.Equal(t, "abc123", sess.Meta.GitBranch)
+	assert.Equal(t, models.SourceCodex, sess.Info.Source)
+	assert.Equal(t, "/home/user/project", sess.Info.CWD)
+	assert.Equal(t, "abc123", sess.Info.GitBranch)
 }
 
 func TestCodex_TurnContext(t *testing.T) {

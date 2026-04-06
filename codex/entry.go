@@ -1,9 +1,11 @@
-package models
+package codex
 
 import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/kevinhorst/peek-mcp/models"
 )
 
 const (
@@ -86,7 +88,7 @@ func (i *CodexResponseItem) Validate() error {
 	if i.Type == "" {
 		return errors.New("type must not be empty")
 	}
-	if i.Role != "" && i.Role != RoleUser && i.Role != RoleAssistant && i.Role != RoleDeveloper {
+	if i.Role != "" && i.Role != models.RoleUser && i.Role != models.RoleAssistant && i.Role != models.RoleDeveloper {
 		return errors.New("role must be empty, \"user\", \"assistant\", or \"developer\"")
 	}
 	return nil

@@ -1,9 +1,11 @@
-package models
+package claude
 
 import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/kevinhorst/peek-mcp/models"
 )
 
 const (
@@ -12,15 +14,15 @@ const (
 )
 
 type ClaudeEntry struct {
-	Type        string          `json:"type"`
-	SessionID   string          `json:"sessionId"`
-	Timestamp   time.Time       `json:"timestamp"`
 	CWD         string          `json:"cwd"`
 	GitBranch   string          `json:"gitBranch"`
 	IsSidechain bool            `json:"isSidechain"`
+	Message     json.RawMessage `json:"message"`
 	PromptID    string          `json:"promptId"`
 	RequestID   string          `json:"requestId"`
-	Message     json.RawMessage `json:"message"`
+	SessionID   string          `json:"sessionId"`
+	Timestamp   time.Time       `json:"timestamp"`
+	Type        string          `json:"type"`
 }
 
 func (e *ClaudeEntry) Validate() error {
@@ -47,7 +49,7 @@ func (m *ClaudeMessage) Validate() error {
 	if m == nil {
 		return errors.New("claude message is nil")
 	}
-	if m.Role != "" && m.Role != RoleUser && m.Role != RoleAssistant {
+	if m.Role != "" && m.Role != models.RoleUser && m.Role != models.RoleAssistant {
 		return errors.New("role must be empty, \"user\", or \"assistant\"")
 	}
 	if m.Usage != nil {
@@ -69,18 +71,23 @@ func (u *ClaudeUsage) Validate() error {
 	if u == nil {
 		return errors.New("claude usage is nil")
 	}
+
 	if u.InputTokens < 0 {
 		return errors.New("input_tokens must be non-negative")
 	}
+
 	if u.OutputTokens < 0 {
 		return errors.New("output_tokens must be non-negative")
 	}
+
 	if u.CacheCreationInputTokens < 0 {
 		return errors.New("cache_creation_input_tokens must be non-negative")
 	}
+
 	if u.CacheReadInputTokens < 0 {
 		return errors.New("cache_read_input_tokens must be non-negative")
 	}
+
 	return nil
 }
 

@@ -1,4 +1,4 @@
-package parser
+package claude
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 
 func TestClaude_UserPrompt(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"type": "user",
@@ -33,13 +33,13 @@ func TestClaude_UserPrompt(t *testing.T) {
 	assert.Len(t, turns, 1)
 	assert.Equal(t, "user", turns[0].Role)
 	assert.Equal(t, "What does this function do?", turns[0].Text)
-	assert.Equal(t, "/home/user/project", sess.Meta.CWD)
-	assert.Equal(t, "main", sess.Meta.GitBranch)
+	assert.Equal(t, "/home/user/project", sess.Info.CWD)
+	assert.Equal(t, "main", sess.Info.GitBranch)
 }
 
 func TestClaude_ToolResultSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"type": "user",
@@ -62,7 +62,7 @@ func TestClaude_ToolResultSkipped(t *testing.T) {
 
 func TestClaude_AssistantWithText(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"type": "assistant",
@@ -103,7 +103,7 @@ func TestClaude_AssistantWithText(t *testing.T) {
 
 func TestClaude_AssistantThinkingOnlySkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"type": "assistant",
@@ -129,7 +129,7 @@ func TestClaude_AssistantThinkingOnlySkipped(t *testing.T) {
 
 func TestClaude_SidechainSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"type": "user",
@@ -150,7 +150,7 @@ func TestClaude_SidechainSkipped(t *testing.T) {
 
 func TestClaude_QueueOperationSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"type": "queue-operation",
@@ -166,7 +166,7 @@ func TestClaude_QueueOperationSkipped(t *testing.T) {
 
 func TestClaude_NoPromptIDSkipped(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
 		"type": "user",
@@ -188,7 +188,7 @@ func TestClaude_NoPromptIDSkipped(t *testing.T) {
 
 func TestClaude_SameRequestIDMerged(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	// First chunk: thinking only (no text)
 	p.ParseLine([]byte(`{
@@ -237,7 +237,7 @@ func TestClaude_SameRequestIDMerged(t *testing.T) {
 
 func TestClaude_FullConversation(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	// User prompt
 	p.ParseLine([]byte(`{
@@ -321,13 +321,13 @@ func TestClaude_FullConversation(t *testing.T) {
 	assert.Equal(t, "user", turns[2].Role)
 	assert.Equal(t, "Now fix the bug", turns[2].Text)
 
-	assert.Equal(t, "claude-sonnet-4-20250514", sess.Meta.Model)
-	assert.Equal(t, 50, sess.Meta.TotalUsage.InputTokens)
+	assert.Equal(t, "claude-sonnet-4-20250514", sess.Info.Model)
+	assert.Equal(t, 50, sess.Info.TotalUsage.InputTokens)
 }
 
 func TestClaude_InvalidJSON(t *testing.T) {
 	s := store.New(20)
-	p := NewClaudeParser(s)
+	p := NewParser(s)
 
 	// Should not panic
 	assert.NotPanics(t, func() {

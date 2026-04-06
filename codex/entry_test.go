@@ -1,10 +1,11 @@
-package models
+package codex
 
 import (
 	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -194,7 +195,7 @@ func TestCodexResponseItem_Validate(t *testing.T) {
 	tests = append(tests, test)
 
 	form := provideCompleteCodexResponseItem()
-	form.Role = RoleDeveloper
+	form.Role = models.RoleDeveloper
 	test = &testCase{
 		_id:         "pass-developer-role",
 		_shouldPass: true,

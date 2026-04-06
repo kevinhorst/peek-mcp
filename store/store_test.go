@@ -13,8 +13,8 @@ func TestGetOrCreate_New(t *testing.T) {
 	s := New(10)
 	sess := s.GetOrCreate("s1", "claude")
 
-	assert.Equal(t, models.SessionID("s1"), sess.Meta.ID)
-	assert.Equal(t, models.SourceClaude, sess.Meta.Source)
+	assert.Equal(t, models.SessionID("s1"), sess.Info.ID)
+	assert.Equal(t, models.SourceClaude, sess.Info.Source)
 	assert.NotNil(t, sess.Turns)
 }
 
@@ -38,7 +38,7 @@ func TestGet_Found(t *testing.T) {
 
 	sess, ok := s.Get("s1")
 	assert.True(t, ok)
-	assert.Equal(t, models.SessionID("s1"), sess.Meta.ID)
+	assert.Equal(t, models.SessionID("s1"), sess.Info.ID)
 }
 
 func TestList_Empty(t *testing.T) {
@@ -51,13 +51,13 @@ func TestList_SortedByLastActive(t *testing.T) {
 	now := time.Now()
 
 	s1 := s.GetOrCreate("s1", "claude")
-	s1.Meta.LastActive = now.Add(-2 * time.Hour)
+	s1.Info.LastActive = now.Add(-2 * time.Hour)
 
 	s2 := s.GetOrCreate("s2", "codex")
-	s2.Meta.LastActive = now
+	s2.Info.LastActive = now
 
 	s3 := s.GetOrCreate("s3", "claude")
-	s3.Meta.LastActive = now.Add(-1 * time.Hour)
+	s3.Info.LastActive = now.Add(-1 * time.Hour)
 
 	list := s.List()
 	assert.Len(t, list, 3)
@@ -77,14 +77,14 @@ func TestMostRecent(t *testing.T) {
 	now := time.Now()
 
 	s1 := s.GetOrCreate("s1", "claude")
-	s1.Meta.LastActive = now.Add(-1 * time.Hour)
+	s1.Info.LastActive = now.Add(-1 * time.Hour)
 
 	s2 := s.GetOrCreate("s2", "codex")
-	s2.Meta.LastActive = now
+	s2.Info.LastActive = now
 
 	sess, ok := s.MostRecent()
 	assert.True(t, ok)
-	assert.Equal(t, models.SessionID("s2"), sess.Meta.ID)
+	assert.Equal(t, models.SessionID("s2"), sess.Info.ID)
 }
 
 func TestConcurrentAccess(t *testing.T) {

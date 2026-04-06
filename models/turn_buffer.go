@@ -3,16 +3,13 @@ package models
 import "errors"
 
 type TurnBuffer struct {
-	items []Turn
+	items []*Turn
 	max   int
 }
 
 func NewTurnBuffer(capacity int) *TurnBuffer {
-	if capacity <= 0 {
-		capacity = 1
-	}
 	return &TurnBuffer{
-		items: make([]Turn, 0, capacity),
+		items: make([]*Turn, 0, capacity),
 		max:   capacity,
 	}
 }
@@ -21,13 +18,15 @@ func (b *TurnBuffer) Validate() error {
 	if b == nil {
 		return errors.New("turn buffer is nil")
 	}
+
 	if b.max <= 0 {
 		return errors.New("turn buffer capacity must be positive")
 	}
+
 	return nil
 }
 
-func (b *TurnBuffer) Push(t Turn) {
+func (b *TurnBuffer) Push(t *Turn) {
 	if len(b.items) < b.max {
 		b.items = append(b.items, t)
 		return
@@ -35,7 +34,7 @@ func (b *TurnBuffer) Push(t Turn) {
 	b.items = append(b.items[1:], t)
 }
 
-func (b *TurnBuffer) Last(n int) []Turn {
+func (b *TurnBuffer) Last(n int) []*Turn {
 	if n <= 0 || len(b.items) == 0 {
 		return nil
 	}

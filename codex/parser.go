@@ -1,4 +1,4 @@
-package parser
+package codex
 
 import (
 	"encoding/json"
@@ -28,7 +28,7 @@ func NewCodexParser(s *store.Store) *CodexParser {
 func (p *CodexParser) Flush() {}
 
 func (p *CodexParser) ParseLine(line []byte) {
-	var entry models.CodexEntry
+	var entry CodexEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
 		return
 	}
@@ -37,19 +37,19 @@ func (p *CodexParser) ParseLine(line []byte) {
 	}
 
 	switch entry.Type {
-	case models.CodexEntryTypeSessionMeta:
+	case CodexEntryTypeSessionMeta:
 		p.handleSessionMeta(entry.Payload, entry.Timestamp)
-	case models.CodexEntryTypeTurnContext:
+	case CodexEntryTypeTurnContext:
 		p.handleTurnContext(entry.Payload)
-	case models.CodexEntryTypeResponseItem:
+	case CodexEntryTypeResponseItem:
 		p.handleResponseItem(entry.Payload, entry.Timestamp)
-	case models.CodexEntryTypeEventMessage:
+	case CodexEntryTypeEventMessage:
 		p.handleEventMessage(entry.Payload, entry.Timestamp)
 	}
 }
 
 func (p *CodexParser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
-	var meta models.CodexSessionMeta
+	var meta CodexSessionMeta
 	if err := json.Unmarshal(payload, &meta); err != nil {
 		return
 	}
@@ -60,17 +60,17 @@ func (p *CodexParser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
 	p.sessionID = meta.ID
 
 	session := p.store.GetOrCreate(meta.ID, string(models.SourceCodex))
-	session.Meta.CWD = meta.CWD
+	session.Info.CWD = meta.CWD
 	if !ts.IsZero() {
-		session.Meta.LastActive = ts
+		session.Info.LastActive = ts
 	}
 	if meta.Git != nil {
-		session.Meta.GitBranch = meta.Git.CommitHash
+		session.Info.GitBranch = meta.Git.CommitHash
 	}
 }
 
 func (p *CodexParser) handleTurnContext(payload json.RawMessage) {
-	var turnContext models.CodexTurnContext
+	var turnContext CodexTurnContext
 	if err := json.Unmarshal(payload, &turnContext); err != nil {
 		return
 	}
@@ -87,7 +87,7 @@ func (p *CodexParser) handleResponseItem(payload json.RawMessage, ts time.Time) 
 		return
 	}
 
-	var item models.CodexResponseItem
+	var item CodexResponseItem
 	if err := json.Unmarshal(payload, &item); err != nil {
 		return
 	}
@@ -112,25 +112,25 @@ func (p *CodexParser) handleEventMessage(payload json.RawMessage, ts time.Time) 
 		return
 	}
 
-	var eventMessage models.CodexEventMessage
+	var eventMessage CodexEventMessage
 	if err := json.Unmarshal(payload, &eventMessage); err != nil {
 		return
 	}
 	if err := eventMessage.Validate(); err != nil {
 		return
 	}
-	if eventMessage.Type != models.CodexEventTypeTokenCount || eventMessage.Info == nil || eventMessage.Info.TotalTokenUsage == nil {
+	if eventMessage.Type != CodexEventTypeTokenCount || eventMessage.Info == nil || eventMessage.Info.TotalTokenUsage == nil {
 		return
 	}
 
 	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
 	if !ts.IsZero() {
-		session.Meta.LastActive = ts
+		session.Info.LastActive = ts
 	}
-	session.Meta.TotalUsage = convertCodexUsage(eventMessage.Info.TotalTokenUsage)
+	session.Info.TotalUsage = convertCodexUsage(eventMessage.Info.TotalTokenUsage)
 }
 
-func (p *CodexParser) handleUserMessage(item *models.CodexResponseItem, ts time.Time) {
+func (p *CodexParser) handleUserMessage(item *CodexResponseItem, ts time.Time) {
 	text := p.extractText(item.Content, codexInputTextType)
 	if text == "" {
 		return
@@ -138,39 +138,39 @@ func (p *CodexParser) handleUserMessage(item *models.CodexResponseItem, ts time.
 
 	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
 	if !ts.IsZero() {
-		session.Meta.LastActive = ts
+		session.Info.LastActive = ts
 	}
 
-	session.Turns.Push(models.Turn{
+	session.Turns.Push(&models.Turn{
 		Role:      models.RoleUser,
 		Text:      text,
 		Timestamp: ts,
 	})
 }
 
-func (p *CodexParser) handleAssistantMessage(item *models.CodexResponseItem, ts time.Time) {
+func (p *CodexParser) handleAssistantMessage(item *CodexResponseItem, timestamp time.Time) {
 	text := p.extractText(item.Content, codexOutputTextType)
 	if text == "" {
 		return
 	}
 
 	session := p.store.GetOrCreate(p.sessionID, string(models.SourceCodex))
-	if !ts.IsZero() {
-		session.Meta.LastActive = ts
+	if !timestamp.IsZero() {
+		session.Info.LastActive = timestamp
 	}
 	if p.model != "" {
-		session.Meta.Model = p.model
+		session.Info.Model = p.model
 	}
 
-	session.Turns.Push(models.Turn{
+	session.Turns.Push(&models.Turn{
 		Role:      models.RoleAssistant,
 		Text:      text,
-		Timestamp: ts,
+		Timestamp: timestamp,
 		Model:     p.model,
 	})
 }
 
-func (p *CodexParser) extractText(blocks []models.CodexContentBlock, targetType string) string {
+func (p *CodexParser) extractText(blocks []CodexContentBlock, targetType string) string {
 	var builder strings.Builder
 	for _, block := range blocks {
 		if block.Type == targetType && block.Text != "" {
@@ -183,7 +183,7 @@ func (p *CodexParser) extractText(blocks []models.CodexContentBlock, targetType 
 	return builder.String()
 }
 
-func convertCodexUsage(codexUsage *models.CodexTokenUsage) models.Usage {
+func convertCodexUsage(codexUsage *CodexTokenUsage) models.Usage {
 	if codexUsage == nil {
 		return models.Usage{}
 	}

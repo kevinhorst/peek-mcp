@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type SessionMeta struct {
+type SessionInfo struct {
 	ID         SessionID     `json:"id"`
 	Source     SessionSource `json:"source"`
 	CWD        string        `json:"cwd,omitempty"`
@@ -16,7 +16,7 @@ type SessionMeta struct {
 	FilePath   string        `json:"-"`
 }
 
-func (m *SessionMeta) Validate() error {
+func (m *SessionInfo) Validate() error {
 	if m == nil {
 		return errors.New("session meta is nil")
 	}

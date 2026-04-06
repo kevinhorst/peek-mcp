@@ -7,15 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func makeTurn(text string) Turn {
-	return Turn{
+func makeTurn(text string) *Turn {
+	return &Turn{
 		Role:      "user",
 		Text:      text,
 		Timestamp: time.Now(),
 	}
 }
 
-func turnTexts(turns []Turn) []string {
+func turnTexts(turns []*Turn) []string {
 	out := make([]string, len(turns))
 	for i, t := range turns {
 		out[i] = t.Text

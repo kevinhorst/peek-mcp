@@ -32,7 +32,7 @@ func (s *Store) GetOrCreate(id, source string) *models.Session {
 	}
 
 	session := &models.Session{
-		Meta: &models.SessionMeta{
+		Info: &models.SessionInfo{
 			ID:     sessionID,
 			Source: sessionSource,
 		},
@@ -49,13 +49,13 @@ func (s *Store) Get(id string) (*models.Session, bool) {
 	return session, ok
 }
 
-func (s *Store) List() []models.SessionMeta {
+func (s *Store) List() []models.SessionInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]models.SessionMeta, 0, len(s.sessions))
+	result := make([]models.SessionInfo, 0, len(s.sessions))
 	for _, session := range s.sessions {
-		result = append(result, *session.Meta)
+		result = append(result, *session.Info)
 	}
 
 	sort.Slice(result, func(i, j int) bool {
@@ -71,7 +71,7 @@ func (s *Store) MostRecent() (*models.Session, bool) {
 
 	var best *models.Session
 	for _, session := range s.sessions {
-		if best == nil || session.Meta.LastActive.After(best.Meta.LastActive) {
+		if best == nil || session.Info.LastActive.After(best.Info.LastActive) {
 			best = session
 		}
 	}

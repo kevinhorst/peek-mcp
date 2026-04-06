@@ -9,7 +9,7 @@ import (
 
 func provideCompleteSession() *Session {
 	return &Session{
-		Meta: &SessionMeta{
+		Info: &SessionInfo{
 			ID:         SessionID("sess-123"),
 			Source:     SourceClaude,
 			LastActive: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
@@ -46,7 +46,7 @@ func TestSession_Validate(t *testing.T) {
 
 	// fail-nil-meta
 	form := provideCompleteSession()
-	form.Meta = nil
+	form.Info = nil
 	test = &testCase{
 		_id:         "fail-nil-meta",
 		_shouldPass: false,
@@ -56,7 +56,7 @@ func TestSession_Validate(t *testing.T) {
 
 	// fail-invalid-meta
 	form = provideCompleteSession()
-	form.Meta.ID = ""
+	form.Info.ID = ""
 	test = &testCase{
 		_id:         "fail-invalid-meta",
 		_shouldPass: false,

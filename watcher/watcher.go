@@ -13,7 +13,8 @@ import (
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/kevinhorst/peek-mcp/parser"
+	"github.com/kevinhorst/peek-mcp/claude"
+	"github.com/kevinhorst/peek-mcp/codex"
 	"github.com/kevinhorst/peek-mcp/store"
 )
 
@@ -45,9 +46,9 @@ type lineParser interface {
 	Flush()
 }
 
-func New(s *store.Store, claudeHome, codexHome string) *Watcher {
+func New(store *store.Store, claudeHome, codexHome string) *Watcher {
 	return &Watcher{
-		store:      s,
+		store:      store,
 		claudeHome: claudeHome,
 		codexHome:  codexHome,
 		files:      make(map[watchedFilePath]*watchedFile),
@@ -74,9 +75,30 @@ func (w *Watcher) Run(ctx context.Context) error {
 			return ctx.Err()
 		case event, ok := <-watcher.Events:
 			if !ok {
+				log.Println("watcher closed")
 				return nil
 			}
-			w.handleEvent(watcher, event)
+			if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) {
+				continue
+			}
+
+			// new directory, new session has been started
+			path := event.Name
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				if !event.Has(fsnotify.Create) {
+					continue
+				}
+
+				err = watcher.Add(path)
+				if err != nil {
+					fmt.Println("Warning: watcher.Add:", err)
+				}
+				continue
+			}
+			// new or changed file
+			if strings.HasSuffix(path, jsonlSuffix) {
+				w.readNewLines(path)
+			}
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return nil
@@ -92,12 +114,14 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		log.Printf("watcher %s is not a directory", root)
 		return
 	}
+	log.Printf("watcher %s is a directory", root)
 
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() {
+		if entry.IsDir() {
+			log.Printf("Watcher.walkAndWatch: %s is a directory", path)
 			err = watcher.Add(path)
 			if err != nil {
 				return err
@@ -111,30 +135,6 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 	})
 	if err != nil {
 		log.Printf("watcher error: %v", err)
-	}
-}
-
-func (w *Watcher) handleEvent(watcher *fsnotify.Watcher, event fsnotify.Event) {
-	filePath := event.Name
-	if event.Has(fsnotify.Create) {
-		info, err := os.Stat(filePath)
-		if err != nil {
-			return
-		}
-		if info.IsDir() {
-			err = watcher.Add(filePath)
-			if err != nil {
-				fmt.Println(err)
-			}
-			return
-		}
-		if strings.HasSuffix(filePath, jsonlSuffix) {
-			w.readNewLines(filePath)
-		}
-	}
-
-	if event.Has(fsnotify.Write) && strings.HasSuffix(filePath, jsonlSuffix) {
-		w.readNewLines(filePath)
 	}
 }
 
@@ -205,9 +205,9 @@ func (w *Watcher) getOrCreateFile(path string) *watchedFile {
 
 	file := &watchedFile{}
 	if w.isClaude(path) {
-		file.parser = parser.NewClaudeParser(w.store)
+		file.parser = claude.NewParser(w.store)
 	} else {
-		file.parser = parser.NewCodexParser(w.store)
+		file.parser = codex.NewCodexParser(w.store)
 	}
 	w.files[key] = file
 	return file
