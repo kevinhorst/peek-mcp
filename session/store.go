@@ -37,6 +37,15 @@ func (s *Store) GetOrCreate(id Id, source Source) *Session {
 	return session
 }
 
+func (s *Store) Create(id Id, source Source) {
+	session := &Session{
+		Id:     id,
+		Source: source,
+		Turns:  NewTurnBuffer(s.depth),
+	}
+	s.sessions[id] = session
+}
+
 func (s *Store) Get(id Id) (*Session, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

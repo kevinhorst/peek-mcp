@@ -33,17 +33,18 @@ func (b *TurnBuffer) Push(turn *Turn) {
 		return
 	}
 
-	noFirst := b.items[1:]
-	b.items = append(noFirst, turn)
+	b.items = append(b.items[1:], turn)
 }
 
 func (b *TurnBuffer) Last(n int) ([]*Turn, bool) {
 	if len(b.items) == 0 {
 		return nil, false
 	}
+
 	if n > len(b.items) {
 		n = len(b.items)
 	}
+
 	return b.items[len(b.items)-n:], true
 }
 
