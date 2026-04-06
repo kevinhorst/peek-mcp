@@ -3,13 +3,13 @@ package session
 import "errors"
 
 type Usage struct {
-	InputTokens              int `json:"input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 	CachedInputTokens        int `json:"cached_input_tokens,omitempty"`
+	InputTokens              int `json:"input_tokens"`
 	OutputTokens             int `json:"output_tokens"`
 	ReasoningOutputTokens    int `json:"reasoning_output_tokens,omitempty"`
 	TotalTokens              int `json:"total_tokens,omitempty"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 }
 
 func (u *Usage) Validate() error {

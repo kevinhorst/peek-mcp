@@ -13,7 +13,7 @@ type Store struct {
 	depth    int
 }
 
-func New(depth int) *Store {
+func NewStore(depth int) *Store {
 	return &Store{
 		sessions: make(map[Id]*Session),
 		depth:    depth,
@@ -29,11 +29,9 @@ func (s *Store) GetOrCreate(id Id, source Source) *Session {
 	}
 
 	session := &Session{
-		Info: &Info{
-			Id:     id,
-			Source: source,
-		},
-		Turns: NewTurnBuffer(s.depth),
+		Id:     id,
+		Source: source,
+		Turns:  NewTurnBuffer(s.depth),
 	}
 	s.sessions[id] = session
 	return session
@@ -51,24 +49,18 @@ func (s *Store) Get(id Id) (*Session, bool) {
 	return session, ok
 }
 
-func (s *Store) List() []*Info {
+func (s *Store) List() []*Session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sessions := s.SortByLastActiveAsc()
 
-	result := make([]*Info, 0, len(s.sessions))
-	for _, session := range sessions {
-		result = append(result, session.Info)
-	}
-
-	return result
+	return s.sortByLastActiveDesc()
 }
 
 func (s *Store) Last() (*Session, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	sessions := s.SortByLastActiveAsc()
+	sessions := s.sortByLastActiveDesc()
 	if len(sessions) == 0 {
 		return nil, false
 	}
@@ -76,10 +68,10 @@ func (s *Store) Last() (*Session, bool) {
 	return sessions[0], true
 }
 
-func (s *Store) SortByLastActiveAsc() []*Session {
+func (s *Store) sortByLastActiveDesc() []*Session {
 	sessions := slices.Collect(maps.Values(s.sessions))
 	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].Info.LastActive.Before(sessions[j].Info.LastActive)
+		return sessions[j].LastActive.Before(sessions[i].LastActive)
 	})
 
 	return sessions
