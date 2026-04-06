@@ -15,7 +15,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/codex"
-	"github.com/kevinhorst/peek-mcp/store"
+	"github.com/kevinhorst/peek-mcp/session"
 )
 
 const (
@@ -25,7 +25,7 @@ const (
 )
 
 type Watcher struct {
-	store      *store.Store
+	store      *session.Store
 	claudeHome string
 	codexHome  string
 
@@ -46,7 +46,7 @@ type lineParser interface {
 	Flush()
 }
 
-func New(store *store.Store, claudeHome, codexHome string) *Watcher {
+func New(store *session.Store, claudeHome, codexHome string) *Watcher {
 	return &Watcher{
 		store:      store,
 		claudeHome: claudeHome,
@@ -207,7 +207,7 @@ func (w *Watcher) getOrCreateFile(path string) *watchedFile {
 	if w.isClaude(path) {
 		file.parser = claude.NewParser(w.store)
 	} else {
-		file.parser = codex.NewCodexParser(w.store)
+		file.parser = codex.NewParser(w.store)
 	}
 	w.files[key] = file
 	return file
