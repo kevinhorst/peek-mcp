@@ -8,7 +8,7 @@ import (
 )
 
 func TestCodex_SessionMeta(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -27,13 +27,13 @@ func TestCodex_SessionMeta(t *testing.T) {
 
 	sess, ok := s.Get("sess-codex-1")
 	assert.True(t, ok, "session not created")
-	assert.Equal(t, session.SourceCodex, sess.Info.Source)
-	assert.Equal(t, "/home/user/project", sess.Info.CWD)
-	assert.Equal(t, "abc123", sess.Info.GitBranch)
+	assert.Equal(t, session.SourceCodex, sess.Source)
+	assert.Equal(t, "/home/user/project", sess.CurrentWorkingDir)
+	assert.Equal(t, "abc123", sess.GitBranch)
 }
 
 func TestCodex_TurnContext(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -56,7 +56,7 @@ func TestCodex_TurnContext(t *testing.T) {
 }
 
 func TestCodex_UserMessage(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -84,7 +84,7 @@ func TestCodex_UserMessage(t *testing.T) {
 }
 
 func TestCodex_AssistantMessage(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -117,7 +117,7 @@ func TestCodex_AssistantMessage(t *testing.T) {
 }
 
 func TestCodex_FunctionCallSkipped(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -141,7 +141,7 @@ func TestCodex_FunctionCallSkipped(t *testing.T) {
 }
 
 func TestCodex_FunctionCallOutputSkipped(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -164,7 +164,7 @@ func TestCodex_FunctionCallOutputSkipped(t *testing.T) {
 }
 
 func TestCodex_ReasoningSkipped(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -187,7 +187,7 @@ func TestCodex_ReasoningSkipped(t *testing.T) {
 }
 
 func TestCodex_NoSessionMetaSkipped(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -204,7 +204,7 @@ func TestCodex_NoSessionMetaSkipped(t *testing.T) {
 }
 
 func TestCodex_EventMsgSkipped(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -223,7 +223,7 @@ func TestCodex_EventMsgSkipped(t *testing.T) {
 }
 
 func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	p.ParseLine([]byte(`{
@@ -250,15 +250,15 @@ func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.
 
 	session, _ := s.Get("sess-codex-1")
 	assert.Equal(t, 0, session.Turns.Len(), "token_count event should not create a turn")
-	assert.Equal(t, 100, session.Info.TotalUsage.InputTokens)
-	assert.Equal(t, 60, session.Info.TotalUsage.CachedInputTokens)
-	assert.Equal(t, 20, session.Info.TotalUsage.OutputTokens)
-	assert.Equal(t, 5, session.Info.TotalUsage.ReasoningOutputTokens)
-	assert.Equal(t, 125, session.Info.TotalUsage.TotalTokens)
+	assert.Equal(t, 100, session.TotalUsage.InputTokens)
+	assert.Equal(t, 60, session.TotalUsage.CachedInputTokens)
+	assert.Equal(t, 20, session.TotalUsage.OutputTokens)
+	assert.Equal(t, 5, session.TotalUsage.ReasoningOutputTokens)
+	assert.Equal(t, 125, session.TotalUsage.TotalTokens)
 }
 
 func TestCodex_InvalidJSON(t *testing.T) {
-	s := session.New(20)
+	s := session.NewStore(20)
 	p := NewParser(s)
 
 	assert.NotPanics(t, func() {

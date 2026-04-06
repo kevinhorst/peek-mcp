@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	session "github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/session"
 )
 
 const (
@@ -58,13 +58,13 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
 
 	p.sessionId = meta.Id
 
-	session := p.store.GetOrCreate(meta.Id, session.SourceCodex)
-	session.Info.CWD = meta.CWD
+	current := p.store.GetOrCreate(meta.Id, session.SourceCodex)
+	current.CurrentWorkingDir = meta.CWD
 	if !ts.IsZero() {
-		session.Info.LastActive = ts
+		current.LastActive = ts
 	}
 	if meta.Git != nil {
-		session.Info.GitBranch = meta.Git.CommitHash
+		current.GitBranch = meta.Git.CommitHash
 	}
 }
 
@@ -124,9 +124,9 @@ func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time
 
 	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
 	if !timestamp.IsZero() {
-		current.Info.LastActive = timestamp
+		current.LastActive = timestamp
 	}
-	current.Info.TotalUsage = convertUsage(eventMessage.Info.TotalTokenUsage)
+	current.TotalUsage = convertUsage(eventMessage.Info.TotalTokenUsage)
 }
 
 func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) {
@@ -137,7 +137,7 @@ func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) {
 
 	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
 	if !ts.IsZero() {
-		current.Info.LastActive = ts
+		current.LastActive = ts
 	}
 
 	current.Turns.Push(&session.Turn{
@@ -155,10 +155,10 @@ func (p *Parser) handleAssistantMessage(item *ResponseItem, timestamp time.Time)
 
 	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
 	if !timestamp.IsZero() {
-		current.Info.LastActive = timestamp
+		current.LastActive = timestamp
 	}
 	if p.model != "" {
-		current.Info.Model = p.model
+		current.Model = p.model
 	}
 
 	current.Turns.Push(&session.Turn{
