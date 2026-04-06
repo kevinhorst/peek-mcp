@@ -5,30 +5,34 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/kevinhorst/peek-mcp/store"
+	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func Register(srv *server.MCPServer, s *store.Store) {
-	srv.AddTool(
+const (
+	DefaultReturnedTurns = 5
+)
+
+func Register(server *server.MCPServer, store *session.Store) {
+	server.AddTool(
 		mcp.NewTool("session_latest",
 			mcp.WithDescription("Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out."),
 			mcp.WithNumber("n",
 				mcp.Description("Number of turns to return (default 5)"),
 			),
 		),
-		sessionLatestHandler(s),
+		sessionLatestHandler(store),
 	)
 
-	srv.AddTool(
+	server.AddTool(
 		mcp.NewTool("session_list",
 			mcp.WithDescription("Lists all known sessions with metadata: session ID, working directory, git branch, last activity timestamp, total token usage, and model."),
 		),
-		sessionListHandler(s),
+		sessionListHandler(store),
 	)
 
-	srv.AddTool(
+	server.AddTool(
 		mcp.NewTool("session_get",
 			mcp.WithDescription("Returns the last N turns from a specific session by ID."),
 			mcp.WithString("id",
@@ -39,75 +43,87 @@ func Register(srv *server.MCPServer, s *store.Store) {
 				mcp.Description("Number of turns to return (default 5)"),
 			),
 		),
-		sessionGetHandler(s),
+		sessionGetHandler(store),
 	)
 }
 
-func sessionLatestHandler(s *store.Store) server.ToolHandlerFunc {
+func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		n := getIntParam(request, "n", 5)
+		turnNumber := DefaultReturnedTurns
+		n := intArgFromRequest(request, "n")
+		if n > 0 {
+			turnNumber = n
+		}
 
-		session, ok := s.MostRecent()
+		lastSession, ok := s.Last()
 		if !ok {
-			return mcp.NewToolResultText("No sessions found"), nil
+			return mcp.NewToolResultText("session_latest: No sessions found"), nil
 		}
 
-		turns := session.Turns.Last(n)
-		data, err := json.Marshal(turns)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling turns: %w", err)
+		turns, ok := lastSession.Turns.Last(turnNumber)
+		if !ok {
+			return mcp.NewToolResultText("No turns found"), nil
 		}
-		return mcp.NewToolResultText(string(data)), nil
+
+		return respondWithJson(turns)
 	}
 }
 
-func sessionListHandler(s *store.Store) server.ToolHandlerFunc {
+func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		list := s.List()
-		data, err := json.Marshal(list)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling sessions: %w", err)
-		}
-		return mcp.NewToolResultText(string(data)), nil
+		return respondWithJson(s.List())
 	}
 }
 
-func sessionGetHandler(s *store.Store) server.ToolHandlerFunc {
+func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
-		id, ok := args["id"].(string)
+
+		id, ok := args["id"].(session.Id)
 		if !ok || id == "" {
 			return mcp.NewToolResultError("id parameter is required"), nil
 		}
 
-		n := getIntParam(request, "n", 5)
+		turnNumber := DefaultReturnedTurns
+		n := intArgFromRequest(request, "n")
+		if n > 0 {
+			turnNumber = n
+		}
 
-		session, ok := s.Get(id)
+		currentSession, ok := s.Get(id)
 		if !ok {
 			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
 		}
 
-		turns := session.Turns.Last(n)
-		data, err := json.Marshal(turns)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling turns: %w", err)
+		turns, ok := currentSession.Turns.Last(turnNumber)
+		if !ok {
+			return mcp.NewToolResultError("No turns found"), nil
 		}
-		return mcp.NewToolResultText(string(data)), nil
+
+		return respondWithJson(turns)
 	}
 }
 
-func getIntParam(request mcp.CallToolRequest, name string, defaultVal int) int {
+func intArgFromRequest(request mcp.CallToolRequest, name string) int {
 	args := request.GetArguments()
-	v, ok := args[name]
+	value, ok := args[name]
 	if !ok {
-		return defaultVal
+		return 0
 	}
-	f, ok := v.(float64)
+
+	floatVal, ok := value.(float64)
 	if !ok {
-		return defaultVal
+		return 0
 	}
-	if f <= 0 {
-		return defaultVal
+
+	return int(floatVal)
+}
+
+func respondWithJson(response any) (*mcp.CallToolResult, error) {
+	data, err := json.Marshal(response)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling turns: %w", err)
 	}
-	return int(f)
+
+	return mcp.NewToolResultText(string(data)), nil
 }
