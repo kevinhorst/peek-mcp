@@ -18,13 +18,16 @@ func (m *Message) Validate() error {
 	if m == nil {
 		return errors.New("claude message is nil")
 	}
+
 	if m.Role != "" && m.Role != session.RoleUser && m.Role != session.RoleAssistant {
 		return errors.New("role must be empty, \"user\", or \"assistant\"")
 	}
+
 	if m.Usage != nil {
 		if err := m.Usage.Validate(); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }

@@ -13,7 +13,7 @@ const claudeTextContentType = "text"
 
 type Parser struct {
 	store            *session.Store
-	lastRequestID    string
+	lastRequestId    string
 	pendingTurn      *session.Turn
 	pendingSessionId session.Id
 }
@@ -114,7 +114,7 @@ func (p *Parser) handleAssistant(entry *Entry) {
 	}
 
 	// Same requestId means this is a continuation of the same logical response
-	if entry.RequestI != "" && entry.RequestI == p.lastRequestID && p.pendingTurn != nil {
+	if entry.RequestI != "" && entry.RequestI == p.lastRequestId && p.pendingTurn != nil {
 		p.pendingTurn.Text += text
 		if usage != nil {
 			p.pendingTurn.Usage = usage
@@ -128,7 +128,7 @@ func (p *Parser) handleAssistant(entry *Entry) {
 	// Different requestId — flush previous and start new pending turn
 	p.flushPending()
 
-	p.lastRequestID = entry.RequestI
+	p.lastRequestId = entry.RequestI
 	p.pendingSessionId = entry.SessionId
 	p.pendingTurn = &session.Turn{
 		Role:      session.RoleAssistant,
@@ -151,7 +151,7 @@ func (p *Parser) flushPending() {
 	if !ok {
 		p.pendingTurn = nil
 		p.pendingSessionId = ""
-		p.lastRequestID = ""
+		p.lastRequestId = ""
 		return
 	}
 
@@ -162,7 +162,7 @@ func (p *Parser) flushPending() {
 	current.Turns.Push(p.pendingTurn)
 	p.pendingTurn = nil
 	p.pendingSessionId = ""
-	p.lastRequestID = ""
+	p.lastRequestId = ""
 }
 
 func (p *Parser) updateMeta(session *session.Session, entry *Entry, model string) {

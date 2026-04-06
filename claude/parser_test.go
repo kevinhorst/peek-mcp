@@ -29,9 +29,10 @@ func TestClaude_UserPrompt(t *testing.T) {
 	sess, ok := s.Get("sess-1")
 	assert.True(t, ok, "session not created")
 
-	turns := sess.Turns.Last(10)
+	turns, ok := sess.Turns.Last(10)
+	assert.True(t, ok, "turns not created")
 	assert.Len(t, turns, 1)
-	assert.Equal(t, "user", turns[0].Role)
+	assert.Equal(t, session.RoleUser, turns[0].Role)
 	assert.Equal(t, "What does this function do?", turns[0].Text)
 	assert.Equal(t, "/home/user/project", sess.Info.CWD)
 	assert.Equal(t, "main", sess.Info.GitBranch)
@@ -91,9 +92,10 @@ func TestClaude_AssistantWithText(t *testing.T) {
 	sess, ok := s.Get("sess-1")
 	assert.True(t, ok, "session not created")
 
-	turns := sess.Turns.Last(10)
+	turns, ok := sess.Turns.Last(10)
+	assert.True(t, ok, "turns not created")
 	assert.Len(t, turns, 1)
-	assert.Equal(t, "assistant", turns[0].Role)
+	assert.Equal(t, session.RoleAssistant, turns[0].Role)
 	assert.Equal(t, "This function calculates the sum.", turns[0].Text)
 	assert.Equal(t, "claude-opus-4-6", turns[0].Model)
 	assert.NotNil(t, turns[0].Usage)
@@ -164,7 +166,7 @@ func TestClaude_QueueOperationSkipped(t *testing.T) {
 	assert.False(t, ok, "queue-operation should not create a session")
 }
 
-func TestClaude_NoPromptIDSkipped(t *testing.T) {
+func TestClaude_NoPromptIdSkipped(t *testing.T) {
 	s := session.New(20)
 	p := NewParser(s)
 
@@ -186,7 +188,7 @@ func TestClaude_NoPromptIDSkipped(t *testing.T) {
 	}
 }
 
-func TestClaude_SameRequestIDMerged(t *testing.T) {
+func TestClaude_SameRequestIdMerged(t *testing.T) {
 	s := session.New(20)
 	p := NewParser(s)
 
@@ -230,7 +232,8 @@ func TestClaude_SameRequestIDMerged(t *testing.T) {
 	sess, ok := s.Get("sess-1")
 	assert.True(t, ok, "session not created")
 
-	turns := sess.Turns.Last(10)
+	turns, ok := sess.Turns.Last(10)
+	assert.True(t, ok, "turns not created")
 	assert.Len(t, turns, 1, "expected 1 merged turn")
 	assert.Equal(t, "Here is the answer.", turns[0].Text)
 }
@@ -312,13 +315,14 @@ func TestClaude_FullConversation(t *testing.T) {
 	sess, ok := s.Get("sess-1")
 	assert.True(t, ok, "session not created")
 
-	turns := sess.Turns.Last(10)
+	turns, ok := sess.Turns.Last(10)
+	assert.True(t, ok, "turns not created")
 	assert.Len(t, turns, 3, "expected 3 turns (user, assistant, user)")
-	assert.Equal(t, "user", turns[0].Role)
+	assert.Equal(t, session.RoleUser, turns[0].Role)
 	assert.Equal(t, "Explain this code", turns[0].Text)
-	assert.Equal(t, "assistant", turns[1].Role)
+	assert.Equal(t, session.RoleAssistant, turns[1].Role)
 	assert.Equal(t, "This code does X.", turns[1].Text)
-	assert.Equal(t, "user", turns[2].Role)
+	assert.Equal(t, session.RoleUser, turns[2].Role)
 	assert.Equal(t, "Now fix the bug", turns[2].Text)
 
 	assert.Equal(t, "claude-sonnet-4-20250514", sess.Info.Model)
