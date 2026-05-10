@@ -34,6 +34,8 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 		return p.handleUser(entry)
 	case EntryTypeAssistant:
 		return p.handleAssistant(entry)
+	case EntryTypeAttachment:
+		return p.handleAttachment(entry)
 	default:
 		return nil
 	}
@@ -125,20 +127,50 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 	return turn
 }
 
+func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
+	if entry.SessionId == "" || len(entry.AttachmentRaw) == 0 {
+		return nil
+	}
+
+	var attachment Attachment
+	if err := json.Unmarshal(entry.AttachmentRaw, &attachment); err != nil {
+		log.Printf("claude.Parser.handleAttachment: %s", err.Error())
+		return nil
+	}
+
+	if attachment.Type != AttachmentTypePlanMode && attachment.Type != AttachmentTypePlanFileReference {
+		return nil
+	}
+
+	if attachment.PlanFilePath == "" {
+		return nil
+	}
+
+	return &session.Turn{
+		PlanFilePath: attachment.PlanFilePath,
+		Meta: &session.Meta{
+			SessionId: entry.SessionId,
+		},
+	}
+}
+
 func extractTextBlocks(raw json.RawMessage) string {
 	var blocks []ContentBlock
-	if err := json.Unmarshal(raw, &blocks); err != nil {
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var builder strings.Builder
+		for _, block := range blocks {
+			if block.Type != "text" || block.Text == "" {
+				continue
+			}
+			builder.WriteString(block.Text + "\n")
+		}
+		return builder.String()
+	}
+
+	// user messages may carry content as a plain string rather than a block array
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
 		return ""
 	}
-
-	var builder strings.Builder
-	for _, block := range blocks {
-		if block.Type != "text" || block.Text == "" {
-			continue
-		}
-
-		builder.WriteString(block.Text + "\n")
-	}
-
-	return builder.String()
+	return s
 }

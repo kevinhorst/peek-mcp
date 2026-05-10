@@ -257,6 +257,65 @@ func TestClaude_FullConversation(t *testing.T) {
 	assert.Equal(t, "Now fix the bug", turns[3].Text)
 }
 
+func TestClaude_PlanModeAttachment(t *testing.T) {
+	p := NewParser()
+
+	turn := p.ParseLine([]byte(`{
+		"type": "attachment",
+		"sessionId": "sess-plan",
+		"timestamp": "2026-05-10T12:00:00.000Z",
+		"isSidechain": false,
+		"attachment": {
+			"type": "plan_mode",
+			"planFilePath": "/Users/user/.claude/plans/some-plan.md",
+			"planExists": false,
+			"isSubAgent": false
+		}
+	}`))
+
+	assert.NotNil(t, turn)
+	assert.Equal(t, "/Users/user/.claude/plans/some-plan.md", turn.PlanFilePath)
+	assert.Equal(t, session.Id("sess-plan"), turn.Meta.SessionId)
+}
+
+func TestClaude_PlanFileReferenceAttachment(t *testing.T) {
+	p := NewParser()
+
+	turn := p.ParseLine([]byte(`{
+		"type": "attachment",
+		"sessionId": "sess-plan",
+		"timestamp": "2026-05-10T12:00:00.000Z",
+		"isSidechain": false,
+		"attachment": {
+			"type": "plan_file_reference",
+			"planFilePath": "/Users/user/.claude/plans/some-plan.md",
+			"planContent": "# My Plan\n\nDo stuff."
+		}
+	}`))
+
+	assert.NotNil(t, turn)
+	assert.Equal(t, "/Users/user/.claude/plans/some-plan.md", turn.PlanFilePath)
+	assert.Equal(t, session.Id("sess-plan"), turn.Meta.SessionId)
+}
+
+func TestClaude_NonPlanAttachmentSkipped(t *testing.T) {
+	p := NewParser()
+
+	turn := p.ParseLine([]byte(`{
+		"type": "attachment",
+		"sessionId": "sess-1",
+		"timestamp": "2026-05-10T12:00:00.000Z",
+		"isSidechain": false,
+		"attachment": {
+			"type": "edited_text_file",
+			"filename": "/path/to/file.go",
+			"snippet": "some code"
+		}
+	}`))
+
+	assert.Nil(t, turn)
+}
+
 func TestClaude_InvalidJSON(t *testing.T) {
 	p := NewParser()
 
