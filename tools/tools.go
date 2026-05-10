@@ -89,7 +89,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
 
-		id, ok := args["id"].(session.Id)
+		id, ok := args["id"].(string)
 		if !ok || id == "" {
 			return mcp.NewToolResultError("id parameter is required"), nil
 		}
@@ -100,7 +100,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			turnNumber = n
 		}
 
-		currentSession, ok := s.GetById(id)
+		currentSession, ok := s.GetById(session.Id(id))
 		if !ok {
 			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
 		}
