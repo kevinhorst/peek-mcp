@@ -1,6 +1,8 @@
 package codex
 
 import (
+	"bytes"
+	"os"
 	"testing"
 
 	"github.com/kevinhorst/peek-mcp/session"
@@ -82,25 +84,17 @@ func TestCodex_UserMessage(t *testing.T) {
 func TestCodex_AssistantMessage(t *testing.T) {
 	p := NewParser()
 
-	p.ParseLine([]byte(`{
-		"timestamp": "2026-03-29T23:45:22.019Z",
-		"type": "session_meta",
-		"payload": {"id": "sess-codex-1", "cwd": "/project"}
-	}`))
-	p.ParseLine([]byte(`{
-		"timestamp": "2026-03-29T23:47:38.000Z",
-		"type": "turn_context",
-		"payload": {"turn_id": "t1", "model": "gpt-5.4"}
-	}`))
-	turn := p.ParseLine([]byte(`{
-		"timestamp": "2026-03-29T23:47:40.000Z",
-		"type": "response_item",
-		"payload": {
-			"type": "message",
-			"role": "assistant",
-			"content": [{"type": "output_text", "text": "I fixed the auth bug by updating the token validation."}]
+	data, err := os.ReadFile("fixtures/assistant_turn.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	var turn *session.Turn
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(line) == 0 {
+			continue
 		}
-	}`))
+		turn = p.ParseLine(line)
+	}
 
 	assert.NotNil(t, turn)
 	assert.Equal(t, session.RoleAssistant, turn.Role)

@@ -1,6 +1,8 @@
 package claude
 
 import (
+	"bytes"
+	"os"
 	"testing"
 
 	"github.com/kevinhorst/peek-mcp/session"
@@ -219,22 +221,15 @@ func TestClaude_FullConversation(t *testing.T) {
 
 	var turns []*session.Turn
 
-	lines := []string{
-		// User prompt
-		`{"type":"user","promptId":"p1","sessionId":"sess-1","timestamp":"2026-04-05T15:00:00.000Z","cwd":"/project","gitBranch":"feature","isSidechain":false,"message":{"role":"user","content":"Explain this code"}}`,
-		// Assistant response
-		`{"type":"assistant","requestId":"req-1","sessionId":"sess-1","timestamp":"2026-04-05T15:00:05.000Z","cwd":"/project","gitBranch":"feature","isSidechain":false,"message":{"role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"This code does X."}],"usage":{"input_tokens":50,"output_tokens":20}}}`,
-		// Tool use (assistant) — meta-only (no text)
-		`{"type":"assistant","requestId":"req-2","sessionId":"sess-1","timestamp":"2026-04-05T15:00:06.000Z","isSidechain":false,"message":{"role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}]}}`,
-		// Tool result (user) — skipped (content is array, not string)
-		`{"type":"user","promptId":"p1","sessionId":"sess-1","timestamp":"2026-04-05T15:00:07.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"file data"}]}}`,
-		// Second user prompt
-		`{"type":"user","promptId":"p2","sessionId":"sess-1","timestamp":"2026-04-05T15:01:00.000Z","cwd":"/project","gitBranch":"feature","isSidechain":false,"message":{"role":"user","content":"Now fix the bug"}}`,
+	data, err := os.ReadFile("fixtures/full_conversation.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
 	}
-
-	for _, line := range lines {
-		turn := p.ParseLine([]byte(line))
-		if turn != nil {
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		if turn := p.ParseLine(line); turn != nil {
 			turns = append(turns, turn)
 		}
 	}
