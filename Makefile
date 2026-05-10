@@ -29,10 +29,10 @@ test:
 	go test ./...
 
 serve-http: build
-	./peek-mcp
+	./peek-mcp start
 
 serve-stdio: build
-	./peek-mcp --transport stdio
+	./peek-mcp start --transport stdio
 
 
 update-go-deps:
