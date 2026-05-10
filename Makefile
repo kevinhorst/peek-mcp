@@ -28,8 +28,12 @@ mcpb: build-darwin-universal
 test:
 	go test ./...
 
-serve: build
+serve-http: build
+	./peek-mcp
+
+serve-stdio: build
 	./peek-mcp --transport stdio
+
 
 update-go-deps:
 	@echo ">> updating Go dependencies"
