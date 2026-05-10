@@ -30,7 +30,7 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 	}
 
 	switch entry.Type {
-	case EntryTypeUser, "queue-operation":
+	case EntryTypeUser, EntryTypeQueueOperation:
 		return p.handleUser(entry)
 	case EntryTypeAssistant:
 		return p.handleAssistant(entry)

@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	EntryTypeUser      = "user"
-	EntryTypeAssistant = "assistant"
+	EntryTypeUser           = "user"
+	EntryTypeQueueOperation = "queue-operation"
+	EntryTypeAssistant      = "assistant"
 )
 
 type Entry struct {
