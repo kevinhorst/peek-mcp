@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log"
@@ -51,8 +52,12 @@ func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
 	output, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			log.Printf("DiffWatcher: git diff failed for session %s: %s", id, exitErr.Stderr)
+		if errors.As(err, &exitErr) {
+			if bytes.Contains(exitErr.Stderr, []byte("Not a git repository")) {
+				return
+			}
+			line, _, _ := bytes.Cut(exitErr.Stderr, []byte("\n"))
+			log.Printf("DiffWatcher: git diff failed for session %s: %s", id, line)
 		} else {
 			log.Printf("DiffWatcher: git diff failed for session %s: %v", id, err)
 		}
