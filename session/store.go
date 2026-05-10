@@ -2,16 +2,17 @@ package session
 
 import (
 	"maps"
+	"os"
 	"slices"
 	"sort"
 	"sync"
 )
 
 type Store struct {
-	mu         sync.RWMutex
-	sessions   map[Id]*Session
-	depth      int
-	TurnAdded  chan Id
+	mu        sync.RWMutex
+	sessions  map[Id]*Session
+	depth     int
+	TurnAdded chan Id
 }
 
 func NewStore(depth int) *Store {
@@ -26,8 +27,10 @@ func (s *Store) AddTurnBySessionId(id Id, source Source, turn *Turn) {
 	session := s.getOrCreate(id, source)
 
 	if turn.PlanFilePath != "" {
+		content, _ := os.ReadFile(turn.PlanFilePath)
 		s.mu.Lock()
 		session.PlanFilePath = turn.PlanFilePath
+		session.PlanContent = string(content)
 		s.mu.Unlock()
 		return
 	}
