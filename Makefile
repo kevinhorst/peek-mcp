@@ -8,7 +8,7 @@ build-local: clean-dist
 	go build -o dist/peek-mcp .
 
 
-build-darwin-universal: clean-dist
+build-darwin-universal:
 	@mkdir -p $(DIST)
 	$(GOENV)  GOARCH=arm64  go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-darwin-arm64 .
 	$(GOENV)  GOARCH=amd64  go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-darwin-amd64 .
@@ -16,12 +16,12 @@ build-darwin-universal: clean-dist
 	rm $(DIST)/peek-mcp-darwin-arm64 $(DIST)/peek-mcp-darwin-amd64
 
 
-build-linux-amd64: clean-dist
+build-linux-amd64:
 	@mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-amd64 .
 
 
-build-linux-arm64: clean-dist
+build-linux-arm64:
 	@mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
 
