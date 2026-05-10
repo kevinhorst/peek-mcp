@@ -26,10 +26,6 @@ func NewPlanWatcher(plansDir string, store *session.Store) *PlanWatcher {
 }
 
 func (w *PlanWatcher) Run(ctx context.Context) error {
-	if err := os.MkdirAll(w.plansDir, 0755); err != nil {
-		slog.Warn("PlanWatcher: could not create plans directory", "dir", w.plansDir, "err", err)
-	}
-
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
