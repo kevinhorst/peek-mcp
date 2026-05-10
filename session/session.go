@@ -16,15 +16,40 @@ const (
 )
 
 type Session struct {
-	Meta       Meta      `json:"meta"`
-	Source     Source    `json:"source"`
-	LastActive time.Time `json:"last_active"`
-	TotalUsage Usage     `json:"total_usage"`
-	FilePath   string    `json:"-"`
-	Turns      *TurnBuffer
+	Meta          Meta      `json:"meta"`
+	Source        Source    `json:"source"`
+	LastActive    time.Time `json:"last_active"`
+	TotalUsage    Usage     `json:"total_usage"`
+	FilePath      string    `json:"-"`
+	TurnActive    *Turn     `json:"-"`
+	TurnsFinished *TurnBuffer
+}
+
+func (s *Session) Turns(number int) []*Turn {
+	if s.TurnActive == nil {
+		return s.TurnsFinished.Last(number)
+	}
+
+	buffer := &TurnBuffer{
+		capacity: s.TurnsFinished.capacity,
+		items:    append([]*Turn{s.TurnActive}, s.TurnsFinished.items...),
+	}
+
+	return buffer.Last(number)
 }
 
 func (s *Session) Update(turn *Turn) {
+	if s.TurnActive != nil {
+		if s.TurnActive.RequestId == turn.RequestId {
+			s.TurnActive = turn
+			return
+		}
+		if s.TurnActive.Text != "" {
+			s.TurnsFinished.Push(s.TurnActive)
+		}
+	}
+	s.TurnActive = turn
+
 	s.Meta.Update(turn.Meta)
 
 	if !turn.Timestamp.IsZero() {
@@ -33,10 +58,6 @@ func (s *Session) Update(turn *Turn) {
 
 	if turn.Usage != nil {
 		s.TotalUsage.Add(turn.Usage)
-	}
-
-	if turn.Text != "" {
-		s.Turns.Push(turn)
 	}
 }
 
@@ -57,7 +78,7 @@ func (s *Session) Validate() error {
 		return errors.New("last_active must not be zero")
 	}
 
-	if s.Turns == nil {
+	if s.TurnsFinished == nil {
 		return errors.New("turns must not be nil")
 	}
 

@@ -65,9 +65,9 @@ func (s *Store) getOrCreate(id Id, source Source) *Session {
 	}
 
 	session := &Session{
-		Meta:   Meta{SessionId: id},
-		Source: source,
-		Turns:  NewTurnBuffer(s.depth),
+		Meta:          Meta{SessionId: id},
+		Source:        source,
+		TurnsFinished: NewTurnBuffer(s.depth),
 	}
 	s.sessions[id] = session
 	return session

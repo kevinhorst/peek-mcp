@@ -9,10 +9,10 @@ import (
 
 func provideCompleteSession() *Session {
 	return &Session{
-		Meta:       Meta{SessionId: Id("sess-123")},
-		Source:     SourceClaude,
-		LastActive: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
-		Turns:      NewTurnBuffer(20),
+		Meta:          Meta{SessionId: Id("sess-123")},
+		Source:        SourceClaude,
+		LastActive:    time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
+		TurnsFinished: NewTurnBuffer(20),
 	}
 }
 
@@ -94,7 +94,7 @@ func TestSession_Validate(t *testing.T) {
 
 	// fail-nil-turns
 	form = provideCompleteSession()
-	form.Turns = nil
+	form.TurnsFinished = nil
 	test = &testCase{
 		_id:         "fail-nil-turns",
 		_shouldPass: false,

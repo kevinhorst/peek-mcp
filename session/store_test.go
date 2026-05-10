@@ -14,7 +14,7 @@ func TestGetOrCreate_New(t *testing.T) {
 
 	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
 	assert.Equal(t, SourceClaude, sess.Source)
-	assert.NotNil(t, sess.Turns)
+	assert.NotNil(t, sess.TurnsFinished)
 }
 
 func TestGetOrCreate_Existing(t *testing.T) {
