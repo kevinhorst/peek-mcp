@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+
+  release:
+    name: Release
+    runs-on: macos-latest
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build .mcpb + darwin binary
+        run: make mcpb
+
+      - name: Build linux binaries
+        run: |
+          make build-linux-amd64
+          make build-linux-arm64
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/peek-mcp.mcpb
+            dist/peek-mcp
+            dist/peek-mcp-linux-amd64
+            dist/peek-mcp-linux-arm64
+          generate_release_notes: true

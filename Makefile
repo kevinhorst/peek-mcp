@@ -17,6 +17,21 @@ build-darwin-universal:
 clean-dist:
 	rm -rf $(DIST)
 
+bump-version:
+	@test -n "$(VERSION)" || (echo "Usage: make bump-version VERSION=x.y.z" && exit 1)
+	@sed -i '' 's/var version = ".*"/var version = "$(VERSION)"/' cmd/version.go
+	@jq --arg v "$(VERSION)" '.version = $v' mcpb/manifest.json \
+	    > mcpb/manifest.json.tmp && mv mcpb/manifest.json.tmp mcpb/manifest.json
+	@echo "Bumped to $(VERSION) in cmd/version.go and mcpb/manifest.json"
+
+build-linux-amd64:
+	@mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-amd64 .
+
+build-linux-arm64:
+	@mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
+
 mcpb: build-darwin-universal
 	@rm -rf $(STAGE) && mkdir -p $(STAGE)/server
 	cp mcpb/manifest.json $(STAGE)/manifest.json
