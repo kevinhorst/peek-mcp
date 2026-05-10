@@ -38,27 +38,38 @@ func (s *Session) Turns(number int) []*Turn {
 	return buffer.Last(number)
 }
 
-func (s *Session) Update(turn *Turn) {
-	if s.TurnActive != nil {
-		if s.TurnActive.RequestId == turn.RequestId {
-			s.TurnActive = turn
-			return
-		}
-		if s.TurnActive.Text != "" {
-			s.TurnsFinished.Push(s.TurnActive)
-		}
-	}
-	s.TurnActive = turn
+func (s *Session) Update(nextTurn *Turn) {
+	// update meta
+	s.Meta.Update(nextTurn.Meta)
 
-	s.Meta.Update(turn.Meta)
-
-	if !turn.Timestamp.IsZero() {
-		s.LastActive = turn.Timestamp
+	if !nextTurn.Timestamp.IsZero() {
+		s.LastActive = nextTurn.Timestamp
 	}
 
-	if turn.Usage != nil {
-		s.TotalUsage.Add(turn.Usage)
+	// first turn
+	if s.TurnActive == nil {
+		s.TurnActive = nextTurn
+		return
 	}
+
+	// same turn, append text, no-op for empty text
+	if nextTurn.RequestId != "" && s.TurnActive.RequestId == nextTurn.RequestId {
+		merged := *nextTurn
+		merged.Text = s.TurnActive.Text + nextTurn.Text
+		s.TurnActive = &merged
+		return
+	}
+
+	// new turn, update usage and push old turn
+	if s.TurnActive.Usage != nil {
+		s.TotalUsage.Add(s.TurnActive.Usage)
+	}
+
+	if s.TurnActive.Text != "" {
+		s.TurnsFinished.Push(s.TurnActive)
+	}
+
+	s.TurnActive = nextTurn
 }
 
 func (s *Session) Validate() error {
