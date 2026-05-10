@@ -46,6 +46,12 @@ func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
 		return
 	}
 
+	check := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
+	check.Dir = cwd
+	if err := check.Run(); err != nil {
+		return
+	}
+
 	cmd := exec.CommandContext(ctx, "git", "diff", w.target)
 	cmd.Dir = cwd
 	output, err := cmd.Output()
