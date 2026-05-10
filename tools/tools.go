@@ -14,12 +14,6 @@ const (
 	DefaultReturnedTurns = 5
 )
 
-type sessionFullResult struct {
-	Turns []*session.Turn `json:"turns"`
-	Plan  string          `json:"plan,omitempty"`
-	Diff  string          `json:"diff,omitempty"`
-}
-
 func Register(server *server.MCPServer, store *session.Store) {
 	server.AddTool(
 		mcp.NewTool("session_full",
@@ -49,7 +43,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	server.AddTool(
 		mcp.NewTool("session_list",
-			mcp.WithDescription("Lists all known sessions with metadata: session ID, working directory, git branch, last activity timestamp, total token usage, and model."),
+			mcp.WithDescription("Lists all sessions. Returns session ID, last activity timestamp, and whether a plan or diff is available."),
 		),
 		sessionListHandler(store),
 	)
@@ -153,7 +147,17 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return respondWithJson(s.List())
+		sessions := s.List()
+		items := make([]sessionListItem, len(sessions))
+		for i, sess := range sessions {
+			items[i] = sessionListItem{
+				Id:         sess.Meta.SessionId,
+				LastActive: sess.LastActive,
+				HasPlan:    sess.PlanContent != "",
+				HasDiff:    sess.DiffOutput != "",
+			}
+		}
+		return respondWithJson(items)
 	}
 }
 
