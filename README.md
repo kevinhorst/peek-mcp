@@ -115,7 +115,7 @@ TBD
 
 ## Requirements
 
-- Go 1.22+
+- Go 1.26+
 - macOS or Linux
 - Claude Code and/or Codex CLI installed (peek-mcp reads their output, it does not depend on them at runtime)
 
