@@ -12,6 +12,7 @@ const (
 	EntryTypeUser           = "user"
 	EntryTypeQueueOperation = "queue-operation"
 	EntryTypeAssistant      = "assistant"
+	EntryTypeAttachment     = "attachment"
 )
 
 type Entry struct {
@@ -19,6 +20,7 @@ type Entry struct {
 	GitBranch         string          `json:"gitBranch"`
 	IsSidechain       bool            `json:"isSidechain"`
 	Message           json.RawMessage `json:"message"`
+	AttachmentRaw     json.RawMessage `json:"attachment"`
 	PromptId          string          `json:"promptId"`
 	RequestId         string          `json:"requestId"`
 	SessionId         session.Id      `json:"sessionId"`
