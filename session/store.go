@@ -21,7 +21,27 @@ func NewStore(depth int) *Store {
 }
 
 func (s *Store) AddTurnBySessionId(id Id, source Source, turn *Turn) {
-	s.getOrCreate(id, source).AddTurn(turn)
+	session := s.getOrCreate(id, source)
+
+	if turn.PlanFilePath != "" {
+		s.mu.Lock()
+		session.PlanFilePath = turn.PlanFilePath
+		s.mu.Unlock()
+		return
+	}
+
+	session.AddTurn(turn)
+}
+
+func (s *Store) UpdatePlanForPath(filePath, content string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, session := range s.sessions {
+		if session.PlanFilePath == filePath {
+			session.PlanContent = content
+		}
+	}
 }
 
 func (s *Store) GetById(id Id) (*Session, bool) {
