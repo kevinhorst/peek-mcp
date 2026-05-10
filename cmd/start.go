@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -129,7 +131,7 @@ func init() {
 	flags.Int("depth", 20, "Ring buffer size per session (max turns kept)")
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
-	flags.String("diff-target", "develop", "Branch to diff against for session_diff")
+	flags.String("diff-target", "main", "Branch to diff against for session_diff")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	rootCmd.AddCommand(startCmd)
@@ -137,9 +139,14 @@ func init() {
 
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var buf bytes.Buffer
+		r.Body = io.NopCloser(io.TeeReader(r.Body, &buf))
 		rw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
 		next.ServeHTTP(rw, r)
 		slog.Info("http", "method", r.Method, "path", r.URL.Path, "status", rw.code)
+		if buf.Len() > 0 {
+			slog.Debug("http body", "body", buf.String())
+		}
 	})
 }
 
