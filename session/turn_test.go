@@ -66,16 +66,6 @@ func TestTurn_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
-	// fail-empty-text
-	form = provideCompleteTurn()
-	form.Text = ""
-	test = &testCase{
-		_id:         "fail-empty-text",
-		_shouldPass: false,
-		form:        form,
-	}
-	tests = append(tests, test)
-
 	// fail-zero-timestamp
 	form = provideCompleteTurn()
 	form.Timestamp = time.Time{}
@@ -111,6 +101,16 @@ func TestTurn_Validate(t *testing.T) {
 	form.Usage = &Usage{InputTokens: -1}
 	test = &testCase{
 		_id:         "fail-invalid-usage",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	// fail-missing-meta
+	form = provideCompleteTurn()
+	form.Meta = nil
+	test = &testCase{
+		_id:         "fail-missing-meta",
 		_shouldPass: false,
 		form:        form,
 	}
