@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/kevinhorst/peek-mcp/session"
@@ -42,17 +42,17 @@ func (w *DiffWatcher) Run(ctx context.Context) error {
 func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
 	defer w.running.Delete(id)
 
+	if _, err := os.Stat(cwd); err != nil {
+		return
+	}
+
 	cmd := exec.CommandContext(ctx, "git", "diff", w.target)
 	cmd.Dir = cwd
 	output, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			stderr := string(exitErr.Stderr)
-			if idx := strings.IndexByte(stderr, '\n'); idx >= 0 {
-				stderr = stderr[:idx]
-			}
-			log.Printf("DiffWatcher: git diff failed for session %s: %s", id, stderr)
+			log.Printf("DiffWatcher: git diff failed for session %s: %s", id, exitErr.Stderr)
 		} else {
 			log.Printf("DiffWatcher: git diff failed for session %s: %v", id, err)
 		}
