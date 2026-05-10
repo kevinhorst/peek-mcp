@@ -13,9 +13,8 @@ import (
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/kevinhorst/peek-mcp/claude"
-	"github.com/kevinhorst/peek-mcp/codex"
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -24,33 +23,23 @@ const (
 	jsonlSuffix       = ".jsonl"
 )
 
-type Watcher struct {
-	store      *session.Store
-	claudeHome string
-	codexHome  string
-
-	mu    sync.Mutex
-	files map[watchedFilePath]*watchedFile
-}
-
-type watchedFilePath string
-
 type watchedFile struct {
 	offset int64
-	lines  []byte
-	parser lineParser
+}
+type Watcher struct {
+	agent    session.Source
+	agentDir string
+	files    map[string]*watchedFile
+	mu       sync.Mutex
+	parser   parser
+	store    *session.Store
 }
 
-type lineParser interface {
-	ParseLine(line []byte) *session.Turn
-}
-
-func New(store *session.Store, claudeHome, codexHome string) *Watcher {
+func New(agentDir string, parser parser, store *session.Store) *Watcher {
 	return &Watcher{
-		store:      store,
-		claudeHome: claudeHome,
-		codexHome:  codexHome,
-		files:      make(map[watchedFilePath]*watchedFile),
+		agentDir: agentDir,
+		parser:   parser,
+		store:    store,
 	}
 }
 
@@ -62,11 +51,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 	defer watcher.Close()
 
 	// Add root directories and backfill existing files
-	claudeProjects := filepath.Join(w.claudeHome, claudeProjectsDir)
-	codexSessions := filepath.Join(w.codexHome, codexSessionsDir)
-
-	w.walkAndWatch(watcher, claudeProjects)
-	w.walkAndWatch(watcher, codexSessions)
+	w.walkAndWatch(watcher, w.agentDir)
 
 	for {
 		select {
@@ -94,10 +79,15 @@ func (w *Watcher) Run(ctx context.Context) error {
 				}
 				continue
 			}
+
 			// new or changed file
 			if strings.HasSuffix(path, jsonlSuffix) {
-				w.readNewLines(path)
+				err = w.readNewLines(path)
+				if err != nil {
+					fmt.Println("Warning: w.readNewLines:", err)
+				}
 			}
+
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return nil
@@ -110,10 +100,10 @@ func (w *Watcher) Run(ctx context.Context) error {
 func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 	rootInfo, err := os.Stat(root)
 	if err != nil || !rootInfo.IsDir() {
-		log.Printf("watcher %s is not a directory", root)
+		log.Printf("Watcher.walkAndWatch: watcher %s is not a directory", root)
 		return
 	}
-	log.Printf("watcher %s is a directory", root)
+	log.Printf("Watcher.walkAndWatch: watcher %s is a directory", root)
 
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -128,115 +118,70 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 			return nil
 		}
 		if strings.HasSuffix(path, jsonlSuffix) {
-			w.readNewLines(path)
+			err = w.readNewLines(path)
+			if err != nil {
+				fmt.Println("Watcher.walkAndWatch: Warning: w.readNewLines:", err)
+			}
 		}
 		return nil
 	})
 	if err != nil {
-		log.Printf("watcher error: %v", err)
+		log.Printf("Watcher.walkAndWatch: watcher error: %v", err)
 	}
 }
 
-func (w *Watcher) readNewLines(path string) {
+func (w *Watcher) readNewLines(path string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	file, err := os.Open(path)
 	if err != nil {
-		return
+		return errors.Wrapf(err, "Watcher.readNewLines")
 	}
 	defer file.Close()
 
-	fileInfo := w.getOrCreateFile(path)
-	if fileInfo.offset > 0 {
-		if _, err := file.Seek(fileInfo.offset, io.SeekStart); err != nil {
-			return
+	watched, ok := w.files[path]
+	if !ok {
+		watched = &watchedFile{}
+	}
+
+	if watched.offset > 0 {
+		if _, err := file.Seek(watched.offset, io.SeekStart); err != nil {
+			return errors.Wrapf(err, "Watcher.readNewLines")
 		}
 	}
 
 	newLines, err := io.ReadAll(file)
 	if err != nil {
-		return
+		return errors.Wrapf(err, "Watcher.readNewLines")
 	}
 
-	fileInfo.offset += int64(len(newLines))
+	// only count bytes from complete lines
+	var consumed int64
 
-	// Keep the unfinished trailing fragment, if any, and only send complete
-	// newline-delimited records to the parser.
-	buffer := make([]byte, 0, len(fileInfo.lines)+len(newLines))
-	buffer = append(buffer, fileInfo.lines...)
-	buffer = append(buffer, newLines...)
-
-	source := w.sourceForPath(path)
-	fileInfo.lines = parseCompleteLines(buffer, func(line []byte) {
-		turn := fileInfo.parser.ParseLine(line)
-		if turn == nil || turn.Meta.SessionId == "" {
-			return
-		}
-		current := w.store.GetOrCreate(turn.Meta.SessionId, source)
-		if turn.Text != "" {
-			current.ApplyTurn(turn)
-		} else {
-			current.Meta.UpdateFrom(&turn.Meta)
-			if !turn.Timestamp.IsZero() {
-				current.LastActive = turn.Timestamp
-			}
-			if turn.Usage != nil {
-				current.TotalUsage = *turn.Usage
-			}
-		}
-	})
-}
-
-func parseCompleteLines(buffer []byte, handle func(line []byte)) []byte {
-	if len(buffer) == 0 {
-		return nil
-	}
-
-	for _, part := range bytes.SplitAfter(buffer, []byte{'\n'}) {
+	for _, part := range bytes.SplitAfter(newLines, []byte{'\n'}) {
 		if len(part) == 0 {
 			continue
 		}
-		// The last chunk may not have a newline yet, which means the writer has
-		// not finished the JSONL record. Keep it for the next append.
 		if part[len(part)-1] != '\n' {
-			return bytes.Clone(part)
+			break // incomplete line, stop — we'll re-read it next time
 		}
+
+		consumed += int64(len(part))
 
 		line := bytes.TrimSuffix(part, []byte{'\n'})
 		line = bytes.TrimSuffix(line, []byte{'\r'})
 		if len(line) > 0 {
-			handle(line)
+			turn := w.parser.ParseLine(line)
+			err = turn.Validate()
+			if err != nil {
+				return errors.Wrapf(err, "Watcher.readNewLines")
+			}
+			w.store.ApplyTurn(turn.Meta.SessionId, w.agent, turn)
 		}
 	}
 
+	watched.offset += consumed
+	w.files[path] = watched
 	return nil
-}
-
-func (w *Watcher) getOrCreateFile(path string) *watchedFile {
-	key := watchedFilePath(path)
-	if file, ok := w.files[key]; ok {
-		return file
-	}
-
-	file := &watchedFile{}
-	if w.isClaude(path) {
-		file.parser = claude.NewParser()
-	} else {
-		file.parser = codex.NewParser()
-	}
-	w.files[key] = file
-	return file
-}
-
-func (w *Watcher) isClaude(path string) bool {
-	claudeProjects := filepath.Join(w.claudeHome, claudeProjectsDir)
-	return strings.HasPrefix(path, claudeProjects)
-}
-
-func (w *Watcher) sourceForPath(path string) session.Source {
-	if w.isClaude(path) {
-		return session.SourceClaude
-	}
-	return session.SourceCodex
 }
