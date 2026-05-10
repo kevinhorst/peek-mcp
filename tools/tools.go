@@ -60,8 +60,8 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("session_latest: No sessions found"), nil
 		}
 
-		turns, ok := lastSession.Turns.Last(turnNumber)
-		if !ok {
+		turns := lastSession.Turns(turnNumber)
+		if len(turns) == 0 {
 			return mcp.NewToolResultText("No turns found"), nil
 		}
 
@@ -95,8 +95,8 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
 		}
 
-		turns, ok := currentSession.Turns.Last(turnNumber)
-		if !ok {
+		turns := currentSession.Turns(turnNumber)
+		if len(turns) == 0 {
 			return mcp.NewToolResultError("No turns found"), nil
 		}
 
