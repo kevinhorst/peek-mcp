@@ -103,6 +103,31 @@ Add to `.claude/settings.json` in your project:
 }
 ```
 
+## Installing in Claude Desktop (.mcpb)
+
+For one-click install on macOS — useful for distributing peek-mcp inside an organisation — peek-mcp ships as an [MCP Bundle](https://github.com/modelcontextprotocol/mcpb). The bundle is a self-contained `.mcpb` file with a universal (arm64 + amd64) macOS binary inside.
+
+Build the bundle (requires macOS, since it uses `lipo` to fuse architectures):
+
+```bash
+make mcpb
+# → dist/peek-mcp.mcpb
+```
+
+Install:
+
+1. Open Claude Desktop → **Settings → Extensions**.
+2. Click **Advanced settings**, find the **Extension Developer** section, click **Install Extension…**.
+3. Pick `dist/peek-mcp.mcpb` and follow the prompts. The configuration UI exposes ring-buffer depth and the Claude / Codex session roots.
+
+When launched this way, Claude Desktop runs `peek-mcp --transport=stdio` directly — no HTTP server, no port to manage.
+
+If macOS Gatekeeper quarantines the unsigned binary on first run:
+
+```bash
+xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/peek-mcp
+```
+
 ## Example workflow
 
 1. Start peek-mcp in a terminal tab. It runs silently and watches for sessions.
