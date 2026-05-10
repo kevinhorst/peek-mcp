@@ -12,7 +12,7 @@ func TestGetOrCreate_New(t *testing.T) {
 	s := NewStore(10)
 	sess := s.GetOrCreate("s1", "claude")
 
-	assert.Equal(t, Id("s1"), sess.Id)
+	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
 	assert.Equal(t, SourceClaude, sess.Source)
 	assert.NotNil(t, sess.Turns)
 }
@@ -37,7 +37,7 @@ func TestGet_Found(t *testing.T) {
 
 	sess, ok := s.Get("s1")
 	assert.True(t, ok)
-	assert.Equal(t, Id("s1"), sess.Id)
+	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
 }
 
 func TestList_Empty(t *testing.T) {
@@ -60,9 +60,9 @@ func TestList_SortedByLastActive(t *testing.T) {
 
 	list := s.List()
 	assert.Len(t, list, 3)
-	assert.Equal(t, Id("s2"), list[0].Id)
-	assert.Equal(t, Id("s3"), list[1].Id)
-	assert.Equal(t, Id("s1"), list[2].Id)
+	assert.Equal(t, Id("s2"), list[0].Meta.SessionId)
+	assert.Equal(t, Id("s3"), list[1].Meta.SessionId)
+	assert.Equal(t, Id("s1"), list[2].Meta.SessionId)
 }
 
 func TestMostRecent_Empty(t *testing.T) {
@@ -83,7 +83,7 @@ func TestMostRecent(t *testing.T) {
 
 	sess, ok := s.Last()
 	assert.True(t, ok)
-	assert.Equal(t, Id("s2"), sess.Id)
+	assert.Equal(t, Id("s2"), sess.Meta.SessionId)
 }
 
 func TestConcurrentAccess(t *testing.T) {

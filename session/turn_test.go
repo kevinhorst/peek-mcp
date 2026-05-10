@@ -12,7 +12,7 @@ func provideCompleteTurn() *Turn {
 		Role:      "user",
 		Text:      "What does this function do?",
 		Timestamp: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
-		Model:     "claude-opus-4-6",
+		Meta:      Meta{Model: "claude-opus-4-6"},
 		Usage: &Usage{
 			InputTokens:  100,
 			OutputTokens: 50,

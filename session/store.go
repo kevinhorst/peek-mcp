@@ -29,7 +29,7 @@ func (s *Store) GetOrCreate(id Id, source Source) *Session {
 	}
 
 	session := &Session{
-		Id:     id,
+		Meta:   Meta{SessionId: id},
 		Source: source,
 		Turns:  NewTurnBuffer(s.depth),
 	}
@@ -39,7 +39,7 @@ func (s *Store) GetOrCreate(id Id, source Source) *Session {
 
 func (s *Store) Create(id Id, source Source) {
 	session := &Session{
-		Id:     id,
+		Meta:   Meta{SessionId: id},
 		Source: source,
 		Turns:  NewTurnBuffer(s.depth),
 	}

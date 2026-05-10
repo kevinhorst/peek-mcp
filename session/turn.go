@@ -9,7 +9,7 @@ type Turn struct {
 	Role      Role      `json:"role"`
 	Text      string    `json:"text"`
 	Timestamp time.Time `json:"timestamp"`
-	Model     string    `json:"model,omitempty"`
+	Meta      Meta      `json:"meta"`
 	RequestId string    `json:"request_id,omitempty"`
 	Usage     *Usage    `json:"usage,omitempty"`
 }

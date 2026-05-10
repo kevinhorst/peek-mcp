@@ -16,15 +16,12 @@ const (
 )
 
 type Session struct {
-	Id                Id        `json:"id"`
-	Source            Source    `json:"source"`
-	CurrentWorkingDir string    `json:"cwd,omitempty"`
-	GitBranch         string    `json:"git_branch,omitempty"`
-	Model             string    `json:"model,omitempty"`
-	LastActive        time.Time `json:"last_active"`
-	TotalUsage        Usage     `json:"total_usage"`
-	FilePath          string    `json:"-"`
-	Turns             *TurnBuffer
+	Meta       Meta      `json:"meta"`
+	Source     Source    `json:"source"`
+	LastActive time.Time `json:"last_active"`
+	TotalUsage Usage     `json:"total_usage"`
+	FilePath   string    `json:"-"`
+	Turns      *TurnBuffer
 }
 
 func (s *Session) Validate() error {
@@ -32,7 +29,7 @@ func (s *Session) Validate() error {
 		return errors.New("session is nil")
 	}
 
-	if s.Id == "" {
+	if s.Meta.SessionId == "" {
 		return errors.New("id must not be empty")
 	}
 
@@ -49,4 +46,15 @@ func (s *Session) Validate() error {
 	}
 
 	return nil
+}
+
+func (s *Session) ApplyTurn(turn *Turn) {
+	s.Meta.UpdateFrom(&turn.Meta)
+	if !turn.Timestamp.IsZero() {
+		s.LastActive = turn.Timestamp
+	}
+	if turn.Usage != nil {
+		s.TotalUsage.Add(turn.Usage)
+	}
+	s.Turns.Push(turn)
 }

@@ -9,7 +9,7 @@ import (
 
 func provideCompleteSession() *Session {
 	return &Session{
-		Id:         Id("sess-123"),
+		Meta:       Meta{SessionId: Id("sess-123")},
 		Source:     SourceClaude,
 		LastActive: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
 		Turns:      NewTurnBuffer(20),
@@ -44,7 +44,7 @@ func TestSession_Validate(t *testing.T) {
 
 	// fail-empty-id
 	form := provideCompleteSession()
-	form.Id = ""
+	form.Meta.SessionId = ""
 	test = &testCase{
 		_id:         "fail-empty-id",
 		_shouldPass: false,
