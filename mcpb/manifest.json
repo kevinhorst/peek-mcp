@@ -31,7 +31,9 @@
   "tools": [
     { "name": "session_latest", "description": "Last N turns from the most recent session." },
     { "name": "session_list",   "description": "All known sessions with metadata." },
-    { "name": "session_get",    "description": "Last N turns from a specific session by ID." }
+    { "name": "session_get",    "description": "Last N turns from a specific session by ID." },
+    { "name": "session_plan",   "description": "Current plan for a session." },
+    { "name": "session_diff",   "description": "Pre-computed git diff for a session, refreshed on each new turn. Executes local git binary in the session's working directory." }
   ],
   "user_config": {
     "depth": {
