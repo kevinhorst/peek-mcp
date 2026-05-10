@@ -2,91 +2,82 @@ package claude
 
 import (
 	"encoding/json"
-	"log"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
-type Parser struct {
-	store *session.Store
-}
+type Parser struct{}
 
-func NewParser(s *session.Store) *Parser {
-	return &Parser{store: s}
-}
+func NewParser() *Parser { return &Parser{} }
 
-func (p *Parser) ParseLine(line []byte) {
+func (p *Parser) ParseLine(line []byte) *session.Turn {
 	entry := &Entry{}
 	if err := json.Unmarshal(line, &entry); err != nil {
-		return
+		return nil
 	}
 	if err := entry.Validate(); err != nil {
-		return
+		return nil
 	}
 
 	if entry.IsSidechain {
-		return
+		return nil
 	}
-	log.Printf("ClaudeParser: [%s], entry: %v", spew.Sdump(p), entry)
 
 	switch entry.Type {
 	case EntryTypeUser:
-		p.handleUser(entry)
+		return p.handleUser(entry)
 	case EntryTypeAssistant:
-		p.handleAssistant(entry)
+		return p.handleAssistant(entry)
+	default:
+		return nil
 	}
 }
 
-func (p *Parser) handleUser(entry *Entry) {
+func (p *Parser) handleUser(entry *Entry) *session.Turn {
 	if entry.PromptId == "" {
-		return
+		return nil
 	}
 
 	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
-		return
+		return nil
 	}
 	if err := message.Validate(); err != nil {
-		return
+		return nil
 	}
 
 	var text string
 	if err := json.Unmarshal(message.Content, &text); err != nil {
-		return
+		return nil
 	}
 
 	if strings.TrimSpace(text) == "" {
-		return
+		return nil
 	}
 
-	current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
-	p.updateMeta(current, entry, "")
-
-	current.Turns.Push(&session.Turn{
+	return &session.Turn{
 		Role:      session.RoleUser,
 		Text:      text,
 		Timestamp: entry.Timestamp,
-	})
+		Meta: session.Meta{
+			SessionId: entry.SessionId,
+			CWD:       entry.CurrentWorkingDir,
+			GitBranch: entry.GitBranch,
+		},
+	}
 }
 
-func (p *Parser) handleAssistant(entry *Entry) {
+func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
-		return
+		return nil
 	}
 	if err := message.Validate(); err != nil {
-		return
+		return nil
 	}
 
 	text := extractTextBlocks(message.Content)
-
-	if text == "" && entry.SessionId != "" {
-		current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
-		p.updateMeta(current, entry, message.Model)
-		return
-	}
 
 	var usage *session.Usage
 	if message.Usage != nil {
@@ -98,38 +89,18 @@ func (p *Parser) handleAssistant(entry *Entry) {
 		}
 	}
 
-	current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
-	p.updateMeta(current, entry, message.Model)
-
-	if usage != nil {
-		current.TotalUsage.Add(usage)
-	}
-
-	current.Turns.Push(&session.Turn{
+	return &session.Turn{
 		Role:      session.RoleAssistant,
 		Text:      text,
 		Timestamp: entry.Timestamp,
-		Model:     message.Model,
 		RequestId: entry.RequestId,
 		Usage:     usage,
-	})
-}
-
-func (p *Parser) updateMeta(session *session.Session, entry *Entry, model string) {
-	if !entry.Timestamp.IsZero() {
-		session.LastActive = entry.Timestamp
-	}
-
-	if entry.CurrentWorkingDir != "" {
-		session.CurrentWorkingDir = entry.CurrentWorkingDir
-	}
-
-	if entry.GitBranch != "" {
-		session.GitBranch = entry.GitBranch
-	}
-
-	if model != "" {
-		session.Model = model
+		Meta: session.Meta{
+			SessionId: entry.SessionId,
+			CWD:       entry.CurrentWorkingDir,
+			GitBranch: entry.GitBranch,
+			Model:     message.Model,
+		},
 	}
 }
 

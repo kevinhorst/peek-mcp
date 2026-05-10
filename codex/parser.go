@@ -15,55 +15,59 @@ const (
 )
 
 type Parser struct {
-	store     *session.Store
 	sessionId session.Id
 	model     string
 }
 
-func NewParser(s *session.Store) *Parser {
-	return &Parser{store: s}
-}
+func NewParser() *Parser { return &Parser{} }
 
-
-func (p *Parser) ParseLine(line []byte) {
+func (p *Parser) ParseLine(line []byte) *session.Turn {
 	var entry Entry
 	if err := json.Unmarshal(line, &entry); err != nil {
-		return
+		return nil
 	}
 	if err := entry.Validate(); err != nil {
-		return
+		return nil
 	}
 
 	switch entry.Type {
 	case EntryTypeSessionMeta:
-		p.handleSessionMeta(entry.Payload, entry.Timestamp)
+		return p.handleSessionMeta(entry.Payload, entry.Timestamp)
 	case EntryTypeTurnContext:
 		p.handleTurnContext(entry.Payload)
+		return nil
 	case EntryTypeResponseItem:
-		p.handleResponseItem(entry.Payload, entry.Timestamp)
+		return p.handleResponseItem(entry.Payload, entry.Timestamp)
 	case EntryTypeEventMessage:
-		p.handleEventMessage(entry.Payload, entry.Timestamp)
+		return p.handleEventMessage(entry.Payload, entry.Timestamp)
+	default:
+		return nil
 	}
 }
 
-func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) {
+func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *session.Turn {
 	var meta SessionMeta
 	if err := json.Unmarshal(payload, &meta); err != nil {
-		return
+		return nil
 	}
 	if err := meta.Validate(); err != nil {
-		return
+		return nil
 	}
 
 	p.sessionId = meta.Id
 
-	current := p.store.GetOrCreate(meta.Id, session.SourceCodex)
-	current.CurrentWorkingDir = meta.CWD
-	if !ts.IsZero() {
-		current.LastActive = ts
-	}
+	gitBranch := ""
 	if meta.Git != nil {
-		current.GitBranch = meta.Git.CommitHash
+		gitBranch = meta.Git.CommitHash
+	}
+
+	return &session.Turn{
+		Timestamp: ts,
+		Meta: session.Meta{
+			SessionId: meta.Id,
+			CWD:       meta.CWD,
+			GitBranch: gitBranch,
+		},
 	}
 }
 
@@ -80,92 +84,90 @@ func (p *Parser) handleTurnContext(payload json.RawMessage) {
 	}
 }
 
-func (p *Parser) handleResponseItem(payload json.RawMessage, ts time.Time) {
+func (p *Parser) handleResponseItem(payload json.RawMessage, ts time.Time) *session.Turn {
 	if p.sessionId == "" {
-		return
+		return nil
 	}
 
 	var item ResponseItem
 	if err := json.Unmarshal(payload, &item); err != nil {
-		return
+		return nil
 	}
 	if err := item.Validate(); err != nil {
-		return
+		return nil
 	}
 
 	if item.Type != codexMessageType {
-		return
+		return nil
 	}
 
 	switch item.Role {
 	case session.RoleUser:
-		p.handleUserMessage(&item, ts)
+		return p.handleUserMessage(&item, ts)
 	case session.RoleAssistant:
-		p.handleAssistantMessage(&item, ts)
+		return p.handleAssistantMessage(&item, ts)
+	default:
+		return nil
 	}
 }
 
-func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time) {
+func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time) *session.Turn {
 	if p.sessionId == "" {
-		return
+		return nil
 	}
 
 	var eventMessage EventMessage
 	if err := json.Unmarshal(payload, &eventMessage); err != nil {
-		return
+		return nil
 	}
 	if err := eventMessage.Validate(); err != nil {
-		return
+		return nil
 	}
 	if eventMessage.Type != EventTypeTokenCount || eventMessage.Info == nil || eventMessage.Info.TotalTokenUsage == nil {
-		return
+		return nil
 	}
 
-	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
-	if !timestamp.IsZero() {
-		current.LastActive = timestamp
+	usage := convertUsage(eventMessage.Info.TotalTokenUsage)
+	return &session.Turn{
+		Timestamp: timestamp,
+		Usage:     &usage,
+		Meta: session.Meta{
+			SessionId: p.sessionId,
+		},
 	}
-	current.TotalUsage = convertUsage(eventMessage.Info.TotalTokenUsage)
 }
 
-func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) {
+func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) *session.Turn {
 	text := p.extractText(item.Content, codexInputTextType)
 	if text == "" {
-		return
+		return nil
 	}
 
-	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
-	if !ts.IsZero() {
-		current.LastActive = ts
-	}
-
-	current.Turns.Push(&session.Turn{
+	return &session.Turn{
 		Role:      session.RoleUser,
 		Text:      text,
 		Timestamp: ts,
-	})
+		Meta: session.Meta{
+			SessionId: p.sessionId,
+		},
+	}
 }
 
-func (p *Parser) handleAssistantMessage(item *ResponseItem, timestamp time.Time) {
+func (p *Parser) handleAssistantMessage(item *ResponseItem, ts time.Time) *session.Turn {
 	text := p.extractText(item.Content, codexOutputTextType)
 	if text == "" {
-		return
+		return nil
 	}
 
-	current := p.store.GetOrCreate(p.sessionId, session.SourceCodex)
-	if !timestamp.IsZero() {
-		current.LastActive = timestamp
-	}
-	if p.model != "" {
-		current.Model = p.model
-	}
-
-	current.Turns.Push(&session.Turn{
+	return &session.Turn{
 		Role:      session.RoleAssistant,
 		Text:      text,
-		Timestamp: timestamp,
-		Model:     p.model,
-	})
+		Timestamp: ts,
+		Meta: session.Meta{
+			SessionId: p.sessionId,
+			Model:     p.model,
+		},
+	}
 }
 
 func (p *Parser) extractText(blocks []ContentBlock, targetType string) string {

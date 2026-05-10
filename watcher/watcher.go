@@ -42,7 +42,7 @@ type watchedFile struct {
 }
 
 type lineParser interface {
-	ParseLine(line []byte)
+	ParseLine(line []byte) *session.Turn
 }
 
 func New(store *session.Store, claudeHome, codexHome string) *Watcher {
@@ -167,10 +167,28 @@ func (w *Watcher) readNewLines(path string) {
 	buffer = append(buffer, fileInfo.lines...)
 	buffer = append(buffer, newLines...)
 
-	fileInfo.lines = parseCompleteLines(buffer, fileInfo.parser)
+	source := w.sourceForPath(path)
+	fileInfo.lines = parseCompleteLines(buffer, func(line []byte) {
+		turn := fileInfo.parser.ParseLine(line)
+		if turn == nil || turn.Meta.SessionId == "" {
+			return
+		}
+		current := w.store.GetOrCreate(turn.Meta.SessionId, source)
+		if turn.Text != "" {
+			current.ApplyTurn(turn)
+		} else {
+			current.Meta.UpdateFrom(&turn.Meta)
+			if !turn.Timestamp.IsZero() {
+				current.LastActive = turn.Timestamp
+			}
+			if turn.Usage != nil {
+				current.TotalUsage = *turn.Usage
+			}
+		}
+	})
 }
 
-func parseCompleteLines(buffer []byte, parser lineParser) []byte {
+func parseCompleteLines(buffer []byte, handle func(line []byte)) []byte {
 	if len(buffer) == 0 {
 		return nil
 	}
@@ -188,7 +206,7 @@ func parseCompleteLines(buffer []byte, parser lineParser) []byte {
 		line := bytes.TrimSuffix(part, []byte{'\n'})
 		line = bytes.TrimSuffix(line, []byte{'\r'})
 		if len(line) > 0 {
-			parser.ParseLine(line)
+			handle(line)
 		}
 	}
 
@@ -203,9 +221,9 @@ func (w *Watcher) getOrCreateFile(path string) *watchedFile {
 
 	file := &watchedFile{}
 	if w.isClaude(path) {
-		file.parser = claude.NewParser(w.store)
+		file.parser = claude.NewParser()
 	} else {
-		file.parser = codex.NewParser(w.store)
+		file.parser = codex.NewParser()
 	}
 	w.files[key] = file
 	return file
@@ -214,4 +232,11 @@ func (w *Watcher) getOrCreateFile(path string) *watchedFile {
 func (w *Watcher) isClaude(path string) bool {
 	claudeProjects := filepath.Join(w.claudeHome, claudeProjectsDir)
 	return strings.HasPrefix(path, claudeProjects)
+}
+
+func (w *Watcher) sourceForPath(path string) session.Source {
+	if w.isClaude(path) {
+		return session.SourceClaude
+	}
+	return session.SourceCodex
 }

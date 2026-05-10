@@ -8,10 +8,9 @@ import (
 )
 
 func TestClaude_UserPrompt(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"type": "user",
 		"promptId": "abc-123",
 		"sessionId": "sess-1",
@@ -25,24 +24,18 @@ func TestClaude_UserPrompt(t *testing.T) {
 		}
 	}`))
 
-
-	sess, ok := s.Get("sess-1")
-	assert.True(t, ok, "session not created")
-
-	turns, ok := sess.Turns.Last(10)
-	assert.True(t, ok, "turns not created")
-	assert.Len(t, turns, 1)
-	assert.Equal(t, session.RoleUser, turns[0].Role)
-	assert.Equal(t, "What does this function do?", turns[0].Text)
-	assert.Equal(t, "/home/user/project", sess.CurrentWorkingDir)
-	assert.Equal(t, "main", sess.GitBranch)
+	assert.NotNil(t, turn)
+	assert.Equal(t, session.RoleUser, turn.Role)
+	assert.Equal(t, "What does this function do?", turn.Text)
+	assert.Equal(t, session.Id("sess-1"), turn.Meta.SessionId)
+	assert.Equal(t, "/home/user/project", turn.Meta.CWD)
+	assert.Equal(t, "main", turn.Meta.GitBranch)
 }
 
 func TestClaude_ToolResultSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"type": "user",
 		"promptId": "abc-123",
 		"sessionId": "sess-1",
@@ -54,18 +47,13 @@ func TestClaude_ToolResultSkipped(t *testing.T) {
 		}
 	}`))
 
-
-	sess, ok := s.Get("sess-1")
-	if ok {
-		assert.Equal(t, 0, sess.Turns.Len(), "tool result should not create a turn")
-	}
+	assert.Nil(t, turn)
 }
 
 func TestClaude_AssistantWithText(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"type": "assistant",
 		"requestId": "req-1",
 		"sessionId": "sess-1",
@@ -88,30 +76,25 @@ func TestClaude_AssistantWithText(t *testing.T) {
 		}
 	}`))
 
-
-	sess, ok := s.Get("sess-1")
-	assert.True(t, ok, "session not created")
-
-	turns, ok := sess.Turns.Last(10)
-	assert.True(t, ok, "turns not created")
-	assert.Len(t, turns, 1)
-	assert.Equal(t, session.RoleAssistant, turns[0].Role)
-	assert.Equal(t, "This function calculates the sum.\n", turns[0].Text)
-	assert.Equal(t, "claude-opus-4-6", turns[0].Model)
-	assert.NotNil(t, turns[0].Usage)
-	assert.Equal(t, 100, turns[0].Usage.InputTokens)
-	assert.Equal(t, 50, turns[0].Usage.OutputTokens)
+	assert.NotNil(t, turn)
+	assert.Equal(t, session.RoleAssistant, turn.Role)
+	assert.Equal(t, "This function calculates the sum.\n", turn.Text)
+	assert.Equal(t, "claude-opus-4-6", turn.Meta.Model)
+	assert.Equal(t, session.Id("sess-1"), turn.Meta.SessionId)
+	assert.NotNil(t, turn.Usage)
+	assert.Equal(t, 100, turn.Usage.InputTokens)
+	assert.Equal(t, 50, turn.Usage.OutputTokens)
 }
 
-func TestClaude_AssistantThinkingOnlySkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+func TestClaude_AssistantThinkingOnly(t *testing.T) {
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"type": "assistant",
 		"requestId": "req-1",
 		"sessionId": "sess-1",
 		"timestamp": "2026-04-05T15:30:18.628Z",
+		"cwd": "/home/user/project",
 		"isSidechain": false,
 		"message": {
 			"role": "assistant",
@@ -122,18 +105,16 @@ func TestClaude_AssistantThinkingOnlySkipped(t *testing.T) {
 		}
 	}`))
 
-
-	sess, ok := s.Get("sess-1")
-	if ok {
-		assert.Equal(t, 0, sess.Turns.Len(), "thinking-only response should not create a turn")
-	}
+	assert.NotNil(t, turn, "meta-only turn should not be nil")
+	assert.Equal(t, "", turn.Text, "thinking-only should have empty text")
+	assert.Equal(t, session.Id("sess-1"), turn.Meta.SessionId)
+	assert.Equal(t, "claude-opus-4-6", turn.Meta.Model)
 }
 
 func TestClaude_SidechainSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"type": "user",
 		"promptId": "abc-123",
 		"sessionId": "sess-1",
@@ -145,32 +126,26 @@ func TestClaude_SidechainSkipped(t *testing.T) {
 		}
 	}`))
 
-
-	_, ok := s.Get("sess-1")
-	assert.False(t, ok, "sidechain entry should not create a session")
+	assert.Nil(t, turn)
 }
 
 func TestClaude_QueueOperationSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"type": "queue-operation",
 		"operation": "enqueue",
 		"sessionId": "sess-1",
 		"timestamp": "2026-04-05T15:30:14.575Z"
 	}`))
 
-
-	_, ok := s.Get("sess-1")
-	assert.False(t, ok, "queue-operation should not create a session")
+	assert.Nil(t, turn)
 }
 
 func TestClaude_NoPromptIdSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"type": "user",
 		"sessionId": "sess-1",
 		"timestamp": "2026-04-05T15:30:14.588Z",
@@ -181,19 +156,14 @@ func TestClaude_NoPromptIdSkipped(t *testing.T) {
 		}
 	}`))
 
-
-	sess, ok := s.Get("sess-1")
-	if ok {
-		assert.Equal(t, 0, sess.Turns.Len(), "entry without promptId should not create a turn")
-	}
+	assert.Nil(t, turn)
 }
 
 func TestClaude_SameRequestIdMerged(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	// First chunk: thinking only (no text)
-	p.ParseLine([]byte(`{
+	turn1 := p.ParseLine([]byte(`{
 		"type": "assistant",
 		"requestId": "req-1",
 		"sessionId": "sess-1",
@@ -209,7 +179,7 @@ func TestClaude_SameRequestIdMerged(t *testing.T) {
 	}`))
 
 	// Second chunk: text content, same requestId
-	p.ParseLine([]byte(`{
+	turn2 := p.ParseLine([]byte(`{
 		"type": "assistant",
 		"requestId": "req-1",
 		"sessionId": "sess-1",
@@ -228,117 +198,64 @@ func TestClaude_SameRequestIdMerged(t *testing.T) {
 		}
 	}`))
 
+	assert.NotNil(t, turn1, "thinking-only returns meta-only turn")
+	assert.Equal(t, "", turn1.Text)
+	assert.Equal(t, "req-1", turn1.RequestId)
 
-	sess, ok := s.Get("sess-1")
-	assert.True(t, ok, "session not created")
-
-	turns, ok := sess.Turns.Last(10)
-	assert.True(t, ok, "turns not created")
-	assert.Len(t, turns, 1, "thinking-only chunk produces no turn, text chunk produces one")
-	assert.Equal(t, "Here is the answer.\n", turns[0].Text)
-	assert.Equal(t, "req-1", turns[0].RequestId)
+	assert.NotNil(t, turn2)
+	assert.Equal(t, "Here is the answer.\n", turn2.Text)
+	assert.Equal(t, "req-1", turn2.RequestId)
 }
 
 func TestClaude_FullConversation(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	// User prompt
-	p.ParseLine([]byte(`{
-		"type": "user",
-		"promptId": "p1",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:00:00.000Z",
-		"cwd": "/project",
-		"gitBranch": "feature",
-		"isSidechain": false,
-		"message": {"role": "user", "content": "Explain this code"}
-	}`))
+	var turns []*session.Turn
 
-	// Assistant response
-	p.ParseLine([]byte(`{
-		"type": "assistant",
-		"requestId": "req-1",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:00:05.000Z",
-		"cwd": "/project",
-		"gitBranch": "feature",
-		"isSidechain": false,
-		"message": {
-			"role": "assistant",
-			"model": "claude-sonnet-4-20250514",
-			"content": [{"type": "text", "text": "This code does X."}],
-			"usage": {"input_tokens": 50, "output_tokens": 20}
+	lines := []string{
+		// User prompt
+		`{"type":"user","promptId":"p1","sessionId":"sess-1","timestamp":"2026-04-05T15:00:00.000Z","cwd":"/project","gitBranch":"feature","isSidechain":false,"message":{"role":"user","content":"Explain this code"}}`,
+		// Assistant response
+		`{"type":"assistant","requestId":"req-1","sessionId":"sess-1","timestamp":"2026-04-05T15:00:05.000Z","cwd":"/project","gitBranch":"feature","isSidechain":false,"message":{"role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"This code does X."}],"usage":{"input_tokens":50,"output_tokens":20}}}`,
+		// Tool use (assistant) — meta-only (no text)
+		`{"type":"assistant","requestId":"req-2","sessionId":"sess-1","timestamp":"2026-04-05T15:00:06.000Z","isSidechain":false,"message":{"role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}]}}`,
+		// Tool result (user) — skipped (content is array, not string)
+		`{"type":"user","promptId":"p1","sessionId":"sess-1","timestamp":"2026-04-05T15:00:07.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"file data"}]}}`,
+		// Second user prompt
+		`{"type":"user","promptId":"p2","sessionId":"sess-1","timestamp":"2026-04-05T15:01:00.000Z","cwd":"/project","gitBranch":"feature","isSidechain":false,"message":{"role":"user","content":"Now fix the bug"}}`,
+	}
+
+	for _, line := range lines {
+		turn := p.ParseLine([]byte(line))
+		if turn != nil {
+			turns = append(turns, turn)
 		}
-	}`))
+	}
 
-	// Tool use (assistant) — should be skipped (no text)
-	p.ParseLine([]byte(`{
-		"type": "assistant",
-		"requestId": "req-2",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:00:06.000Z",
-		"isSidechain": false,
-		"message": {
-			"role": "assistant",
-			"model": "claude-sonnet-4-20250514",
-			"content": [{"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {}}]
-		}
-	}`))
+	// user, assistant (text), assistant (meta-only tool_use), user = 4 non-nil turns
+	// tool_result is nil (content is array, unmarshal to string fails)
+	assert.Len(t, turns, 4)
 
-	// Tool result (user) — should be skipped
-	p.ParseLine([]byte(`{
-		"type": "user",
-		"promptId": "p1",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:00:07.000Z",
-		"isSidechain": false,
-		"message": {
-			"role": "user",
-			"content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "file data"}]
-		}
-	}`))
-
-	// Second user prompt
-	p.ParseLine([]byte(`{
-		"type": "user",
-		"promptId": "p2",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:01:00.000Z",
-		"cwd": "/project",
-		"gitBranch": "feature",
-		"isSidechain": false,
-		"message": {"role": "user", "content": "Now fix the bug"}
-	}`))
-
-
-
-	sess, ok := s.Get("sess-1")
-	assert.True(t, ok, "session not created")
-
-	turns, ok := sess.Turns.Last(10)
-	assert.True(t, ok, "turns not created")
-	assert.Len(t, turns, 3, "expected 3 turns (user, assistant, user)")
 	assert.Equal(t, session.RoleUser, turns[0].Role)
 	assert.Equal(t, "Explain this code", turns[0].Text)
+
 	assert.Equal(t, session.RoleAssistant, turns[1].Role)
 	assert.Equal(t, "This code does X.\n", turns[1].Text)
-	assert.Equal(t, session.RoleUser, turns[2].Role)
-	assert.Equal(t, "Now fix the bug", turns[2].Text)
+	assert.Equal(t, "claude-sonnet-4-20250514", turns[1].Meta.Model)
 
-	assert.Equal(t, "claude-sonnet-4-20250514", sess.Model)
-	assert.Equal(t, 50, sess.TotalUsage.InputTokens)
+	assert.Equal(t, session.RoleAssistant, turns[2].Role)
+	assert.Equal(t, "", turns[2].Text, "tool_use-only is meta-only")
+
+	assert.Equal(t, session.RoleUser, turns[3].Role)
+	assert.Equal(t, "Now fix the bug", turns[3].Text)
 }
 
 func TestClaude_InvalidJSON(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	// Should not panic
 	assert.NotPanics(t, func() {
-		p.ParseLine([]byte(`not json`))
-		p.ParseLine([]byte(`{}`))
-		p.ParseLine([]byte(`{"type": "user"}`))
-	
+		assert.Nil(t, p.ParseLine([]byte(`not json`)))
+		assert.Nil(t, p.ParseLine([]byte(`{}`)))
+		assert.Nil(t, p.ParseLine([]byte(`{"type": "user"}`)))
 	})
 }

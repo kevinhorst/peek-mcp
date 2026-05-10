@@ -8,10 +8,9 @@ import (
 )
 
 func TestCodex_SessionMeta(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
 		"type": "session_meta",
 		"payload": {
@@ -25,16 +24,15 @@ func TestCodex_SessionMeta(t *testing.T) {
 		}
 	}`))
 
-	sess, ok := s.Get("sess-codex-1")
-	assert.True(t, ok, "session not created")
-	assert.Equal(t, session.SourceCodex, sess.Source)
-	assert.Equal(t, "/home/user/project", sess.CurrentWorkingDir)
-	assert.Equal(t, "abc123", sess.GitBranch)
+	assert.NotNil(t, turn)
+	assert.Equal(t, "", turn.Text, "session_meta is meta-only")
+	assert.Equal(t, session.Id("sess-codex-1"), turn.Meta.SessionId)
+	assert.Equal(t, "/home/user/project", turn.Meta.CWD)
+	assert.Equal(t, "abc123", turn.Meta.GitBranch)
 }
 
 func TestCodex_TurnContext(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -42,7 +40,7 @@ func TestCodex_TurnContext(t *testing.T) {
 		"payload": {"id": "sess-codex-1", "cwd": "/project"}
 	}`))
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:38.123Z",
 		"type": "turn_context",
 		"payload": {
@@ -52,12 +50,12 @@ func TestCodex_TurnContext(t *testing.T) {
 		}
 	}`))
 
+	assert.Nil(t, turn, "turn_context returns nil")
 	assert.Equal(t, "gpt-5.4", p.model)
 }
 
 func TestCodex_UserMessage(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -65,7 +63,7 @@ func TestCodex_UserMessage(t *testing.T) {
 		"payload": {"id": "sess-codex-1", "cwd": "/project"}
 	}`))
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:38.234Z",
 		"type": "response_item",
 		"payload": {
@@ -75,17 +73,14 @@ func TestCodex_UserMessage(t *testing.T) {
 		}
 	}`))
 
-	sess, _ := s.Get("sess-codex-1")
-	turns, ok := sess.Turns.Last(10)
-	assert.True(t, ok, "turns not created")
-	assert.Len(t, turns, 1)
-	assert.Equal(t, session.RoleUser, turns[0].Role)
-	assert.Equal(t, "Fix the bug in auth", turns[0].Text)
+	assert.NotNil(t, turn)
+	assert.Equal(t, session.RoleUser, turn.Role)
+	assert.Equal(t, "Fix the bug in auth", turn.Text)
+	assert.Equal(t, session.Id("sess-codex-1"), turn.Meta.SessionId)
 }
 
 func TestCodex_AssistantMessage(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
@@ -97,7 +92,7 @@ func TestCodex_AssistantMessage(t *testing.T) {
 		"type": "turn_context",
 		"payload": {"turn_id": "t1", "model": "gpt-5.4"}
 	}`))
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:40.000Z",
 		"type": "response_item",
 		"payload": {
@@ -107,25 +102,21 @@ func TestCodex_AssistantMessage(t *testing.T) {
 		}
 	}`))
 
-	sess, _ := s.Get("sess-codex-1")
-	turns, ok := sess.Turns.Last(10)
-	assert.True(t, ok, "turns not created")
-	assert.Len(t, turns, 1)
-	assert.Equal(t, session.RoleAssistant, turns[0].Role)
-	assert.Equal(t, "gpt-5.4", turns[0].Model)
-	assert.Equal(t, "I fixed the auth bug by updating the token validation.", turns[0].Text)
+	assert.NotNil(t, turn)
+	assert.Equal(t, session.RoleAssistant, turn.Role)
+	assert.Equal(t, "gpt-5.4", turn.Meta.Model)
+	assert.Equal(t, "I fixed the auth bug by updating the token validation.", turn.Text)
 }
 
 func TestCodex_FunctionCallSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
 		"type": "session_meta",
 		"payload": {"id": "sess-codex-1", "cwd": "/project"}
 	}`))
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:40.000Z",
 		"type": "response_item",
 		"payload": {
@@ -136,20 +127,18 @@ func TestCodex_FunctionCallSkipped(t *testing.T) {
 		}
 	}`))
 
-	sess, _ := s.Get("sess-codex-1")
-	assert.Equal(t, 0, sess.Turns.Len(), "function_call should not create a turn")
+	assert.Nil(t, turn)
 }
 
 func TestCodex_FunctionCallOutputSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
 		"type": "session_meta",
 		"payload": {"id": "sess-codex-1", "cwd": "/project"}
 	}`))
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:40.000Z",
 		"type": "response_item",
 		"payload": {
@@ -159,20 +148,18 @@ func TestCodex_FunctionCallOutputSkipped(t *testing.T) {
 		}
 	}`))
 
-	sess, _ := s.Get("sess-codex-1")
-	assert.Equal(t, 0, sess.Turns.Len(), "function_call_output should not create a turn")
+	assert.Nil(t, turn)
 }
 
 func TestCodex_ReasoningSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
 		"type": "session_meta",
 		"payload": {"id": "sess-codex-1", "cwd": "/project"}
 	}`))
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:40.000Z",
 		"type": "response_item",
 		"payload": {
@@ -182,15 +169,13 @@ func TestCodex_ReasoningSkipped(t *testing.T) {
 		}
 	}`))
 
-	sess, _ := s.Get("sess-codex-1")
-	assert.Equal(t, 0, sess.Turns.Len(), "reasoning should not create a turn")
+	assert.Nil(t, turn)
 }
 
 func TestCodex_NoSessionMetaSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:40.000Z",
 		"type": "response_item",
 		"payload": {
@@ -200,38 +185,35 @@ func TestCodex_NoSessionMetaSkipped(t *testing.T) {
 		}
 	}`))
 
-	assert.Empty(t, s.List(), "response_item without session_meta should not create a session")
+	assert.Nil(t, turn)
 }
 
 func TestCodex_EventMsgSkipped(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
 		"type": "session_meta",
 		"payload": {"id": "sess-codex-1", "cwd": "/project"}
 	}`))
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:40.000Z",
 		"type": "event_msg",
 		"payload": {"type": "token_count", "info": null}
 	}`))
 
-	sess, _ := s.Get("sess-codex-1")
-	assert.Equal(t, 0, sess.Turns.Len(), "event_msg should not create a turn")
+	assert.Nil(t, turn, "event_msg without usage info returns nil")
 }
 
-func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+func TestCodex_TokenCountEvent(t *testing.T) {
+	p := NewParser()
 
 	p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:45:22.019Z",
 		"type": "session_meta",
 		"payload": {"id": "sess-codex-1", "cwd": "/project"}
 	}`))
-	p.ParseLine([]byte(`{
+	turn := p.ParseLine([]byte(`{
 		"timestamp": "2026-03-29T23:47:40.000Z",
 		"type": "event_msg",
 		"payload": {
@@ -248,22 +230,23 @@ func TestCodex_TokenCountEventUpdatesSessionUsageWithoutCreatingTurn(t *testing.
 		}
 	}`))
 
-	session, _ := s.Get("sess-codex-1")
-	assert.Equal(t, 0, session.Turns.Len(), "token_count event should not create a turn")
-	assert.Equal(t, 100, session.TotalUsage.InputTokens)
-	assert.Equal(t, 60, session.TotalUsage.CachedInputTokens)
-	assert.Equal(t, 20, session.TotalUsage.OutputTokens)
-	assert.Equal(t, 5, session.TotalUsage.ReasoningOutputTokens)
-	assert.Equal(t, 125, session.TotalUsage.TotalTokens)
+	assert.NotNil(t, turn)
+	assert.Equal(t, "", turn.Text, "token_count is meta-only")
+	assert.Equal(t, session.Id("sess-codex-1"), turn.Meta.SessionId)
+	assert.NotNil(t, turn.Usage)
+	assert.Equal(t, 100, turn.Usage.InputTokens)
+	assert.Equal(t, 60, turn.Usage.CachedInputTokens)
+	assert.Equal(t, 20, turn.Usage.OutputTokens)
+	assert.Equal(t, 5, turn.Usage.ReasoningOutputTokens)
+	assert.Equal(t, 125, turn.Usage.TotalTokens)
 }
 
 func TestCodex_InvalidJSON(t *testing.T) {
-	s := session.NewStore(20)
-	p := NewParser(s)
+	p := NewParser()
 
 	assert.NotPanics(t, func() {
-		p.ParseLine([]byte(`not json`))
-		p.ParseLine([]byte(`{}`))
-		p.ParseLine([]byte(`{"type": "session_meta", "payload": "bad"}`))
+		assert.Nil(t, p.ParseLine([]byte(`not json`)))
+		assert.Nil(t, p.ParseLine([]byte(`{}`)))
+		assert.Nil(t, p.ParseLine([]byte(`{"type": "session_meta", "payload": "bad"}`)))
 	})
 }
