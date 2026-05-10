@@ -10,10 +10,7 @@ import (
 )
 
 type Parser struct {
-	store            *session.Store
-	lastRequestId    string
-	pendingTurn      *session.Turn
-	pendingSessionId session.Id
+	store *session.Store
 }
 
 func NewParser(s *session.Store) *Parser {
@@ -42,10 +39,6 @@ func (p *Parser) ParseLine(line []byte) {
 	}
 }
 
-func (p *Parser) Flush() {
-	p.flushPending()
-}
-
 func (p *Parser) handleUser(entry *Entry) {
 	if entry.PromptId == "" {
 		return
@@ -59,7 +52,6 @@ func (p *Parser) handleUser(entry *Entry) {
 		return
 	}
 
-	// Genuine human prompt has string content, not array (tool_result)
 	var text string
 	if err := json.Unmarshal(message.Content, &text); err != nil {
 		return
@@ -68,9 +60,6 @@ func (p *Parser) handleUser(entry *Entry) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
-
-	// Flush any pending assistant turn before adding user turn
-	p.flushPending()
 
 	current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
 	p.updateMeta(current, entry, "")
@@ -93,7 +82,6 @@ func (p *Parser) handleAssistant(entry *Entry) {
 
 	text := extractTextBlocks(message.Content)
 
-	// No text content (thinking-only or tool_use-only) — still update meta
 	if text == "" && entry.SessionId != "" {
 		current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
 		p.updateMeta(current, entry, message.Model)
@@ -110,56 +98,21 @@ func (p *Parser) handleAssistant(entry *Entry) {
 		}
 	}
 
-	// Same requestId means this is a continuation of the same logical response
-	if entry.RequestId != "" && entry.RequestId == p.lastRequestId && p.pendingTurn != nil {
-		p.pendingTurn.Text += text
-		if usage != nil {
-			p.pendingTurn.Usage = usage
-		}
-		if message.Model != "" {
-			p.pendingTurn.Model = message.Model
-		}
-		return
+	current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
+	p.updateMeta(current, entry, message.Model)
+
+	if usage != nil {
+		current.TotalUsage.Add(usage)
 	}
 
-	// Different requestId — flush previous and start new pending turn
-	p.flushPending()
-
-	p.lastRequestId = entry.RequestId
-	p.pendingSessionId = entry.SessionId
-	p.pendingTurn = &session.Turn{
+	current.Turns.Push(&session.Turn{
 		Role:      session.RoleAssistant,
 		Text:      text,
 		Timestamp: entry.Timestamp,
 		Model:     message.Model,
+		RequestId: entry.RequestId,
 		Usage:     usage,
-	}
-
-	current := p.store.GetOrCreate(entry.SessionId, session.SourceClaude)
-	p.updateMeta(current, entry, message.Model)
-}
-
-func (p *Parser) flushPending() {
-	if p.pendingTurn == nil || p.pendingSessionId == "" {
-		return
-	}
-
-	current, ok := p.store.Get(p.pendingSessionId)
-	if !ok {
-		p.pendingTurn = nil
-		p.pendingSessionId = ""
-		p.lastRequestId = ""
-		return
-	}
-
-	if p.pendingTurn.Usage != nil {
-		current.TotalUsage.Add(p.pendingTurn.Usage)
-	}
-
-	current.Turns.Push(p.pendingTurn)
-	p.pendingTurn = nil
-	p.pendingSessionId = ""
-	p.lastRequestId = ""
+	})
 }
 
 func (p *Parser) updateMeta(session *session.Session, entry *Entry, model string) {

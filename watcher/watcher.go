@@ -43,7 +43,6 @@ type watchedFile struct {
 
 type lineParser interface {
 	ParseLine(line []byte)
-	Flush()
 }
 
 func New(store *session.Store, claudeHome, codexHome string) *Watcher {
@@ -169,7 +168,6 @@ func (w *Watcher) readNewLines(path string) {
 	buffer = append(buffer, newLines...)
 
 	fileInfo.lines = parseCompleteLines(buffer, fileInfo.parser)
-	fileInfo.parser.Flush()
 }
 
 func parseCompleteLines(buffer []byte, parser lineParser) []byte {

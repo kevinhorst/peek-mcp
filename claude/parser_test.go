@@ -24,7 +24,7 @@ func TestClaude_UserPrompt(t *testing.T) {
 			"content": "What does this function do?"
 		}
 	}`))
-	p.Flush()
+
 
 	sess, ok := s.Get("sess-1")
 	assert.True(t, ok, "session not created")
@@ -53,7 +53,7 @@ func TestClaude_ToolResultSkipped(t *testing.T) {
 			"content": [{"type": "tool_result", "tool_use_id": "toolu_123", "content": "file contents"}]
 		}
 	}`))
-	p.Flush()
+
 
 	sess, ok := s.Get("sess-1")
 	if ok {
@@ -87,7 +87,7 @@ func TestClaude_AssistantWithText(t *testing.T) {
 			}
 		}
 	}`))
-	p.Flush()
+
 
 	sess, ok := s.Get("sess-1")
 	assert.True(t, ok, "session not created")
@@ -96,7 +96,7 @@ func TestClaude_AssistantWithText(t *testing.T) {
 	assert.True(t, ok, "turns not created")
 	assert.Len(t, turns, 1)
 	assert.Equal(t, session.RoleAssistant, turns[0].Role)
-	assert.Equal(t, "This function calculates the sum.", turns[0].Text)
+	assert.Equal(t, "This function calculates the sum.\n", turns[0].Text)
 	assert.Equal(t, "claude-opus-4-6", turns[0].Model)
 	assert.NotNil(t, turns[0].Usage)
 	assert.Equal(t, 100, turns[0].Usage.InputTokens)
@@ -121,7 +121,7 @@ func TestClaude_AssistantThinkingOnlySkipped(t *testing.T) {
 			]
 		}
 	}`))
-	p.Flush()
+
 
 	sess, ok := s.Get("sess-1")
 	if ok {
@@ -144,7 +144,7 @@ func TestClaude_SidechainSkipped(t *testing.T) {
 			"content": "sidechain message"
 		}
 	}`))
-	p.Flush()
+
 
 	_, ok := s.Get("sess-1")
 	assert.False(t, ok, "sidechain entry should not create a session")
@@ -160,7 +160,7 @@ func TestClaude_QueueOperationSkipped(t *testing.T) {
 		"sessionId": "sess-1",
 		"timestamp": "2026-04-05T15:30:14.575Z"
 	}`))
-	p.Flush()
+
 
 	_, ok := s.Get("sess-1")
 	assert.False(t, ok, "queue-operation should not create a session")
@@ -180,7 +180,7 @@ func TestClaude_NoPromptIdSkipped(t *testing.T) {
 			"content": "no promptId"
 		}
 	}`))
-	p.Flush()
+
 
 	sess, ok := s.Get("sess-1")
 	if ok {
@@ -227,15 +227,16 @@ func TestClaude_SameRequestIdMerged(t *testing.T) {
 			}
 		}
 	}`))
-	p.Flush()
+
 
 	sess, ok := s.Get("sess-1")
 	assert.True(t, ok, "session not created")
 
 	turns, ok := sess.Turns.Last(10)
 	assert.True(t, ok, "turns not created")
-	assert.Len(t, turns, 1, "expected 1 merged turn")
-	assert.Equal(t, "Here is the answer.", turns[0].Text)
+	assert.Len(t, turns, 1, "thinking-only chunk produces no turn, text chunk produces one")
+	assert.Equal(t, "Here is the answer.\n", turns[0].Text)
+	assert.Equal(t, "req-1", turns[0].RequestId)
 }
 
 func TestClaude_FullConversation(t *testing.T) {
@@ -310,7 +311,7 @@ func TestClaude_FullConversation(t *testing.T) {
 		"message": {"role": "user", "content": "Now fix the bug"}
 	}`))
 
-	p.Flush()
+
 
 	sess, ok := s.Get("sess-1")
 	assert.True(t, ok, "session not created")
@@ -321,7 +322,7 @@ func TestClaude_FullConversation(t *testing.T) {
 	assert.Equal(t, session.RoleUser, turns[0].Role)
 	assert.Equal(t, "Explain this code", turns[0].Text)
 	assert.Equal(t, session.RoleAssistant, turns[1].Role)
-	assert.Equal(t, "This code does X.", turns[1].Text)
+	assert.Equal(t, "This code does X.\n", turns[1].Text)
 	assert.Equal(t, session.RoleUser, turns[2].Role)
 	assert.Equal(t, "Now fix the bug", turns[2].Text)
 
@@ -338,6 +339,6 @@ func TestClaude_InvalidJSON(t *testing.T) {
 		p.ParseLine([]byte(`not json`))
 		p.ParseLine([]byte(`{}`))
 		p.ParseLine([]byte(`{"type": "user"}`))
-		p.Flush()
+	
 	})
 }

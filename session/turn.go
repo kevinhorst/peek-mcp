@@ -10,6 +10,7 @@ type Turn struct {
 	Text      string    `json:"text"`
 	Timestamp time.Time `json:"timestamp"`
 	Model     string    `json:"model,omitempty"`
+	RequestId string    `json:"request_id,omitempty"`
 	Usage     *Usage    `json:"usage,omitempty"`
 }
 

@@ -24,7 +24,6 @@ func NewParser(s *session.Store) *Parser {
 	return &Parser{store: s}
 }
 
-func (p *Parser) Flush() {}
 
 func (p *Parser) ParseLine(line []byte) {
 	var entry Entry
