@@ -9,29 +9,24 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func splitLines(data []byte) [][]byte {
+	var out [][]byte
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) > 0 {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
 func TestClaude_UserPrompt(t *testing.T) {
 	p := NewParser()
 
-	turn := p.ParseLine([]byte(`{
-		"type": "user",
-		"promptId": "abc-123",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:14.588Z",
-		"cwd": "/home/user/project",
-		"gitBranch": "main",
-		"isSidechain": false,
-	  "message": {
-		"role": "user",
-		"content": [
-		  {
-			"tool_use_id": "toolu_01XfZ7iUmYn6oXKSrbnGGQbR",
-			"type": "text",
-			"text": "What does this function do?",
-			"is_error": false
-		  }
-		]
-  }
-	}`))
+	data, err := os.ReadFile("fixtures/user_prompt.json")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(bytes.TrimSpace(data))
 
 	assert.NotNil(t, turn)
 	assert.Equal(t, session.RoleUser, turn.Role)
@@ -41,49 +36,14 @@ func TestClaude_UserPrompt(t *testing.T) {
 	assert.Equal(t, "main", turn.Meta.GitBranch)
 }
 
-func TestClaude_ToolResultSkipped(t *testing.T) {
-	p := NewParser()
-
-	turn := p.ParseLine([]byte(`{
-		"type": "user",
-		"promptId": "abc-123",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:14.588Z",
-		"isSidechain": false,
-		"message": {
-			"role": "user",
-			"content": [{"type": "tool_result", "tool_use_id": "toolu_123", "content": "file contents"}]
-		}
-	}`))
-
-	assert.Nil(t, turn)
-}
-
 func TestClaude_AssistantWithText(t *testing.T) {
 	p := NewParser()
 
-	turn := p.ParseLine([]byte(`{
-		"type": "assistant",
-		"requestId": "req-1",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:18.628Z",
-		"cwd": "/home/user/project",
-		"gitBranch": "main",
-		"isSidechain": false,
-		"message": {
-			"role": "assistant",
-			"model": "claude-opus-4-6",
-			"content": [
-				{"type": "text", "text": "This function calculates the sum."}
-			],
-			"usage": {
-				"input_tokens": 100,
-				"output_tokens": 50,
-				"cache_creation_input_tokens": 200,
-				"cache_read_input_tokens": 300
-			}
-		}
-	}`))
+	data, err := os.ReadFile("fixtures/assistant_messages.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(splitLines(data)[0]) // assistant with text + usage
 
 	assert.NotNil(t, turn)
 	assert.Equal(t, session.RoleAssistant, turn.Role)
@@ -98,21 +58,11 @@ func TestClaude_AssistantWithText(t *testing.T) {
 func TestClaude_AssistantThinkingOnly(t *testing.T) {
 	p := NewParser()
 
-	turn := p.ParseLine([]byte(`{
-		"type": "assistant",
-		"requestId": "req-1",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:18.628Z",
-		"cwd": "/home/user/project",
-		"isSidechain": false,
-		"message": {
-			"role": "assistant",
-			"model": "claude-opus-4-6",
-			"content": [
-				{"type": "thinking", "thinking": "Let me analyze this..."}
-			]
-		}
-	}`))
+	data, err := os.ReadFile("fixtures/assistant_messages.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(splitLines(data)[1]) // assistant thinking-only
 
 	assert.NotNil(t, turn, "meta-only turn should not be nil")
 	assert.Equal(t, "", turn.Text, "thinking-only should have empty text")
@@ -120,92 +70,27 @@ func TestClaude_AssistantThinkingOnly(t *testing.T) {
 	assert.Equal(t, "claude-opus-4-6", turn.Meta.Model)
 }
 
-func TestClaude_SidechainSkipped(t *testing.T) {
-	p := NewParser()
-
-	turn := p.ParseLine([]byte(`{
-		"type": "user",
-		"promptId": "abc-123",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:14.588Z",
-		"isSidechain": true,
-		"message": {
-			"role": "user",
-			"content": "sidechain message"
-		}
-	}`))
-
-	assert.Nil(t, turn)
-}
-
-func TestClaude_QueueOperationSkipped(t *testing.T) {
-	p := NewParser()
-
-	turn := p.ParseLine([]byte(`{
-		"type": "queue-operation",
-		"operation": "enqueue",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:14.575Z"
-	}`))
-
-	assert.Nil(t, turn)
-}
-
-func TestClaude_NoPromptIdSkipped(t *testing.T) {
-	p := NewParser()
-
-	turn := p.ParseLine([]byte(`{
-		"type": "user",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:14.588Z",
-		"isSidechain": false,
-		"message": {
-			"role": "user",
-			"content": "no promptId"
-		}
-	}`))
-
-	assert.Nil(t, turn)
+func TestClaude_Skipped(t *testing.T) {
+	data, err := os.ReadFile("fixtures/skipped.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	for _, line := range splitLines(data) {
+		p := NewParser()
+		assert.Nil(t, p.ParseLine(line))
+	}
 }
 
 func TestClaude_SameRequestIdMerged(t *testing.T) {
 	p := NewParser()
 
-	// First chunk: thinking only (no text)
-	turn1 := p.ParseLine([]byte(`{
-		"type": "assistant",
-		"requestId": "req-1",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:18.000Z",
-		"isSidechain": false,
-		"message": {
-			"role": "assistant",
-			"model": "claude-opus-4-6",
-			"content": [
-				{"type": "thinking", "thinking": "analyzing..."}
-			]
-		}
-	}`))
-
-	// Second chunk: text content, same requestId
-	turn2 := p.ParseLine([]byte(`{
-		"type": "assistant",
-		"requestId": "req-1",
-		"sessionId": "sess-1",
-		"timestamp": "2026-04-05T15:30:19.000Z",
-		"isSidechain": false,
-		"message": {
-			"role": "assistant",
-			"model": "claude-opus-4-6",
-			"content": [
-				{"type": "text", "text": "Here is the answer."}
-			],
-			"usage": {
-				"input_tokens": 100,
-				"output_tokens": 25
-			}
-		}
-	}`))
+	data, err := os.ReadFile("fixtures/streaming_chunks.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	lines := splitLines(data)
+	turn1 := p.ParseLine(lines[0]) // thinking chunk
+	turn2 := p.ParseLine(lines[1]) // text chunk, same requestId
 
 	assert.NotNil(t, turn1, "thinking-only returns meta-only turn")
 	assert.Equal(t, "", turn1.Text)
@@ -255,18 +140,11 @@ func TestClaude_FullConversation(t *testing.T) {
 func TestClaude_PlanModeAttachment(t *testing.T) {
 	p := NewParser()
 
-	turn := p.ParseLine([]byte(`{
-		"type": "attachment",
-		"sessionId": "sess-plan",
-		"timestamp": "2026-05-10T12:00:00.000Z",
-		"isSidechain": false,
-		"attachment": {
-			"type": "plan_mode",
-			"planFilePath": "/Users/user/.claude/plans/some-plan.md",
-			"planExists": false,
-			"isSubAgent": false
-		}
-	}`))
+	data, err := os.ReadFile("fixtures/attachments.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(splitLines(data)[0]) // plan_mode attachment
 
 	assert.NotNil(t, turn)
 	assert.Equal(t, "/Users/user/.claude/plans/some-plan.md", turn.PlanFilePath)
@@ -276,17 +154,11 @@ func TestClaude_PlanModeAttachment(t *testing.T) {
 func TestClaude_PlanFileReferenceAttachment(t *testing.T) {
 	p := NewParser()
 
-	turn := p.ParseLine([]byte(`{
-		"type": "attachment",
-		"sessionId": "sess-plan",
-		"timestamp": "2026-05-10T12:00:00.000Z",
-		"isSidechain": false,
-		"attachment": {
-			"type": "plan_file_reference",
-			"planFilePath": "/Users/user/.claude/plans/some-plan.md",
-			"planContent": "# My Plan\n\nDo stuff."
-		}
-	}`))
+	data, err := os.ReadFile("fixtures/attachments.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(splitLines(data)[1]) // plan_file_reference attachment
 
 	assert.NotNil(t, turn)
 	assert.Equal(t, "/Users/user/.claude/plans/some-plan.md", turn.PlanFilePath)
@@ -296,17 +168,11 @@ func TestClaude_PlanFileReferenceAttachment(t *testing.T) {
 func TestClaude_NonPlanAttachmentSkipped(t *testing.T) {
 	p := NewParser()
 
-	turn := p.ParseLine([]byte(`{
-		"type": "attachment",
-		"sessionId": "sess-1",
-		"timestamp": "2026-05-10T12:00:00.000Z",
-		"isSidechain": false,
-		"attachment": {
-			"type": "edited_text_file",
-			"filename": "/path/to/file.go",
-			"snippet": "some code"
-		}
-	}`))
+	data, err := os.ReadFile("fixtures/attachments.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(splitLines(data)[2]) // edited_text_file attachment
 
 	assert.Nil(t, turn)
 }
