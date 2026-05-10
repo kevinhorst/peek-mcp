@@ -24,6 +24,11 @@ bump-version:
 	    > mcpb/manifest.json.tmp && mv mcpb/manifest.json.tmp mcpb/manifest.json
 	@echo "Bumped to $(VERSION) in cmd/version.go and mcpb/manifest.json"
 
+git-release: bump-version
+	git commit -am "chore: release v$(VERSION)"
+	git tag v$(VERSION)
+	git push && git push --tags
+
 build-linux-amd64:
 	@mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-amd64 .
