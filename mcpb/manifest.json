@@ -1,0 +1,64 @@
+{
+  "manifest_version": "0.3",
+  "name": "peek-mcp",
+  "display_name": "Peek MCP",
+  "version": "1.0.0",
+  "description": "Read Claude Code and Codex CLI sessions from disk and expose them via MCP.",
+  "long_description": "peek-mcp watches local Claude Code (~/.claude/projects) and Codex CLI (~/.codex/sessions) JSONL session files and exposes session_latest, session_list, and session_get tools so a second model can review what a primary agent produced without re-summarisation.",
+  "author": {
+    "name": "Kevin Horst",
+    "url": "https://github.com/kevinhorst/peek-mcp"
+  },
+  "homepage": "https://github.com/kevinhorst/peek-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kevinhorst/peek-mcp.git"
+  },
+  "license": "MIT",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/peek-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/peek-mcp",
+      "args": [
+        "--transport=stdio",
+        "--depth=${user_config.depth}",
+        "--claude-home=${user_config.claude_home}",
+        "--codex-home=${user_config.codex_home}"
+      ]
+    }
+  },
+  "tools": [
+    { "name": "session_latest", "description": "Last N turns from the most recent session." },
+    { "name": "session_list",   "description": "All known sessions with metadata." },
+    { "name": "session_get",    "description": "Last N turns from a specific session by ID." }
+  ],
+  "user_config": {
+    "depth": {
+      "type": "number",
+      "title": "Ring buffer depth",
+      "description": "Maximum turns kept per session.",
+      "default": 20,
+      "min": 1,
+      "max": 1000,
+      "required": true
+    },
+    "claude_home": {
+      "type": "directory",
+      "title": "Claude Code home",
+      "description": "Override the Claude Code session root.",
+      "default": "${HOME}/.claude",
+      "required": true
+    },
+    "codex_home": {
+      "type": "directory",
+      "title": "Codex CLI home",
+      "description": "Override the Codex session root.",
+      "default": "${HOME}/.codex",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin"]
+  }
+}
