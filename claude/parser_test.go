@@ -18,15 +18,22 @@ func TestClaude_UserPrompt(t *testing.T) {
 		"cwd": "/home/user/project",
 		"gitBranch": "main",
 		"isSidechain": false,
-		"message": {
-			"role": "user",
-			"content": "What does this function do?"
-		}
+	  "message": {
+		"role": "user",
+		"content": [
+		  {
+			"tool_use_id": "toolu_01XfZ7iUmYn6oXKSrbnGGQbR",
+			"type": "text",
+			"text": "What does this function do?",
+			"is_error": false
+		  }
+		]
+  }
 	}`))
 
 	assert.NotNil(t, turn)
 	assert.Equal(t, session.RoleUser, turn.Role)
-	assert.Equal(t, "What does this function do?", turn.Text)
+	assert.Equal(t, "What does this function do?\n", turn.Text)
 	assert.Equal(t, session.Id("sess-1"), turn.Meta.SessionId)
 	assert.Equal(t, "/home/user/project", turn.Meta.CWD)
 	assert.Equal(t, "main", turn.Meta.GitBranch)
