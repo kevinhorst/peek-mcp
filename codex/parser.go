@@ -2,7 +2,7 @@ package codex
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -27,12 +27,12 @@ func NewParser() *Parser { return &Parser{} }
 func (p *Parser) ParseLine(line []byte) *session.Turn {
 	var entry Entry
 	if err := json.Unmarshal(line, &entry); err != nil {
-		log.Printf("codex.Parser.ParseLine: %s", err.Error())
+		slog.Debug("ParseLine: unmarshal", "err", err)
 		return nil
 	}
 
 	if err := entry.Validate(); err != nil {
-		log.Printf("codex.Parser.ParseLine: %s", err.Error())
+		slog.Debug("ParseLine: validate", "err", err)
 		return nil
 	}
 
@@ -54,11 +54,11 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *session.Turn {
 	var meta SessionMeta
 	if err := json.Unmarshal(payload, &meta); err != nil {
-		log.Printf("codex.Parser.handleSessionMeta: %s", err.Error())
+		slog.Debug("handleSessionMeta: unmarshal", "err", err)
 		return nil
 	}
 	if err := meta.Validate(); err != nil {
-		log.Printf("codex.Parser.handleSessionMeta: %s", err.Error())
+		slog.Debug("handleSessionMeta: validate", "err", err)
 		return nil
 	}
 
@@ -83,11 +83,11 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *sessi
 func (p *Parser) handleTurnContext(payload json.RawMessage) {
 	var turnContext TurnContext
 	if err := json.Unmarshal(payload, &turnContext); err != nil {
-		log.Printf("codex.Parser.handleTurnContext: %s", err.Error())
+		slog.Debug("handleTurnContext: unmarshal", "err", err)
 		return
 	}
 	if err := turnContext.Validate(); err != nil {
-		log.Printf("codex.Parser.handleTurnContext: %s", err.Error())
+		slog.Debug("handleTurnContext: validate", "err", err)
 		return
 	}
 	if turnContext.Model != "" {
@@ -102,11 +102,11 @@ func (p *Parser) handleResponseItem(payload json.RawMessage, ts time.Time) *sess
 
 	var item ResponseItem
 	if err := json.Unmarshal(payload, &item); err != nil {
-		log.Printf("codex.Parser.handleResponseItem: %s", err.Error())
+		slog.Debug("handleResponseItem: unmarshal", "err", err)
 		return nil
 	}
 	if err := item.Validate(); err != nil {
-		log.Printf("codex.Parser.handleResponseItem: %s", err.Error())
+		slog.Debug("handleResponseItem: validate", "err", err)
 		return nil
 	}
 
@@ -131,11 +131,11 @@ func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time
 
 	var eventMessage EventMessage
 	if err := json.Unmarshal(payload, &eventMessage); err != nil {
-		log.Printf("codex.Parser.handleEventMessage: %s", err.Error())
+		slog.Debug("handleEventMessage: unmarshal", "err", err)
 		return nil
 	}
 	if err := eventMessage.Validate(); err != nil {
-		log.Printf("codex.Parser.handleEventMessage: %s", err.Error())
+		slog.Debug("handleEventMessage: validate", "err", err)
 		return nil
 	}
 	if eventMessage.Type != EventTypeTokenCount || eventMessage.Info == nil || eventMessage.Info.TotalTokenUsage == nil {
@@ -155,7 +155,7 @@ func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time
 func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) *session.Turn {
 	text := p.extractText(item.Content, codexInputTextType)
 	if text == "" {
-		log.Printf("codex.Parser.handleUserMessage: no input text found")
+		slog.Debug("handleUserMessage: no input text found")
 		return nil
 	}
 
@@ -172,7 +172,7 @@ func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) *session.Tu
 func (p *Parser) handleAssistantMessage(item *ResponseItem, ts time.Time) *session.Turn {
 	text := p.extractText(item.Content, codexOutputTextType)
 	if text == "" {
-		log.Printf("codex.Parser.handleAssistantMessage: no output text found")
+		slog.Debug("handleAssistantMessage: no output text found")
 		return nil
 	}
 

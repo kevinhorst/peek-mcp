@@ -3,7 +3,7 @@ package watcher
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
@@ -58,12 +58,12 @@ func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			log.Printf("DiffWatcher: git diff failed for session %s: %s", id, exitErr.Stderr)
+			slog.Warn("DiffWatcher: git diff failed", "session", id, "stderr", string(exitErr.Stderr))
 		} else {
-			log.Printf("DiffWatcher: git diff failed for session %s: %v", id, err)
+			slog.Warn("DiffWatcher: git diff failed", "session", id, "err", err)
 		}
 		return
 	}
 	w.store.UpdateDiff(id, w.target, string(output))
-	log.Printf("DiffWatcher: refreshed diff for session %s against %s (%d bytes)", id, w.target, len(output))
+	slog.Debug("DiffWatcher: refreshed diff", "session", id, "target", w.target, "bytes", len(output))
 }

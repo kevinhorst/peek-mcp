@@ -2,7 +2,7 @@ package claude
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/kevinhorst/peek-mcp/session"
@@ -17,11 +17,11 @@ func NewParser() *Parser { return &Parser{} }
 func (p *Parser) ParseLine(line []byte) *session.Turn {
 	entry := &Entry{}
 	if err := json.Unmarshal(line, &entry); err != nil {
-		log.Printf("Parser.ParseLine: %s", err.Error())
+		slog.Debug("Parser.ParseLine: unmarshal", "err", err)
 		return nil
 	}
 	if err := entry.Validate(); err != nil {
-		log.Printf("Parser.ParseLine: %s", err.Error())
+		slog.Debug("Parser.ParseLine: validate", "err", err)
 		return nil
 	}
 
@@ -48,11 +48,11 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 
 	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
-		log.Printf("claude.Parser.handleUser: %s", err.Error())
+		slog.Debug("handleUser: unmarshal", "err", err)
 		return nil
 	}
 	if err := message.Validate(); err != nil {
-		log.Printf("claude.Parser.handleUser: %s", err.Error())
+		slog.Debug("handleUser: validate", "err", err)
 		return nil
 	}
 
@@ -75,7 +75,7 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 
 	err := turn.Validate()
 	if err != nil {
-		log.Printf("claude.Parser.handleUser: %s", err.Error())
+		slog.Debug("handleUser: turn validate", "err", err)
 		return nil
 	}
 
@@ -85,11 +85,11 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
-		log.Printf("claude.Parser.handleAssistant: %s", err.Error())
+		slog.Debug("handleAssistant: unmarshal", "err", err)
 		return nil
 	}
 	if err := message.Validate(); err != nil {
-		log.Printf("claude.Parser.handleAssistant: %s", err.Error())
+		slog.Debug("handleAssistant: validate", "err", err)
 		return nil
 	}
 
@@ -120,7 +120,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 
 	err := turn.Validate()
 	if err != nil {
-		log.Printf("claude.Parser.handleAssistant: %s", err.Error())
+		slog.Debug("handleAssistant: turn validate", "err", err)
 		return nil
 	}
 
@@ -134,7 +134,7 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 
 	var attachment Attachment
 	if err := json.Unmarshal(entry.AttachmentRaw, &attachment); err != nil {
-		log.Printf("claude.Parser.handleAttachment: %s", err.Error())
+		slog.Debug("handleAttachment: unmarshal", "err", err)
 		return nil
 	}
 

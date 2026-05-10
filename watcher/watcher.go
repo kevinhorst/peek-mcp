@@ -3,10 +3,9 @@ package watcher
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,7 +58,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 			return ctx.Err()
 		case event, ok := <-watcher.Events:
 			if !ok {
-				log.Println("watcher closed")
+				slog.Info("watcher closed")
 				return nil
 			}
 			if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) {
@@ -75,7 +74,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 
 				err = watcher.Add(path)
 				if err != nil {
-					fmt.Println("Warning: watcher.Add:", err)
+					slog.Warn("watcher.Add", "err", err)
 				}
 				continue
 			}
@@ -84,7 +83,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 			if strings.HasSuffix(path, jsonlSuffix) {
 				err = w.readNewLines(path)
 				if err != nil {
-					fmt.Println("Warning: w.readNewLines:", err)
+					slog.Warn("readNewLines", "err", err)
 				}
 			}
 
@@ -92,7 +91,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			log.Printf("watcher error: %v", err)
+			slog.Error("watcher error", "err", err)
 		}
 	}
 }
@@ -100,7 +99,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 	rootInfo, err := os.Stat(root)
 	if err != nil || !rootInfo.IsDir() {
-		log.Printf("Watcher.walkAndWatch: watcher %s is not a directory", root)
+		slog.Warn("walkAndWatch: not a directory", "path", root)
 		return
 	}
 
@@ -119,13 +118,13 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		if strings.HasSuffix(path, jsonlSuffix) {
 			err = w.readNewLines(path)
 			if err != nil {
-				fmt.Println("Watcher.walkAndWatch: Warning", err)
+				slog.Warn("walkAndWatch: readNewLines", "err", err)
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		log.Printf("Watcher.walkAndWatch: watcher error: %v", err)
+		slog.Error("walkAndWatch error", "err", err)
 	}
 }
 

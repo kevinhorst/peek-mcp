@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,12 +26,24 @@ var startCmd = &cobra.Command{
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
+		logLevel, _ := flags.GetString("log-level")
 		transport, _ := flags.GetString("transport")
 		port, _ := flags.GetInt("port")
 		depth, _ := flags.GetInt("depth")
 		claudeHome, _ := flags.GetString("claude-home")
 		codexHome, _ := flags.GetString("codex-home")
 		diffTarget, _ := flags.GetString("diff-target")
+
+		level := slog.LevelInfo
+		switch logLevel {
+		case "debug":
+			level = slog.LevelDebug
+		case "warn":
+			level = slog.LevelWarn
+		case "error":
+			level = slog.LevelError
+		}
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer cancel()
@@ -41,7 +53,8 @@ var startCmd = &cobra.Command{
 			watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
 			err := watcher.New(session.SourceClaude, watchedDir, claude.NewParser(), store).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Fatal(err)
+				slog.Error("claude watcher error", "err", err)
+				os.Exit(1)
 			}
 		}()
 
@@ -49,7 +62,8 @@ var startCmd = &cobra.Command{
 			watchedDir := filepath.Join(codexHome, codex.SessionDir)
 			err := watcher.New(session.SourceCodex, watchedDir, codex.NewParser(), store).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Fatal(err)
+				slog.Error("codex watcher error", "err", err)
+				os.Exit(1)
 			}
 		}()
 
@@ -57,14 +71,16 @@ var startCmd = &cobra.Command{
 			plansDir := filepath.Join(claudeHome, "plans")
 			err := watcher.NewPlanWatcher(plansDir, store).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Fatal(err)
+				slog.Error("plan watcher error", "err", err)
+				os.Exit(1)
 			}
 		}()
 
 		go func() {
 			err := watcher.NewDiffWatcher(store, diffTarget).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Fatal(err)
+				slog.Error("diff watcher error", "err", err)
+				os.Exit(1)
 			}
 		}()
 
@@ -76,13 +92,14 @@ var startCmd = &cobra.Command{
 		switch transport {
 		case "stdio":
 			if err := server.ServeStdio(srv); err != nil && !errors.Is(err, context.Canceled) {
-				log.Fatalf("stdio server error: %v", err)
+				slog.Error("stdio server error", "err", err)
+				os.Exit(1)
 			}
 		case "http":
 			httpSrv := server.NewStreamableHTTPServer(srv)
 
 			addr := fmt.Sprintf("127.0.0.1:%d", port)
-			log.Printf("peek-mcp listening on http://%s/mcp", addr)
+			slog.Info("peek-mcp listening", "addr", fmt.Sprintf("http://%s/mcp", addr))
 
 			httpServer := &http.Server{
 				Addr:    addr,
@@ -95,10 +112,12 @@ var startCmd = &cobra.Command{
 			}()
 
 			if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-				log.Fatalf("server error: %v", err)
+				slog.Error("server error", "err", err)
+				os.Exit(1)
 			}
 		default:
-			log.Fatalf("unknown transport %q (want http or stdio)", transport)
+			slog.Error("unknown transport", "transport", transport)
+			os.Exit(1)
 		}
 	},
 }
@@ -111,6 +130,7 @@ func init() {
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
 	flags.String("diff-target", "develop", "Branch to diff against for session_diff")
+	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	rootCmd.AddCommand(startCmd)
 }

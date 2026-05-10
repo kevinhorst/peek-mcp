@@ -2,7 +2,7 @@ package watcher
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +27,7 @@ func NewPlanWatcher(plansDir string, store *session.Store) *PlanWatcher {
 
 func (w *PlanWatcher) Run(ctx context.Context) error {
 	if err := os.MkdirAll(w.plansDir, 0755); err != nil {
-		log.Printf("PlanWatcher: could not create plans directory %s: %v", w.plansDir, err)
+		slog.Warn("PlanWatcher: could not create plans directory", "dir", w.plansDir, "err", err)
 	}
 
 	watcher, err := fsnotify.NewWatcher()
@@ -37,7 +37,7 @@ func (w *PlanWatcher) Run(ctx context.Context) error {
 	defer watcher.Close()
 
 	if err := watcher.Add(w.plansDir); err != nil {
-		log.Printf("PlanWatcher: could not watch %s: %v", w.plansDir, err)
+		slog.Warn("PlanWatcher: could not watch", "dir", w.plansDir, "err", err)
 		<-ctx.Done()
 		return ctx.Err()
 	}
@@ -61,7 +61,7 @@ func (w *PlanWatcher) Run(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			log.Printf("PlanWatcher error: %v", err)
+			slog.Error("PlanWatcher error", "err", err)
 		}
 	}
 }
@@ -69,13 +69,13 @@ func (w *PlanWatcher) Run(ctx context.Context) error {
 func (w *PlanWatcher) loadPlan(path string) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		log.Printf("PlanWatcher.loadPlan: %v", err)
+		slog.Warn("PlanWatcher.loadPlan: abs path", "err", err)
 		return
 	}
 
 	content, err := os.ReadFile(absPath)
 	if err != nil {
-		log.Printf("PlanWatcher.loadPlan: %v", err)
+		slog.Warn("PlanWatcher.loadPlan: read file", "err", err)
 		return
 	}
 
