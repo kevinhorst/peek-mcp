@@ -29,6 +29,7 @@
     }
   },
   "tools": [
+    { "name": "session_full",   "description": "Turns, plan, and git diff for a session in one call." },
     { "name": "session_latest", "description": "Last N turns from the most recent session." },
     { "name": "session_list",   "description": "All known sessions with metadata." },
     { "name": "session_get",    "description": "Last N turns from a specific session by ID." },

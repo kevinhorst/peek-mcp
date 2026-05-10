@@ -14,7 +14,29 @@ const (
 	DefaultReturnedTurns = 5
 )
 
+type sessionFullResult struct {
+	Turns []*session.Turn `json:"turns"`
+	Plan  string          `json:"plan,omitempty"`
+	Diff  string          `json:"diff,omitempty"`
+}
+
 func Register(server *server.MCPServer, store *session.Store) {
+	server.AddTool(
+		mcp.NewTool("session_full",
+			mcp.WithDescription("Returns turns, plan, and git diff for a session in one call. Prefer this over calling session_latest, session_plan, and session_diff separately."),
+			mcp.WithString("id",
+				mcp.Description("Session ID (omit for most recent session)"),
+			),
+			mcp.WithNumber("n",
+				mcp.Description("Number of turns to return (default 5)"),
+			),
+			mcp.WithNumber("diff_size",
+				mcp.Description("Max bytes for diff output (0 = no limit)"),
+			),
+		),
+		sessionFullHandler(store),
+	)
+
 	server.AddTool(
 		mcp.NewTool("session_latest",
 			mcp.WithDescription("Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out."),
@@ -68,6 +90,43 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 		sessionDiffHandler(store),
 	)
+}
+
+func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var sess *session.Session
+
+		args := request.GetArguments()
+		if id, ok := args["id"].(string); ok && id != "" {
+			found, ok := s.GetById(session.Id(id))
+			if !ok {
+				return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
+			}
+			sess = found
+		} else {
+			found, ok := s.Last()
+			if !ok {
+				return mcp.NewToolResultText("no sessions found"), nil
+			}
+			sess = found
+		}
+
+		n := intArgFromRequest(request, "n")
+		if n <= 0 {
+			n = DefaultReturnedTurns
+		}
+
+		diff := sess.DiffOutput
+		if size := intArgFromRequest(request, "diff_size"); size > 0 && len(diff) > size {
+			diff = diff[:size] + fmt.Sprintf("\n[truncated: exceeded %d bytes]", size)
+		}
+
+		return respondWithJson(sessionFullResult{
+			Turns: sess.Turns(n),
+			Plan:  sess.PlanContent,
+			Diff:  diff,
+		})
+	}
 }
 
 func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
