@@ -8,15 +8,17 @@ import (
 )
 
 type Store struct {
-	mu       sync.RWMutex
-	sessions map[Id]*Session
-	depth    int
+	mu         sync.RWMutex
+	sessions   map[Id]*Session
+	depth      int
+	TurnAdded  chan Id
 }
 
 func NewStore(depth int) *Store {
 	return &Store{
-		sessions: make(map[Id]*Session),
-		depth:    depth,
+		sessions:  make(map[Id]*Session),
+		depth:     depth,
+		TurnAdded: make(chan Id, 16), // small fixed buffer; dropped notifications are fine — next turn re-triggers
 	}
 }
 
@@ -31,6 +33,21 @@ func (s *Store) AddTurnBySessionId(id Id, source Source, turn *Turn) {
 	}
 
 	session.AddTurn(turn)
+
+	select {
+	case s.TurnAdded <- id:
+	default:
+	}
+}
+
+func (s *Store) UpdateDiff(id Id, target, output string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if session, ok := s.sessions[id]; ok {
+		session.DiffOutput = output
+		session.DiffTarget = target
+	}
 }
 
 func (s *Store) UpdatePlanForPath(filePath, content string) {

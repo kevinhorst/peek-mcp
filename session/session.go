@@ -23,6 +23,8 @@ type Session struct {
 	FilePath      string    `json:"-"`
 	PlanFilePath  string    `json:"-"`
 	PlanContent   string    `json:"-"`
+	DiffOutput    string    `json:"-"`
+	DiffTarget    string    `json:"-"`
 	TurnActive    *Turn     `json:"-"`
 	TurnsFinished *TurnBuffer
 }
