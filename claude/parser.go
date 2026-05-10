@@ -60,7 +60,7 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 		Role:      session.RoleUser,
 		Text:      text,
 		Timestamp: entry.Timestamp,
-		Meta: session.Meta{
+		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
 			GitBranch: entry.GitBranch,
@@ -95,7 +95,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 		Timestamp: entry.Timestamp,
 		RequestId: entry.RequestId,
 		Usage:     usage,
-		Meta: session.Meta{
+		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
 			GitBranch: entry.GitBranch,

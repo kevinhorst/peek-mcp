@@ -20,6 +20,11 @@ func NewStore(depth int) *Store {
 	}
 }
 
+func (s *Store) ApplyTurn(id Id, source Source, turn *Turn) {
+	current := s.GetOrCreate(id, source)
+	current.Update(turn)
+}
+
 func (s *Store) GetOrCreate(id Id, source Source) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()

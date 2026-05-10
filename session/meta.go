@@ -7,16 +7,19 @@ type Meta struct {
 	Model     string `json:"model,omitempty"`
 }
 
-func (m *Meta) UpdateFrom(other *Meta) {
+func (m *Meta) Update(other *Meta) {
 	if other.SessionId != "" {
 		m.SessionId = other.SessionId
 	}
+
 	if other.CWD != "" {
 		m.CWD = other.CWD
 	}
+
 	if other.GitBranch != "" {
 		m.GitBranch = other.GitBranch
 	}
+
 	if other.Model != "" {
 		m.Model = other.Model
 	}

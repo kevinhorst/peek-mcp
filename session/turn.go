@@ -1,39 +1,40 @@
 package session
 
 import (
-	"errors"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 type Turn struct {
 	Role      Role      `json:"role"`
-	Text      string    `json:"text"`
+	Text      string    `json:"text"` // optional
 	Timestamp time.Time `json:"timestamp"`
-	Meta      Meta      `json:"meta"`
+	Meta      *Meta     `json:"meta"`
 	RequestId string    `json:"request_id,omitempty"`
 	Usage     *Usage    `json:"usage,omitempty"`
 }
 
 func (t *Turn) Validate() error {
 	if t == nil {
-		return errors.New("turn is nil")
+		return errors.New("Turn.Validate: called on nil")
 	}
 
 	if t.Role != RoleUser && t.Role != RoleAssistant {
-		return errors.New("role must be \"user\" or \"assistant\"")
-	}
-
-	if t.Text == "" {
-		return errors.New("text must not be empty")
+		return errors.New("Turn.Validate: role must be \"user\" or \"assistant\"")
 	}
 
 	if t.Timestamp.IsZero() {
-		return errors.New("timestamp must not be zero")
+		return errors.New("Turn.Validate: timestamp must not be zero")
+	}
+
+	if t.Meta == nil {
+		return errors.New("Turn.Validate: meta must not be nil")
 	}
 
 	if t.Usage != nil {
 		if err := t.Usage.Validate(); err != nil {
-			return err
+			return errors.Wrap(err, "Turn.Validate")
 		}
 	}
 

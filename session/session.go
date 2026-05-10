@@ -48,13 +48,18 @@ func (s *Session) Validate() error {
 	return nil
 }
 
-func (s *Session) ApplyTurn(turn *Turn) {
-	s.Meta.UpdateFrom(&turn.Meta)
+func (s *Session) Update(turn *Turn) {
+	s.Meta.Update(turn.Meta)
+
 	if !turn.Timestamp.IsZero() {
 		s.LastActive = turn.Timestamp
 	}
+
 	if turn.Usage != nil {
 		s.TotalUsage.Add(turn.Usage)
 	}
-	s.Turns.Push(turn)
+
+	if turn.Text != "" {
+		s.Turns.Push(turn)
+	}
 }

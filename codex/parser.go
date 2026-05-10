@@ -63,7 +63,7 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *sessi
 
 	return &session.Turn{
 		Timestamp: ts,
-		Meta: session.Meta{
+		Meta: &session.Meta{
 			SessionId: meta.Id,
 			CWD:       meta.CWD,
 			GitBranch: gitBranch,
@@ -131,7 +131,7 @@ func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time
 	return &session.Turn{
 		Timestamp: timestamp,
 		Usage:     &usage,
-		Meta: session.Meta{
+		Meta: &session.Meta{
 			SessionId: p.sessionId,
 		},
 	}
@@ -147,7 +147,7 @@ func (p *Parser) handleUserMessage(item *ResponseItem, ts time.Time) *session.Tu
 		Role:      session.RoleUser,
 		Text:      text,
 		Timestamp: ts,
-		Meta: session.Meta{
+		Meta: &session.Meta{
 			SessionId: p.sessionId,
 		},
 	}
@@ -163,7 +163,7 @@ func (p *Parser) handleAssistantMessage(item *ResponseItem, ts time.Time) *sessi
 		Role:      session.RoleAssistant,
 		Text:      text,
 		Timestamp: ts,
-		Meta: session.Meta{
+		Meta: &session.Meta{
 			SessionId: p.sessionId,
 			Model:     p.model,
 		},
