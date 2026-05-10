@@ -21,6 +21,8 @@ type Session struct {
 	LastActive    time.Time `json:"last_active"`
 	TotalUsage    Usage     `json:"total_usage"`
 	FilePath      string    `json:"-"`
+	PlanFilePath  string    `json:"-"`
+	PlanContent   string    `json:"-"`
 	TurnActive    *Turn     `json:"-"`
 	TurnsFinished *TurnBuffer
 }
