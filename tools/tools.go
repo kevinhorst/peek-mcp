@@ -115,11 +115,12 @@ func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 			diff = diff[:size] + fmt.Sprintf("\n[truncated: exceeded %d bytes]", size)
 		}
 
-		return respondWithJson(sessionFullResult{
+		result := sessionFullResult{
 			Turns: sess.Turns(n),
 			Plan:  sess.PlanContent,
 			Diff:  diff,
-		})
+		}
+		return respondWithJson(result)
 	}
 }
 
@@ -141,7 +142,7 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("No turns found"), nil
 		}
 
-		return respondWithJson(turns)
+		return respondWithText(turns)
 	}
 }
 
@@ -157,6 +158,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 				HasDiff:    sess.DiffOutput != "",
 			}
 		}
+
 		return respondWithJson(items)
 	}
 }
@@ -186,7 +188,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("No turns found"), nil
 		}
 
-		return respondWithJson(turns)
+		return respondWithText(turns)
 	}
 }
 
@@ -265,11 +267,20 @@ func intArgFromRequest(request mcp.CallToolRequest, name string) int {
 	return int(floatVal)
 }
 
-func respondWithJson(response any) (*mcp.CallToolResult, error) {
+func respondWithText(response any) (*mcp.CallToolResult, error) {
 	data, err := json.Marshal(response)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling turns: %w", err)
 	}
 
 	return mcp.NewToolResultText(string(data)), nil
+}
+
+func respondWithJson(response any) (*mcp.CallToolResult, error) {
+	resp, err := mcp.NewToolResultJSON(response)
+	if err != nil {
+		return nil, fmt.Errorf("creating tool result: %w", err)
+	}
+
+	return resp, nil
 }
