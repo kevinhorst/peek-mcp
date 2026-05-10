@@ -55,6 +55,19 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 		sessionPlanHandler(store),
 	)
+
+	server.AddTool(
+		mcp.NewTool("session_diff",
+			mcp.WithDescription("Returns the pre-computed git diff for a session. The diff is run against the configured target branch (default: develop) in the session's working directory, and refreshed automatically on each new turn. If id is omitted, uses the most recent session."),
+			mcp.WithString("id",
+				mcp.Description("Session ID (omit for most recent session)"),
+			),
+			mcp.WithNumber("size",
+				mcp.Description("Max bytes to return from diff output (0 = no limit)"),
+			),
+		),
+		sessionDiffHandler(store),
+	)
 }
 
 func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
@@ -138,6 +151,39 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(currentSession.PlanContent), nil
+	}
+}
+
+func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var currentSession *session.Session
+
+		args := request.GetArguments()
+		if idVal, ok := args["id"]; ok && idVal != nil {
+			id, _ := idVal.(string)
+			if id == "" {
+				return mcp.NewToolResultError("id must be a non-empty string"), nil
+			}
+			sess, found := s.GetById(session.Id(id))
+			if !found {
+				return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
+			}
+			currentSession = sess
+		} else {
+			sess, ok := s.Last()
+			if !ok {
+				return mcp.NewToolResultText("no sessions found"), nil
+			}
+			currentSession = sess
+		}
+
+		output := currentSession.DiffOutput
+		size := intArgFromRequest(request, "size")
+		if size > 0 && len(output) > size {
+			output = output[:size] + fmt.Sprintf("\n[truncated: diff exceeded %d bytes]", size)
+		}
+
+		return mcp.NewToolResultText(output), nil
 	}
 }
 
