@@ -1,6 +1,7 @@
 package session
 
 import (
+	"log"
 	"maps"
 	"os"
 	"slices"
@@ -27,6 +28,8 @@ func (s *Store) AddTurnBySessionId(id Id, source Source, turn *Turn) {
 	session := s.getOrCreate(id, source)
 
 	if turn.PlanFilePath != "" {
+		log.Printf("Updating plan for %s", id)
+
 		content, _ := os.ReadFile(turn.PlanFilePath)
 		s.mu.Lock()
 		session.PlanFilePath = turn.PlanFilePath
@@ -46,6 +49,7 @@ func (s *Store) AddTurnBySessionId(id Id, source Source, turn *Turn) {
 func (s *Store) UpdateDiff(id Id, target, output string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	log.Printf("Updating diff for %s", id)
 
 	if session, ok := s.sessions[id]; ok {
 		session.DiffOutput = output
@@ -56,6 +60,7 @@ func (s *Store) UpdateDiff(id Id, target, output string) {
 func (s *Store) UpdatePlanForPath(filePath, content string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	log.Printf("Updating plan for %s", filePath)
 
 	for _, session := range s.sessions {
 		if session.PlanFilePath == filePath {
