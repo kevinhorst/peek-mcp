@@ -86,7 +86,7 @@ var startCmd = &cobra.Command{
 
 			httpServer := &http.Server{
 				Addr:    addr,
-				Handler: httpSrv,
+				Handler: requestLogger(httpSrv),
 			}
 
 			go func() {
@@ -113,6 +113,24 @@ func init() {
 	flags.String("diff-target", "develop", "Branch to diff against for session_diff")
 
 	rootCmd.AddCommand(startCmd)
+}
+
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
+		next.ServeHTTP(rw, r)
+		slog.Info("http", "method", r.Method, "path", r.URL.Path, "status", rw.code)
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	sw.code = code
+	sw.ResponseWriter.WriteHeader(code)
 }
 
 func defaultHome(name string) string {
