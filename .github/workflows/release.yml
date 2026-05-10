@@ -33,7 +33,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build .mcpb + darwin binary
-        run: make mcpb
+        run: make build-mcpb
 
       - name: Build linux binaries
         run: |

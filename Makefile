@@ -3,11 +3,12 @@ STAGE   := $(DIST)/bundle
 LDFLAGS := -s -w
 GOENV := GOOS=darwin CGO_ENABLED=0
 
-build:
-	go build -o peek-mcp .
+build-local: clean-dist
+	@mkdir -p $(DIST)
+	go build -o dist/peek-mcp .
 
 
-build-darwin-universal:
+build-darwin-universal: clean-dist
 	@mkdir -p $(DIST)
 	$(GOENV)  GOARCH=arm64  go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-darwin-arm64 .
 	$(GOENV)  GOARCH=amd64  go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-darwin-amd64 .
@@ -15,15 +16,23 @@ build-darwin-universal:
 	rm $(DIST)/peek-mcp-darwin-arm64 $(DIST)/peek-mcp-darwin-amd64
 
 
-build-linux-amd64:
+build-linux-amd64: clean-dist
 	@mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-amd64 .
 
 
-build-linux-arm64:
+build-linux-arm64: clean-dist
 	@mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
 
+
+build-mcpb: build-darwin-universal
+	@rm -rf $(STAGE) && mkdir -p $(STAGE)/server
+	cp mcpb/manifest.json $(STAGE)/manifest.json
+	cp $(DIST)/peek-mcp $(STAGE)/server/peek-mcp
+	chmod +x $(STAGE)/server/peek-mcp
+	cd $(STAGE) && zip -r ../peek-mcp.mcpb . -x '*.DS_Store'
+	@echo "==> built $(DIST)/peek-mcp.mcpb"
 
 bump-version:
 	@test -n "$(VERSION)" || (echo "Usage: make bump-version VERSION=x.y.z" && exit 1)
@@ -42,13 +51,6 @@ git-release: bump-version
 	git tag v$(VERSION)
 
 
-mcpb: build-darwin-universal
-	@rm -rf $(STAGE) && mkdir -p $(STAGE)/server
-	cp mcpb/manifest.json $(STAGE)/manifest.json
-	cp $(DIST)/peek-mcp $(STAGE)/server/peek-mcp
-	chmod +x $(STAGE)/server/peek-mcp
-	cd $(STAGE) && zip -r ../peek-mcp.mcpb . -x '*.DS_Store'
-	@echo "==> built $(DIST)/peek-mcp.mcpb"
 
 
 serve-http: build

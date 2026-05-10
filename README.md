@@ -120,7 +120,7 @@ For one-click install on macOS — useful for distributing peek-mcp inside an or
 Build the bundle (requires macOS, since it uses `lipo` to fuse architectures):
 
 ```bash
-make mcpb
+make build-mcpb
 # → dist/peek-mcp.mcpb
 ```
 
