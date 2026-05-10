@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"path/filepath"
 
+	"github.com/kevinhorst/peek-mcp/claude"
+	"github.com/kevinhorst/peek-mcp/codex"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/kevinhorst/peek-mcp/watcher"
@@ -29,7 +31,16 @@ func main() {
 
 	store := session.NewStore(*depth)
 	go func() {
-		err := watcher.New(store, *claudeHome, *codexHome).Run(ctx)
+		watchedDir := filepath.Join(*claudeHome, claude.ProjectsDir)
+		err := watcher.New(watchedDir, claude.NewParser(), store).Run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatal(err)
+		}
+	}()
+
+	go func() {
+		watchedDir := filepath.Join(*codexHome, codex.SessionDir)
+		err := watcher.New(watchedDir, codex.NewParser(), store).Run(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Fatal(err)
 		}

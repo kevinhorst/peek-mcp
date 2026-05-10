@@ -18,9 +18,7 @@ import (
 )
 
 const (
-	claudeProjectsDir = "projects"
-	codexSessionsDir  = "sessions"
-	jsonlSuffix       = ".jsonl"
+	jsonlSuffix = ".jsonl"
 )
 
 type watchedFile struct {
@@ -177,7 +175,8 @@ func (w *Watcher) readNewLines(path string) error {
 			if err != nil {
 				return errors.Wrapf(err, "Watcher.readNewLines")
 			}
-			w.store.ApplyTurn(turn.Meta.SessionId, w.agent, turn)
+
+			w.store.AddTurn(turn.Meta.SessionId, w.agent, turn)
 		}
 	}
 

@@ -24,6 +24,22 @@ type Session struct {
 	Turns      *TurnBuffer
 }
 
+func (s *Session) Update(turn *Turn) {
+	s.Meta.Update(turn.Meta)
+
+	if !turn.Timestamp.IsZero() {
+		s.LastActive = turn.Timestamp
+	}
+
+	if turn.Usage != nil {
+		s.TotalUsage.Add(turn.Usage)
+	}
+
+	if turn.Text != "" {
+		s.Turns.Push(turn)
+	}
+}
+
 func (s *Session) Validate() error {
 	if s == nil {
 		return errors.New("session is nil")
@@ -46,20 +62,4 @@ func (s *Session) Validate() error {
 	}
 
 	return nil
-}
-
-func (s *Session) Update(turn *Turn) {
-	s.Meta.Update(turn.Meta)
-
-	if !turn.Timestamp.IsZero() {
-		s.LastActive = turn.Timestamp
-	}
-
-	if turn.Usage != nil {
-		s.TotalUsage.Add(turn.Usage)
-	}
-
-	if turn.Text != "" {
-		s.Turns.Push(turn)
-	}
 }

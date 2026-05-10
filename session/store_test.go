@@ -10,7 +10,7 @@ import (
 
 func TestGetOrCreate_New(t *testing.T) {
 	s := NewStore(10)
-	sess := s.GetOrCreate("s1", "claude")
+	sess := s.getOrCreate("s1", "claude")
 
 	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
 	assert.Equal(t, SourceClaude, sess.Source)
@@ -19,23 +19,23 @@ func TestGetOrCreate_New(t *testing.T) {
 
 func TestGetOrCreate_Existing(t *testing.T) {
 	s := NewStore(10)
-	s1 := s.GetOrCreate("s1", "claude")
-	s2 := s.GetOrCreate("s1", "claude")
+	s1 := s.getOrCreate("s1", "claude")
+	s2 := s.getOrCreate("s1", "claude")
 
 	assert.Same(t, s1, s2)
 }
 
 func TestGet_NotFound(t *testing.T) {
 	s := NewStore(10)
-	_, ok := s.Get("nonexistent")
+	_, ok := s.GetById("nonexistent")
 	assert.False(t, ok)
 }
 
 func TestGet_Found(t *testing.T) {
 	s := NewStore(10)
-	s.GetOrCreate("s1", "codex")
+	s.getOrCreate("s1", "codex")
 
-	sess, ok := s.Get("s1")
+	sess, ok := s.GetById("s1")
 	assert.True(t, ok)
 	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
 }
@@ -49,13 +49,13 @@ func TestList_SortedByLastActive(t *testing.T) {
 	s := NewStore(10)
 	now := time.Now()
 
-	s1 := s.GetOrCreate("s1", "claude")
+	s1 := s.getOrCreate("s1", "claude")
 	s1.LastActive = now.Add(-2 * time.Hour)
 
-	s2 := s.GetOrCreate("s2", "codex")
+	s2 := s.getOrCreate("s2", "codex")
 	s2.LastActive = now
 
-	s3 := s.GetOrCreate("s3", "claude")
+	s3 := s.getOrCreate("s3", "claude")
 	s3.LastActive = now.Add(-1 * time.Hour)
 
 	list := s.List()
@@ -75,10 +75,10 @@ func TestMostRecent(t *testing.T) {
 	s := NewStore(10)
 	now := time.Now()
 
-	s1 := s.GetOrCreate("s1", "claude")
+	s1 := s.getOrCreate("s1", "claude")
 	s1.LastActive = now.Add(-1 * time.Hour)
 
-	s2 := s.GetOrCreate("s2", "codex")
+	s2 := s.getOrCreate("s2", "codex")
 	s2.LastActive = now
 
 	sess, ok := s.Last()
@@ -98,7 +98,7 @@ func TestConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.GetOrCreate(id, "claude")
+			s.getOrCreate(id, "claude")
 		}()
 
 		wg.Add(1)

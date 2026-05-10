@@ -90,7 +90,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			turnNumber = n
 		}
 
-		currentSession, ok := s.Get(id)
+		currentSession, ok := s.GetById(id)
 		if !ok {
 			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
 		}

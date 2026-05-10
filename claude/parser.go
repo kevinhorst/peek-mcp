@@ -7,6 +7,8 @@ import (
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
+const ProjectsDir = "projects"
+
 type Parser struct{}
 
 func NewParser() *Parser { return &Parser{} }

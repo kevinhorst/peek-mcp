@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	SessionDir = "sessions"
+
 	codexMessageType    = "message"
 	codexInputTextType  = "input_text"
 	codexOutputTextType = "output_text"

@@ -20,12 +20,43 @@ func NewStore(depth int) *Store {
 	}
 }
 
-func (s *Store) ApplyTurn(id Id, source Source, turn *Turn) {
-	current := s.GetOrCreate(id, source)
+func (s *Store) AddTurn(id Id, source Source, turn *Turn) {
+	current := s.getOrCreate(id, source)
 	current.Update(turn)
 }
 
-func (s *Store) GetOrCreate(id Id, source Source) *Session {
+func (s *Store) GetById(id Id) (*Session, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	session, ok := s.sessions[id]
+	if !ok {
+		return nil, false
+	}
+
+	return session, ok
+}
+
+func (s *Store) Last() (*Session, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessions := s.sortByLastActiveDesc()
+	if len(sessions) == 0 {
+		return nil, false
+	}
+
+	return sessions[0], true
+}
+
+func (s *Store) List() []*Session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.sortByLastActiveDesc()
+}
+
+func (s *Store) getOrCreate(id Id, source Source) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -40,46 +71,6 @@ func (s *Store) GetOrCreate(id Id, source Source) *Session {
 	}
 	s.sessions[id] = session
 	return session
-}
-
-func (s *Store) Create(id Id, source Source) {
-	session := &Session{
-		Meta:   Meta{SessionId: id},
-		Source: source,
-		Turns:  NewTurnBuffer(s.depth),
-	}
-	s.sessions[id] = session
-}
-
-func (s *Store) Get(id Id) (*Session, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	session, ok := s.sessions[id]
-	if !ok {
-		return nil, false
-	}
-
-	return session, ok
-}
-
-func (s *Store) List() []*Session {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return s.sortByLastActiveDesc()
-}
-
-func (s *Store) Last() (*Session, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	sessions := s.sortByLastActiveDesc()
-	if len(sessions) == 0 {
-		return nil, false
-	}
-
-	return sessions[0], true
 }
 
 func (s *Store) sortByLastActiveDesc() []*Session {
