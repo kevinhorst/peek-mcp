@@ -20,7 +20,8 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", 4242, "HTTP port")
+	transport := flag.String("transport", "http", "Transport: http or stdio")
+	port := flag.Int("port", 4242, "HTTP port (http transport only)")
 	depth := flag.Int("depth", 20, "Ring buffer size per session (max turns kept)")
 	claudeHome := flag.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	codexHome := flag.String("codex-home", defaultHome(".codex"), "Codex session root")
@@ -51,23 +52,32 @@ func main() {
 	)
 	tools.Register(srv, store)
 
-	httpSrv := server.NewStreamableHTTPServer(srv)
+	switch *transport {
+	case "stdio":
+		if err := server.ServeStdio(srv); err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatalf("stdio server error: %v", err)
+		}
+	case "http":
+		httpSrv := server.NewStreamableHTTPServer(srv)
 
-	addr := fmt.Sprintf("127.0.0.1:%d", *port)
-	log.Printf("peek-mcp listening on http://%s/mcp", addr)
+		addr := fmt.Sprintf("127.0.0.1:%d", *port)
+		log.Printf("peek-mcp listening on http://%s/mcp", addr)
 
-	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: httpSrv,
-	}
+		httpServer := &http.Server{
+			Addr:    addr,
+			Handler: httpSrv,
+		}
 
-	go func() {
-		<-ctx.Done()
-		httpServer.Shutdown(context.Background())
-	}()
+		go func() {
+			<-ctx.Done()
+			httpServer.Shutdown(context.Background())
+		}()
 
-	if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("server error: %v", err)
+		if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server error: %v", err)
+		}
+	default:
+		log.Fatalf("unknown transport %q (want http or stdio)", *transport)
 	}
 }
 
