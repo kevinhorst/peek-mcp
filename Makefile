@@ -6,6 +6,7 @@ GOENV := GOOS=darwin CGO_ENABLED=0
 build:
 	go build -o peek-mcp .
 
+
 build-darwin-universal:
 	@mkdir -p $(DIST)
 	$(GOENV)  GOARCH=arm64  go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-darwin-arm64 .
@@ -17,6 +18,7 @@ build-darwin-universal:
 clean-dist:
 	rm -rf $(DIST)
 
+
 bump-version:
 	@test -n "$(VERSION)" || (echo "Usage: make bump-version VERSION=x.y.z" && exit 1)
 	@sed -i '' 's/var version = ".*"/var version = "$(VERSION)"/' cmd/version.go
@@ -24,18 +26,22 @@ bump-version:
 	    > mcpb/manifest.json.tmp && mv mcpb/manifest.json.tmp mcpb/manifest.json
 	@echo "Bumped to $(VERSION) in cmd/version.go and mcpb/manifest.json"
 
+
 git-release: bump-version
 	git commit -am "chore: release v$(VERSION)"
 	git tag v$(VERSION)
 	git push && git push --tags
 
+
 build-linux-amd64:
 	@mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-amd64 .
 
+
 build-linux-arm64:
 	@mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
+
 
 mcpb: build-darwin-universal
 	@rm -rf $(STAGE) && mkdir -p $(STAGE)/server
@@ -45,14 +51,17 @@ mcpb: build-darwin-universal
 	cd $(STAGE) && zip -r ../peek-mcp.mcpb . -x '*.DS_Store'
 	@echo "==> built $(DIST)/peek-mcp.mcpb"
 
-test:
-	go test ./...
 
 serve-http: build
 	./peek-mcp start
 
+
 serve-stdio: build
 	./peek-mcp start --transport stdio
+
+
+test:
+	go test ./...
 
 
 update-go-deps:
