@@ -52,7 +52,7 @@ mcpb: build-darwin-universal
 
 
 serve-http: build
-	./peek-mcp start
+	./peek-mcp start --log-level debug
 
 
 serve-stdio: build
