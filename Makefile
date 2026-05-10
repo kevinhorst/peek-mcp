@@ -15,8 +15,14 @@ build-darwin-universal:
 	rm $(DIST)/peek-mcp-darwin-arm64 $(DIST)/peek-mcp-darwin-amd64
 
 
-clean-dist:
-	rm -rf $(DIST)
+build-linux-amd64:
+	@mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-amd64 .
+
+
+build-linux-arm64:
+	@mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
 
 
 bump-version:
@@ -27,20 +33,13 @@ bump-version:
 	@echo "Bumped to $(VERSION) in cmd/version.go and mcpb/manifest.json"
 
 
+clean-dist:
+	rm -rf $(DIST)
+
+
 git-release: bump-version
-	git commit -am "chore: release v$(VERSION)"
+	git commit -am "cmd: release v$(VERSION)"
 	git tag v$(VERSION)
-	git push && git push --tags
-
-
-build-linux-amd64:
-	@mkdir -p $(DIST)
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-amd64 .
-
-
-build-linux-arm64:
-	@mkdir -p $(DIST)
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
 
 
 mcpb: build-darwin-universal
