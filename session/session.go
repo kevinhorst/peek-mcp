@@ -38,8 +38,8 @@ func (s *Session) Turns(number int) []*Turn {
 	return buffer.Last(number)
 }
 
-func (s *Session) Update(nextTurn *Turn) {
-	// update meta
+func (s *Session) AddTurn(nextTurn *Turn) {
+	// always update meta info
 	s.Meta.Update(nextTurn.Meta)
 
 	if !nextTurn.Timestamp.IsZero() {

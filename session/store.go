@@ -20,9 +20,8 @@ func NewStore(depth int) *Store {
 	}
 }
 
-func (s *Store) AddTurn(id Id, source Source, turn *Turn) {
-	current := s.getOrCreate(id, source)
-	current.Update(turn)
+func (s *Store) AddTurnBySessionId(id Id, source Source, turn *Turn) {
+	s.getOrCreate(id, source).AddTurn(turn)
 }
 
 func (s *Store) GetById(id Id) (*Session, bool) {
