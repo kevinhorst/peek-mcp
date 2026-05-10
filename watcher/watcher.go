@@ -101,14 +101,13 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		log.Printf("Watcher.walkAndWatch: watcher %s is not a directory", root)
 		return
 	}
-	log.Printf("Watcher.walkAndWatch: watcher %s is a directory", root)
 
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if entry.IsDir() {
-			log.Printf("Watcher.walkAndWatch: %s is a directory", path)
+
 			err = watcher.Add(path)
 			if err != nil {
 				return err
