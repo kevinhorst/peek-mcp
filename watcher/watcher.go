@@ -33,11 +33,13 @@ type Watcher struct {
 	store    *session.Store
 }
 
-func New(agentDir string, parser parser, store *session.Store) *Watcher {
+func New(agent session.Source, agentDir string, parser parser, store *session.Store) *Watcher {
 	return &Watcher{
+		agent:    agent,
 		agentDir: agentDir,
 		parser:   parser,
 		store:    store,
+		files:    make(map[string]*watchedFile),
 	}
 }
 
@@ -117,7 +119,7 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		if strings.HasSuffix(path, jsonlSuffix) {
 			err = w.readNewLines(path)
 			if err != nil {
-				fmt.Println("Watcher.walkAndWatch: Warning: w.readNewLines:", err)
+				fmt.Println("Watcher.walkAndWatch: Warning", err)
 			}
 		}
 		return nil
@@ -172,7 +174,7 @@ func (w *Watcher) readNewLines(path string) error {
 			turn := w.parser.ParseLine(line)
 			err = turn.Validate()
 			if err != nil {
-				return errors.Wrapf(err, "Watcher.readNewLines")
+				continue
 			}
 
 			w.store.AddTurn(turn.Meta.SessionId, w.agent, turn)

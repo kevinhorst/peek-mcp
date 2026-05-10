@@ -8,11 +8,11 @@ import (
 
 type Turn struct {
 	Role      Role      `json:"role"`
-	Text      string    `json:"text"` // optional
+	Text      string    `json:"text"` // may be empty
 	Timestamp time.Time `json:"timestamp"`
 	Meta      *Meta     `json:"meta"`
-	RequestId string    `json:"request_id,omitempty"`
-	Usage     *Usage    `json:"usage,omitempty"`
+	RequestId string    `json:"request_id,omitempty"` // optional
+	Usage     *Usage    `json:"usage,omitempty"`      // optional
 }
 
 func (t *Turn) Validate() error {
@@ -21,7 +21,7 @@ func (t *Turn) Validate() error {
 	}
 
 	if t.Role != RoleUser && t.Role != RoleAssistant {
-		return errors.New("Turn.Validate: role must be \"user\" or \"assistant\"")
+		return errors.Errorf("Turn.Validate: role must be \"user\" or \"assistant\": %s", t.Role)
 	}
 
 	if t.Timestamp.IsZero() {

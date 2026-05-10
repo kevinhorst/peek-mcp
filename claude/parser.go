@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"log"
 	"strings"
 
 	"github.com/kevinhorst/peek-mcp/session"
@@ -16,9 +17,11 @@ func NewParser() *Parser { return &Parser{} }
 func (p *Parser) ParseLine(line []byte) *session.Turn {
 	entry := &Entry{}
 	if err := json.Unmarshal(line, &entry); err != nil {
+		log.Printf("Parser.ParseLine: %s", err.Error())
 		return nil
 	}
 	if err := entry.Validate(); err != nil {
+		log.Printf("Parser.ParseLine: %s", err.Error())
 		return nil
 	}
 
@@ -27,7 +30,7 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 	}
 
 	switch entry.Type {
-	case EntryTypeUser:
+	case EntryTypeUser, "queue-operation":
 		return p.handleUser(entry)
 	case EntryTypeAssistant:
 		return p.handleAssistant(entry)
@@ -43,22 +46,21 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 
 	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
+		log.Printf("claude.Parser.handleUser: %s", err.Error())
 		return nil
 	}
 	if err := message.Validate(); err != nil {
+		log.Printf("claude.Parser.handleUser: %s", err.Error())
 		return nil
 	}
 
-	var text string
-	if err := json.Unmarshal(message.Content, &text); err != nil {
-		return nil
-	}
+	text := extractTextBlocks(message.Content)
 
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 
-	return &session.Turn{
+	turn := &session.Turn{
 		Role:      session.RoleUser,
 		Text:      text,
 		Timestamp: entry.Timestamp,
@@ -68,14 +70,24 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 			GitBranch: entry.GitBranch,
 		},
 	}
+
+	err := turn.Validate()
+	if err != nil {
+		log.Printf("claude.Parser.handleUser: %s", err.Error())
+		return nil
+	}
+
+	return turn
 }
 
 func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
+		log.Printf("claude.Parser.handleAssistant: %s", err.Error())
 		return nil
 	}
 	if err := message.Validate(); err != nil {
+		log.Printf("claude.Parser.handleAssistant: %s", err.Error())
 		return nil
 	}
 
@@ -90,8 +102,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 			CacheReadInputTokens:     message.Usage.CacheReadInputTokens,
 		}
 	}
-
-	return &session.Turn{
+	turn := &session.Turn{
 		Role:      session.RoleAssistant,
 		Text:      text,
 		Timestamp: entry.Timestamp,
@@ -104,6 +115,14 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 			Model:     message.Model,
 		},
 	}
+
+	err := turn.Validate()
+	if err != nil {
+		log.Printf("claude.Parser.handleAssistant: %s", err.Error())
+		return nil
+	}
+
+	return turn
 }
 
 func extractTextBlocks(raw json.RawMessage) string {

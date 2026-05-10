@@ -10,8 +10,8 @@ import (
 type Message struct {
 	Role    session.Role    `json:"role"`
 	Content json.RawMessage `json:"content"`
-	Model   string          `json:"model"`
-	Usage   *Usage          `json:"usage"`
+	Model   string          `json:"model"` // optional
+	Usage   *Usage          `json:"usage"` // optional
 }
 
 func (m *Message) Validate() error {

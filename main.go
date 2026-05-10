@@ -32,7 +32,7 @@ func main() {
 	store := session.NewStore(*depth)
 	go func() {
 		watchedDir := filepath.Join(*claudeHome, claude.ProjectsDir)
-		err := watcher.New(watchedDir, claude.NewParser(), store).Run(ctx)
+		err := watcher.New(session.SourceClaude, watchedDir, claude.NewParser(), store).Run(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Fatal(err)
 		}
@@ -40,7 +40,7 @@ func main() {
 
 	go func() {
 		watchedDir := filepath.Join(*codexHome, codex.SessionDir)
-		err := watcher.New(watchedDir, codex.NewParser(), store).Run(ctx)
+		err := watcher.New(session.SourceCodex, watchedDir, codex.NewParser(), store).Run(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Fatal(err)
 		}
