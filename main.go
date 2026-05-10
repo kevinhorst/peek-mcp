@@ -25,6 +25,7 @@ func main() {
 	depth := flag.Int("depth", 20, "Ring buffer size per session (max turns kept)")
 	claudeHome := flag.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	codexHome := flag.String("codex-home", defaultHome(".codex"), "Codex session root")
+	diffTarget := flag.String("diff-target", "develop", "Branch to diff against for session_diff")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -50,6 +51,13 @@ func main() {
 	go func() {
 		plansDir := filepath.Join(*claudeHome, "plans")
 		err := watcher.NewPlanWatcher(plansDir, store).Run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatal(err)
+		}
+	}()
+
+	go func() {
+		err := watcher.NewDiffWatcher(store, *diffTarget).Run(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Fatal(err)
 		}
