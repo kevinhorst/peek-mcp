@@ -45,6 +45,16 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 		sessionGetHandler(store),
 	)
+
+	server.AddTool(
+		mcp.NewTool("session_plan",
+			mcp.WithDescription("Returns the current plan for the given session (or the most recently active session if no ID is provided). Returns an empty response if the session has no plan."),
+			mcp.WithString("id",
+				mcp.Description("Session ID (optional, defaults to the most recently active session)"),
+			),
+		),
+		sessionPlanHandler(store),
+	)
 }
 
 func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
@@ -101,6 +111,33 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		return respondWithJson(turns)
+	}
+}
+
+func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var currentSession *session.Session
+
+		args := request.GetArguments()
+		if id, ok := args["id"].(string); ok && id != "" {
+			sess, found := s.GetById(session.Id(id))
+			if !found {
+				return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
+			}
+			currentSession = sess
+		} else {
+			sess, ok := s.Last()
+			if !ok {
+				return mcp.NewToolResultText("session_plan: No sessions found"), nil
+			}
+			currentSession = sess
+		}
+
+		if currentSession.PlanContent == "" {
+			return mcp.NewToolResultText("No plan found for this session"), nil
+		}
+
+		return mcp.NewToolResultText(currentSession.PlanContent), nil
 	}
 }
 
