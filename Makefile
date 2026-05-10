@@ -51,8 +51,6 @@ git-release: bump-version
 	git tag v$(VERSION)
 
 
-
-
 serve-http: build
 	./peek-mcp start --log-level debug
 
