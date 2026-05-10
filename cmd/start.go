@@ -20,9 +20,10 @@ import (
 )
 
 var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Start the peek-mcp server",
-	Long:  `Start the peek-mcp MCP server with the given configuration.`,
+	Use:               "start",
+	Short:             "Start the peek-mcp server",
+	Long:              `Start the peek-mcp MCP server with the given configuration.`,
+	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
 		transport, _ := flags.GetString("transport")
