@@ -1,21 +1,20 @@
 # peek-mcp
 
-A lightweight MCP server that reads Claude Code and Codex CLI sessions directly from disk and exposes them over HTTP, so a second model can evaluate what a primary agent produced without spending tokens on summarization.
+A lightweight MCP server that reads Claude Code and Codex CLI sessions directly from disk and exposes them over HTTP or stdio, so a second model can evaluate what a primary agent produced without spending tokens on summarization.
 
 ## The problem
 
-Opus finishes a task. I am quite often in the situation that I want to have a quick follow-up question or analysis on the output. If I then prompt Opus or another bigger model, it eats up valuable tokens and especially much more time than necessary. So I want to use Sonnet or GPT5-mini to review it quickly, but copying the context by hand is cumbersome. 
+Opus finishes a task. I am quite often in the situation that I want to have a quick follow-up question or analysis on the output. If I then prompt Opus or another bigger model, it eats up valuable tokens and especially much more time than necessary. So I want to use Sonnet or GPT5-mini to review it quickly, but copying the context by hand is cumbersome.
 
-As of the 05.04.2026, there seems to be (could be wrong) no other way to do cross-session communication between different integration than to either copy or prompt the model to read the respective session directory directly, which works, but is also slow.
+As of 05.04.2026 (update: 10.05.2026 - still nothing), there seems to be no other way to do cross-session communication between different integrations than to either copy or prompt the model to read the respective session directory directly, which works, but is also slow.
 
 There seem to be some MCP servers that kinda, maybe do what I need, but they did not quite fit my case, so I wrote my own, which is more tailored to my current workflow.
 
-I wanted to avoid any interruption in said workflow, so an approach where the agent pushes to an MCP was ruled out.
-The session files are on disk, so I figured that should be a good starting point and took it from there. It is also an experiment for a codebase with heavy use of agentic development (but not vibe coding).
+I wanted to avoid any interruption in said workflow, so an approach where the agent pushes to an MCP was ruled out. The session files are on disk, so I figured that should be a good starting point and took it from there. It is also an experiment for a codebase with heavy use of agentic development (but not vibe coding).
 
 ## The solution
 
-peek-mcp watches the session files that Claude Code and Codex write to disk automatically, parses them passively, and serves the last N turns via MCP. Any connected client calls `session_latest` and quickly gets the context it needs.
+peek-mcp watches the session files that Claude Code and Codex write to disk automatically, parses them passively, and serves the last N turns via MCP. Any connected client calls `session_latest` or `session_full` and quickly gets the context it needs.
 
 ```
 Claude Code / Codex writes JSONL to disk (always, no configuration needed)
@@ -24,26 +23,34 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
                     |
           in-memory buffer per session
                     |
-        MCP server over streamable HTTP
+        MCP server over streamable HTTP or stdio
                     |
-    Sonnet / GPT-5-mini calls session_latest(n)
+    Sonnet / GPT-5-mini calls session_full(n)
 ```
+
+In addition to turns, peek-mcp passively watches two more sources:
+
+- **Plans** — Claude Code writes a plan file to `~/.claude/plans/` at the start of each task. peek-mcp reads and stores it alongside the session so `session_plan` and `session_full` can surface it without any extra prompting.
+- **Git diffs** — After each new turn, peek-mcp runs `git diff <target-branch>` in the session's working directory and caches the result. `session_diff` and `session_full` expose this so a reviewer model can see exactly what changed without reading source files.
 
 ## MCP Tools
 
-**`session_latest(n?)`**
-Returns the last N human/assistant turn pairs from the most recently active session. Defaults to 5. Tool calls and tool results are filtered out.
+**`session_full(id?, n?, diff_size?)`** Returns turns, plan, and git diff for a session in one call. Prefer this over calling `session_latest`, `session_plan`, and `session_diff` separately. Omit `id` to use the most recently active session.
 
-**`session_list()`**
-Lists all known sessions with metadata: session ID, working directory, git branch, last activity timestamp, total token usage, and model.
+**`session_latest(n?)`** Returns the last N human/assistant turn pairs from the most recently active session. Defaults to 5. Tool calls and tool results are filtered out.
 
-**`session_get(id, n?)`**
-Returns the last N turns from a specific session by ID.
+**`session_list()`** Lists all known sessions with metadata: session ID, last activity timestamp, and whether a plan or diff is available.
+
+**`session_get(id, n?)`** Returns the last N turns from a specific session by ID.
+
+**`session_plan(id?)`** Returns the current plan for a session. Returns an empty response if the session has no plan. Omit `id` to use the most recently active session.
+
+**`session_diff(id?, size?)`** Returns the pre-computed git diff for a session, run against the configured target branch and refreshed automatically on each new turn. `size` limits the response to N bytes (0 = no limit). Omit `id` to use the most recently active session.
 
 ## Supported agents
 
 | Agent | Session path |
-|---|---|
+|-------|-------------|
 | Claude Code | `~/.claude/projects/<encoded-cwd>/*.jsonl` |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
 
@@ -64,23 +71,26 @@ go build -o peek-mcp .
 ## Usage
 
 ```bash
-peek-mcp
+peek-mcp start
 ```
 
 Starts the MCP server on `http://localhost:4242/mcp` by default.
 
 ```bash
-peek-mcp --port 4242 --depth 20
+peek-mcp start --port 4242 --depth 20
 ```
 
 ### Flags
 
 | Flag | Default | Description |
-|---|---|---|
-| `--port` | `4242` | HTTP port |
+|------|---------|-------------|
+| `--transport` | `http` | Transport: `http` or `stdio` |
+| `--port` | `4242` | HTTP port (http transport only) |
 | `--depth` | `20` | Ring buffer depth per session (max turns kept) |
 | `--claude-home` | `~/.claude` | Override Claude Code session root |
 | `--codex-home` | `~/.codex` | Override Codex session root |
+| `--diff-target` | `main` | Branch to diff against for `session_diff` |
+| `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
 ## Connecting to Claude Chat
 
@@ -118,9 +128,9 @@ Install:
 
 1. Open Claude Desktop → **Settings → Extensions**.
 2. Click **Advanced settings**, find the **Extension Developer** section, click **Install Extension…**.
-3. Pick `dist/peek-mcp.mcpb` and follow the prompts. The configuration UI exposes ring-buffer depth and the Claude / Codex session roots.
+3. Pick `dist/peek-mcp.mcpb` and follow the prompts. The configuration UI exposes ring-buffer depth, the Claude / Codex session roots, and the diff target branch.
 
-When launched this way, Claude Desktop runs `peek-mcp --transport=stdio` directly — no HTTP server, no port to manage.
+When launched this way, Claude Desktop runs `peek-mcp start --transport=stdio` directly — no HTTP server, no port to manage.
 
 If macOS Gatekeeper quarantines the unsigned binary on first run:
 
@@ -132,17 +142,20 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/
 
 1. Start peek-mcp in a terminal tab. It runs silently and watches for sessions.
 2. Run Claude Code with Opus on a task.
-3. Open Claude Chat (Sonnet) and ask: "Use session_latest to review what was just built and flag any issues."
-4. Sonnet calls the tool, reads the last 5 turns, responds. Done in under 30 seconds.
+3. Open Claude Chat (Sonnet) and ask: "Use session_full to review what was just built and flag any issues."
+4. Sonnet calls the tool, reads the last 5 turns, the current plan, and the git diff against `main`. Done in under 30 seconds.
 
 ## Limitations
-TBD
+
+- `session_diff` requires a local `git` binary in `PATH` and runs in the session's working directory. It will produce no output if the directory is not a git repository or the target branch does not exist.
+- Codex CLI sessions do not currently expose token usage metadata.
+- The stdio transport is intended for Claude Desktop use via `.mcpb`. Running it manually requires the client to manage the process lifecycle.
 
 ## Requirements
 
 - Go 1.26+
 - macOS or Linux
-- Claude Code and/or Codex CLI installed (peek-mcp reads their output, it does not depend on them at runtime)
+- Claude Code and/or Codex CLI installed (peek-mcp reads their output; it does not depend on them at runtime)
 
 ## License
 
