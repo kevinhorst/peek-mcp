@@ -74,7 +74,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	server.AddTool(
 		mcp.NewTool("session_diff",
-			mcp.WithDescription("Returns the pre-computed git diff for a session. The diff is run against the configured target branch (default: develop) in the session's working directory, and refreshed automatically on each new turn. If id is omitted, uses the most recent session."),
+			mcp.WithDescription("Returns the pre-computed git diff for a session. The diff is run against the configured target branch (default: main) in the session's working directory, and refreshed automatically on each new turn. If id is omitted, uses the most recent session."),
 			mcp.WithString("id",
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
