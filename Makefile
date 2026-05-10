@@ -1,3 +1,8 @@
+DIST    := dist
+STAGE   := $(DIST)/bundle
+LDFLAGS := -s -w
+GOENV := GOOS=darwin CGO_ENABLED=0
+
 build:
 	go build -o peek-mcp .
 
@@ -17,3 +22,21 @@ ifneq (,$(wildcard vendor))
 	go mod vendor
 endif
 	@echo "✓ Dependencies updated!"
+
+build-darwin-universal:
+	@mkdir -p $(DIST)
+	$(GOENV)  GOARCH=arm64  go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-darwin-arm64 .
+	$(GOENV)  GOARCH=amd64  go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-darwin-amd64 .
+	lipo -create -output $(DIST)/peek-mcp $(DIST)/peek-mcp-darwin-arm64 $(DIST)/peek-mcp-darwin-amd64
+	rm $(DIST)/peek-mcp-darwin-arm64 $(DIST)/peek-mcp-darwin-amd64
+
+mcpb: build-darwin-universal
+	@rm -rf $(STAGE) && mkdir -p $(STAGE)/server
+	cp mcpb/manifest.json $(STAGE)/manifest.json
+	cp $(DIST)/peek-mcp $(STAGE)/server/peek-mcp
+	chmod +x $(STAGE)/server/peek-mcp
+	cd $(STAGE) && zip -r ../peek-mcp.mcpb . -x '*.DS_Store'
+	@echo "==> built $(DIST)/peek-mcp.mcpb"
+
+clean-dist:
+	rm -rf $(DIST)
