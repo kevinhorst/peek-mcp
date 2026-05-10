@@ -5,13 +5,16 @@ import (
 	"errors"
 	"log"
 	"os/exec"
+	"strings"
+	"sync"
 
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
 type DiffWatcher struct {
-	store  *session.Store
-	target string
+	store   *session.Store
+	target  string
+	running sync.Map
 }
 
 func NewDiffWatcher(store *session.Store, target string) *DiffWatcher {
@@ -28,19 +31,28 @@ func (w *DiffWatcher) Run(ctx context.Context) error {
 			if !ok || sess.Meta.CWD == "" {
 				continue
 			}
+			if _, loaded := w.running.LoadOrStore(id, struct{}{}); loaded {
+				continue
+			}
 			go w.refresh(ctx, id, sess.Meta.CWD)
 		}
 	}
 }
 
 func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
+	defer w.running.Delete(id)
+
 	cmd := exec.CommandContext(ctx, "git", "diff", w.target)
 	cmd.Dir = cwd
 	output, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			log.Printf("DiffWatcher: git diff failed for session %s: %s", id, exitErr.Stderr)
+			stderr := string(exitErr.Stderr)
+			if idx := strings.IndexByte(stderr, '\n'); idx >= 0 {
+				stderr = stderr[:idx]
+			}
+			log.Printf("DiffWatcher: git diff failed for session %s: %s", id, stderr)
 		} else {
 			log.Printf("DiffWatcher: git diff failed for session %s: %v", id, err)
 		}
