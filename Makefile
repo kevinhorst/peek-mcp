@@ -34,28 +34,21 @@ build-mcpb: build-darwin-universal
 	cd $(STAGE) && zip -r ../peek-mcp.mcpb . -x '*.DS_Store'
 	@echo "==> built $(DIST)/peek-mcp.mcpb"
 
-bump-version:
-	@test -n "$(VERSION)" || (echo "Usage: make bump-version VERSION=x.y.z" && exit 1)
-	@sed -i '' 's/var version = ".*"/var version = "$(VERSION)"/' cmd/version.go
-	@jq --arg v "$(VERSION)" '.version = $v' mcpb/manifest.json \
-	    > mcpb/manifest.json.tmp && mv mcpb/manifest.json.tmp mcpb/manifest.json
-	@echo "Bumped to $(VERSION) in cmd/version.go and mcpb/manifest.json"
-
 
 clean-dist:
 	rm -rf $(DIST)
 
 
-git-release: bump-version
+git-release:
 	git commit -am "cmd: release v$(VERSION)"
 	git tag v$(VERSION)
 
 
-serve-http: build
+serve-http: build-local
 	./peek-mcp start --log-level debug
 
 
-serve-stdio: build
+serve-stdio: build-local
 	./peek-mcp start --transport stdio
 
 
