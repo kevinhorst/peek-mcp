@@ -120,7 +120,7 @@ func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 			Plan:  sess.PlanContent,
 			Diff:  diff,
 		}
-		return respondWithJson(result)
+		return respondWithJson(map[string]any{"session": result})
 	}
 }
 
@@ -159,7 +159,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 			}
 		}
 
-		return respondWithJson(items)
+		return respondWithJson(map[string]any{"sessions": items})
 	}
 }
 
@@ -206,7 +206,7 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 		} else {
 			sess, ok := s.Last()
 			if !ok {
-				return mcp.NewToolResultText("session_plan: No sessions found"), nil
+				return respondWithText("No sessions found.")
 			}
 			currentSession = sess
 		}
@@ -215,7 +215,7 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("No plan found for this session"), nil
 		}
 
-		return mcp.NewToolResultText(currentSession.PlanContent), nil
+		return respondWithText(currentSession.PlanContent)
 	}
 }
 
@@ -237,7 +237,7 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 		} else {
 			sess, ok := s.Last()
 			if !ok {
-				return mcp.NewToolResultText("no sessions found"), nil
+				return respondWithText("No sessions found.")
 			}
 			currentSession = sess
 		}
@@ -248,7 +248,7 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			output = output[:size] + fmt.Sprintf("\n[truncated: diff exceeded %d bytes]", size)
 		}
 
-		return mcp.NewToolResultText(output), nil
+		return respondWithText(output)
 	}
 }
 
