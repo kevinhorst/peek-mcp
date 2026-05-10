@@ -47,6 +47,14 @@ func main() {
 		}
 	}()
 
+	go func() {
+		plansDir := filepath.Join(*claudeHome, "plans")
+		err := watcher.NewPlanWatcher(plansDir, store).Run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatal(err)
+		}
+	}()
+
 	srv := server.NewMCPServer("peek-mcp", "1.0.0",
 		server.WithToolCapabilities(true),
 	)
