@@ -7,17 +7,30 @@ import (
 )
 
 type Turn struct {
-	Role      Role      `json:"role"`
-	Text      string    `json:"text"` // may be empty
-	Timestamp time.Time `json:"timestamp"`
-	Meta      *Meta     `json:"meta"`
-	RequestId string    `json:"request_id,omitempty"` // optional
-	Usage     *Usage    `json:"usage,omitempty"`      // optional
+	Role         Role      `json:"role"`
+	Text         string    `json:"text"` // may be empty
+	Timestamp    time.Time `json:"timestamp"`
+	Meta         *Meta     `json:"meta"`
+	RequestId    string    `json:"request_id,omitempty"` // optional
+	Usage        *Usage    `json:"usage,omitempty"`      // optional
+	PlanFilePath string    `json:"-"`                    // plan signal only, not serialized
 }
 
 func (t *Turn) Validate() error {
 	if t == nil {
 		return errors.New("Turn.Validate: called on nil")
+	}
+
+	if t.Meta == nil {
+		return errors.New("Turn.Validate: meta must not be nil")
+	}
+
+	// plan-signal turns only carry a session ID and plan file path
+	if t.PlanFilePath != "" {
+		if t.Meta.SessionId == "" {
+			return errors.New("Turn.Validate: plan signal turn requires session ID")
+		}
+		return nil
 	}
 
 	if t.Role != RoleUser && t.Role != RoleAssistant {
@@ -26,10 +39,6 @@ func (t *Turn) Validate() error {
 
 	if t.Timestamp.IsZero() {
 		return errors.New("Turn.Validate: timestamp must not be zero")
-	}
-
-	if t.Meta == nil {
-		return errors.New("Turn.Validate: meta must not be nil")
 	}
 
 	if t.Usage != nil {
