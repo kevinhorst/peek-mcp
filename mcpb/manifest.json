@@ -21,10 +21,12 @@
     "mcp_config": {
       "command": "${__dirname}/server/peek-mcp",
       "args": [
+        "start",
         "--transport=stdio",
         "--depth=${user_config.depth}",
         "--claude-home=${user_config.claude_home}",
-        "--codex-home=${user_config.codex_home}"
+        "--codex-home=${user_config.codex_home}",
+        "--diff-target=${user_config.diff_target}"
       ]
     }
   },
@@ -59,6 +61,13 @@
       "description": "Override the Codex session root.",
       "default": "${HOME}/.codex",
       "required": true
+    },
+    "diff_target": {
+      "type": "string",
+      "title": "Diff target",
+      "description": "Override the branch to diff against for session_diff.",
+      "default": "main",
+      "required": false
     }
   },
   "compatibility": {
