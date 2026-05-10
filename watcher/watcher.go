@@ -177,7 +177,7 @@ func (w *Watcher) readNewLines(path string) error {
 				continue
 			}
 
-			w.store.AddTurn(turn.Meta.SessionId, w.agent, turn)
+			w.store.AddTurnBySessionId(turn.Meta.SessionId, w.agent, turn)
 		}
 	}
 
