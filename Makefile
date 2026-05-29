@@ -45,11 +45,11 @@ git-release:
 
 
 serve-http: build-local
-	./peek-mcp start --log-level debug
+	./dist/peek-mcp start --log-level debug
 
 
 serve-stdio: build-local
-	./peek-mcp start --transport stdio
+	./dist/peek-mcp start --transport stdio
 
 
 test:
