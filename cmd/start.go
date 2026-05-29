@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"time"
 
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/codex"
@@ -35,6 +36,8 @@ var startCmd = &cobra.Command{
 		claudeHome, _ := flags.GetString("claude-home")
 		codexHome, _ := flags.GetString("codex-home")
 		diffTarget, _ := flags.GetString("diff-target")
+		pollInterval, _ := flags.GetDuration("poll-interval")
+		pollWindow, _ := flags.GetDuration("poll-window")
 
 		level := slog.LevelInfo
 		switch logLevel {
@@ -79,7 +82,7 @@ var startCmd = &cobra.Command{
 		}()
 
 		go func() {
-			err := watcher.NewDiffWatcher(store, diffTarget).Run(ctx)
+			err := watcher.NewDiffWatcher(store, diffTarget, pollInterval, pollWindow).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("diff watcher error", "err", err)
 				os.Exit(1)
@@ -132,6 +135,8 @@ func init() {
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
 	flags.String("diff-target", "main", "Branch to diff against for session_diff")
+	flags.Duration("poll-interval", time.Second, "How often to recompute the live uncommitted diff (git diff HEAD)")
+	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	rootCmd.AddCommand(startCmd)
