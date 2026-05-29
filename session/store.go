@@ -57,6 +57,14 @@ func (s *Store) UpdateDiff(id Id, target, output string) {
 	}
 }
 
+func (s *Store) UpdateUncommittedDiff(id Id, output string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if session, ok := s.sessions[id]; ok {
+		session.UncommittedDiff = output
+	}
+}
+
 func (s *Store) UpdatePlanForPath(filePath, content string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -16,17 +16,18 @@ const (
 )
 
 type Session struct {
-	Meta          Meta      `json:"meta"`
-	Source        Source    `json:"source"`
-	LastActive    time.Time `json:"last_active"`
-	TotalUsage    Usage     `json:"total_usage"`
-	FilePath      string    `json:"-"`
-	PlanFilePath  string    `json:"-"`
-	PlanContent   string    `json:"-"`
-	DiffOutput    string    `json:"-"`
-	DiffTarget    string    `json:"-"`
-	TurnActive    *Turn     `json:"-"`
-	TurnsFinished *TurnBuffer
+	Meta            Meta      `json:"meta"`
+	Source          Source    `json:"source"`
+	LastActive      time.Time `json:"last_active"`
+	TotalUsage      Usage     `json:"total_usage"`
+	FilePath        string    `json:"-"`
+	PlanFilePath    string    `json:"-"`
+	PlanContent     string    `json:"-"`
+	DiffOutput      string    `json:"-"`
+	DiffTarget      string    `json:"-"`
+	UncommittedDiff string    `json:"-"` // git diff HEAD, refreshed by the poller
+	TurnActive      *Turn     `json:"-"`
+	TurnsFinished   *TurnBuffer
 }
 
 func (s *Session) Turns(number int) []*Turn {
