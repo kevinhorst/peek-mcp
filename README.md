@@ -47,6 +47,8 @@ In addition to turns, peek-mcp passively watches two more sources:
 
 **`session_diff(id?, size?)`** Returns the pre-computed git diff for a session, run against the configured target branch and refreshed automatically on each new turn. `size` limits the response to N bytes (0 = no limit). Omit `id` to use the most recently active session.
 
+**`session_uncommitted_diff(id?, size?)`** Returns the live uncommitted git diff (`git diff HEAD`, i.e. staged + unstaged changes) for a session, refreshed continuously as files are saved — not only on new turns. Resolved in the session's own working tree, so it is correct inside linked git worktrees. `size` limits the response to N bytes (0 = no limit). Omit `id` to use the most recently active session. See [Hot reload](#hot-reload-live-diff) for injecting this into Claude Code automatically.
+
 ## Supported agents
 
 | Agent | Session path |
@@ -112,6 +114,24 @@ Add to `.claude/settings.json` in your project:
   }
 }
 ```
+
+## Hot reload (live diff)
+
+To keep Claude Code grounded in your current work as you edit — a "hot reload" — peek-mcp keeps an up-to-date `git diff HEAD` for each active repo and writes it to `<gitDir>/peek-diff` (inside `.git/`, so it is never committed and resolves correctly inside linked worktrees). A `UserPromptSubmit` hook then injects that diff into context on every prompt. The hook needs only `git` and `cat` — no peek binary on `PATH`, no server call — so it works under both the HTTP and `.mcpb` deployments.
+
+Merge `hooks/settings.snippet.json` into your project `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "cat \"$(git rev-parse --git-path peek-diff)\" 2>/dev/null" } ] }
+    ]
+  }
+}
+```
+
+A separate observer session can read the same diff via the `session_uncommitted_diff` tool.
 
 ## Installing in Claude Desktop (.mcpb)
 
