@@ -84,6 +84,19 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 		sessionDiffHandler(store),
 	)
+
+	server.AddTool(
+		mcp.NewTool("session_uncommitted_diff",
+			mcp.WithDescription("Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees. If id is omitted, uses the most recent session."),
+			mcp.WithString("id",
+				mcp.Description("Session ID (omit for most recent session)"),
+			),
+			mcp.WithNumber("size",
+				mcp.Description("Max bytes to return from diff output (0 = no limit)"),
+			),
+		),
+		sessionUncommittedDiffHandler(store),
+	)
 }
 
 func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
@@ -243,6 +256,39 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		output := currentSession.DiffOutput
+		size := intArgFromRequest(request, "size")
+		if size > 0 && len(output) > size {
+			output = output[:size] + fmt.Sprintf("\n[truncated: diff exceeded %d bytes]", size)
+		}
+
+		return respondWithText(output)
+	}
+}
+
+func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var currentSession *session.Session
+
+		args := request.GetArguments()
+		if idVal, ok := args["id"]; ok && idVal != nil {
+			id, _ := idVal.(string)
+			if id == "" {
+				return mcp.NewToolResultError("id must be a non-empty string"), nil
+			}
+			sess, found := s.GetById(session.Id(id))
+			if !found {
+				return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
+			}
+			currentSession = sess
+		} else {
+			sess, ok := s.Last()
+			if !ok {
+				return respondWithText("No sessions found.")
+			}
+			currentSession = sess
+		}
+
+		output := currentSession.UncommittedDiff
 		size := intArgFromRequest(request, "size")
 		if size > 0 && len(output) > size {
 			output = output[:size] + fmt.Sprintf("\n[truncated: diff exceeded %d bytes]", size)
