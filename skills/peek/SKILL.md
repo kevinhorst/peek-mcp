@@ -17,10 +17,12 @@ description: >
 
 ## Output format
 
-**Turns** — label each turn `**Human**` / `**Assistant**`, separated by a blank line. Omit tool calls.
+Do NOT reproduce the tool result. The data is already in context for the LLM — formatting it again wastes time and tokens.
 
-**Plan** — if non-empty, show under `## Plan` as-is (it is already markdown).
+After calling the tool, respond with only a short confirmation line, e.g.:
 
-**Diff** — if non-empty, show under `## Diff` in a `diff` code block.
+> Peeked at session **Login simplification** (5 turns, has plan, has diff).
 
-Omit any section that is empty.
+Include: session title or ID, turn count, and which sections are present (plan/diff). Nothing else.
+
+For `/peek list`, show the session table as-is — that is already compact.
