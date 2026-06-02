@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/kevinhorst/peek-mcp/session"
@@ -32,10 +33,8 @@ func (w *PlanWatcher) Run(ctx context.Context) error {
 	}
 	defer watcher.Close()
 
-	if err := watcher.Add(w.plansDir); err != nil {
-		slog.Warn("PlanWatcher: could not watch", "dir", w.plansDir, "err", err)
-		<-ctx.Done()
-		return ctx.Err()
+	if err := w.waitForDir(ctx, watcher); err != nil {
+		return err
 	}
 
 	for {
@@ -58,6 +57,28 @@ func (w *PlanWatcher) Run(ctx context.Context) error {
 				return nil
 			}
 			slog.Error("PlanWatcher error", "err", err)
+		}
+	}
+}
+
+func (w *PlanWatcher) waitForDir(ctx context.Context, fsWatcher *fsnotify.Watcher) error {
+	if err := fsWatcher.Add(w.plansDir); err == nil {
+		return nil
+	}
+
+	slog.Info("PlanWatcher: plans dir not found, waiting for creation", "dir", w.plansDir)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := fsWatcher.Add(w.plansDir); err == nil {
+				slog.Info("PlanWatcher: plans dir found, watching", "dir", w.plansDir)
+				return nil
+			}
 		}
 	}
 }
