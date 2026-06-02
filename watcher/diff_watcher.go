@@ -155,8 +155,57 @@ func gitAbsoluteDir(ctx context.Context, cwd string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// excludedPaths lists dependency/generated directories and files excluded from diffs.
+// These are common across language ecosystems and rarely useful for code review.
+var excludedPaths = []string{
+	// Go
+	"vendor/",
+	"go.sum",
+
+	// JavaScript / TypeScript
+	"node_modules/",
+	"package-lock.json",
+	"yarn.lock",
+	"pnpm-lock.yaml",
+	"bun.lockb",
+
+	// Python
+	".venv/",
+	"venv/",
+	"*.egg-info/",
+	"poetry.lock",
+	"Pipfile.lock",
+
+	// Ruby
+	"Gemfile.lock",
+
+	// PHP
+	"composer.lock",
+
+	// Rust
+	"Cargo.lock",
+
+	// .NET
+	"packages/",
+
+	// Dart / Flutter
+	"pubspec.lock",
+	".dart_tool/",
+
+	// Generated / IDE
+	"*.pb.go",
+	"*.gen.go",
+	"*.generated.*",
+}
+
 func gitDiff(ctx context.Context, cwd string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"diff"}, args...)...)
+	cmdArgs := append([]string{"diff"}, args...)
+	cmdArgs = append(cmdArgs, "--")
+	cmdArgs = append(cmdArgs, ".")
+	for _, pattern := range excludedPaths {
+		cmdArgs = append(cmdArgs, ":!"+pattern)
+	}
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	return string(out), err
