@@ -167,7 +167,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 			items[i] = sessionListItem{
 				Id:         sess.Meta.SessionId,
 				LastActive: sess.LastActive,
-				HasPlan:    sess.PlanContent != "",
+				HasPlan:    sess.PlanContent != "" || sess.PlanFilePath != "",
 				HasDiff:    sess.DiffOutput != "",
 			}
 		}
