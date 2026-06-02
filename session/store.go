@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"log/slog"
 	"maps"
 	"os"
@@ -10,22 +11,38 @@ import (
 )
 
 type Store struct {
-	mu        sync.RWMutex
-	sessions  map[Id]*Session
-	depth     int
-	TurnAdded chan Id
+	mu            sync.RWMutex
+	sessions      map[Id]*Session
+	depth         int
+	enabledAgents []Agent
+	TurnAdded     chan Id
 }
 
-func NewStore(depth int) *Store {
+func NewStore(depth int, agents ...Agent) *Store {
 	return &Store{
-		sessions:  make(map[Id]*Session),
-		depth:     depth,
-		TurnAdded: make(chan Id, 16), // small fixed buffer; dropped notifications are fine — next turn re-triggers
+		sessions:      make(map[Id]*Session),
+		depth:         depth,
+		enabledAgents: agents,
+		TurnAdded:     make(chan Id, 16), // small fixed buffer; dropped notifications are fine — next turn re-triggers
 	}
 }
 
-func (s *Store) AddTurnBySessionId(id Id, source Source, turn *Turn) {
-	session := s.getOrCreate(id, source)
+// TODO: Agent.IsValid
+func (s *Store) ResolveAgent(agent Agent) (Agent, error) {
+	if agent != "" {
+		if agent != AgentClaude && agent != AgentCodex {
+			return "", fmt.Errorf("agent must be \"claude\" or \"codex\", got %q", agent)
+		}
+		return agent, nil
+	}
+	if len(s.enabledAgents) == 1 {
+		return s.enabledAgents[0], nil
+	}
+	return "", fmt.Errorf("agent parameter is required (\"claude\" or \"codex\")")
+}
+
+func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
+	session := s.getOrCreate(id, agent)
 
 	if turn.PlanFilePath != "" {
 		slog.Debug("Updating plan", "session", id)
@@ -89,11 +106,11 @@ func (s *Store) GetById(id Id) (*Session, bool) {
 	return session, ok
 }
 
-func (s *Store) Last() (*Session, bool) {
+func (s *Store) Last(agents ...Agent) (*Session, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	sessions := s.sortByLastActiveDesc()
+	sessions := s.sortByLastActiveDesc(agents...)
 	if len(sessions) == 0 {
 		return nil, false
 	}
@@ -101,14 +118,14 @@ func (s *Store) Last() (*Session, bool) {
 	return sessions[0], true
 }
 
-func (s *Store) List() []*Session {
+func (s *Store) List(agents ...Agent) []*Session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.sortByLastActiveDesc()
+	return s.sortByLastActiveDesc(agents...)
 }
 
-func (s *Store) getOrCreate(id Id, source Source) *Session {
+func (s *Store) getOrCreate(id Id, agent Agent) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -118,15 +135,23 @@ func (s *Store) getOrCreate(id Id, source Source) *Session {
 
 	session := &Session{
 		Meta:          Meta{SessionId: id},
-		Source:        source,
+		Agent:         agent,
 		TurnsFinished: NewTurnBuffer(s.depth),
 	}
 	s.sessions[id] = session
 	return session
 }
 
-func (s *Store) sortByLastActiveDesc() []*Session {
+func (s *Store) sortByLastActiveDesc(agents ...Agent) []*Session {
 	sessions := slices.Collect(maps.Values(s.sessions))
+	//TODO: Filter by agent
+	if len(agents) > 0 {
+		agent := agents[0]
+		sessions = slices.DeleteFunc(sessions, func(sess *Session) bool {
+			return sess.Agent != agent
+		})
+	}
+
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[j].LastActive.Before(sessions[i].LastActive)
 	})
