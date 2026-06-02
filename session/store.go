@@ -26,15 +26,25 @@ func NewStore(depth int) *Store {
 
 func (s *Store) AddTurnBySessionId(id Id, source Source, turn *Turn) {
 	session := s.getOrCreate(id, source)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
+	// update plan content only
 	if turn.PlanFilePath != "" {
 		slog.Debug("Updating plan", "session", id)
-
-		content, _ := os.ReadFile(turn.PlanFilePath)
-		s.mu.Lock()
 		session.PlanFilePath = turn.PlanFilePath
+
+		if turn.PlanContent != "" {
+			session.PlanContent = turn.PlanContent
+			return
+		}
+
+		content, err := os.ReadFile(turn.PlanFilePath)
+		if err != nil {
+			slog.Warn("Failed to read plan file", "path", turn.PlanFilePath, "err", err)
+			return
+		}
 		session.PlanContent = string(content)
-		s.mu.Unlock()
 		return
 	}
 

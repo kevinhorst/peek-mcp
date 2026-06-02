@@ -1,6 +1,8 @@
 package session
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -84,6 +86,55 @@ func TestMostRecent(t *testing.T) {
 	sess, ok := s.Last()
 	assert.True(t, ok)
 	assert.Equal(t, Id("s2"), sess.Meta.SessionId)
+}
+
+func TestAddTurn_PlanInlineContent(t *testing.T) {
+	s := NewStore(10)
+	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+		PlanFilePath: "/nonexistent/plan.md",
+		PlanContent:  "# Inline Plan",
+		Meta:         &Meta{SessionId: "s1"},
+	})
+
+	sess, _ := s.GetById("s1")
+	assert.Equal(t, "# Inline Plan", sess.PlanContent)
+	assert.Equal(t, "/nonexistent/plan.md", sess.PlanFilePath)
+}
+
+func TestAddTurn_PlanFileReadFallback(t *testing.T) {
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	os.WriteFile(planPath, []byte("# Disk Plan"), 0644)
+
+	s := NewStore(10)
+	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+		PlanFilePath: planPath,
+		Meta:         &Meta{SessionId: "s1"},
+	})
+
+	sess, _ := s.GetById("s1")
+	assert.Equal(t, "# Disk Plan", sess.PlanContent)
+}
+
+func TestAddTurn_PlanFileReadFailure_PreservesExisting(t *testing.T) {
+	s := NewStore(10)
+	// First turn sets plan content via inline
+	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+		PlanFilePath: "/some/plan.md",
+		PlanContent:  "# Existing Plan",
+		Meta:         &Meta{SessionId: "s1"},
+	})
+
+	// Second turn references a non-existent file with no inline content
+	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+		PlanFilePath: "/nonexistent/plan.md",
+		Meta:         &Meta{SessionId: "s1"},
+	})
+
+	sess, _ := s.GetById("s1")
+	// PlanFilePath updated but content preserved (file read failed, no inline content)
+	assert.Equal(t, "/nonexistent/plan.md", sess.PlanFilePath)
+	assert.Equal(t, "# Existing Plan", sess.PlanContent)
 }
 
 func TestConcurrentAccess(t *testing.T) {
