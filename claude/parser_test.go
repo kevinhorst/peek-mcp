@@ -162,6 +162,35 @@ func TestClaude_PlanFileReferenceAttachment(t *testing.T) {
 
 	assert.NotNil(t, turn)
 	assert.Equal(t, "/Users/user/.claude/plans/some-plan.md", turn.PlanFilePath)
+	assert.Equal(t, "# My Plan\n\nDo stuff.", turn.PlanContent)
+	assert.Equal(t, session.Id("sess-plan"), turn.Meta.SessionId)
+}
+
+func TestClaude_PlanModeExitAttachment(t *testing.T) {
+	p := NewParser()
+
+	data, err := os.ReadFile("fixtures/attachments.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(splitLines(data)[3]) // plan_mode_exit attachment
+
+	assert.NotNil(t, turn)
+	assert.Equal(t, "/Users/user/.claude/plans/some-plan.md", turn.PlanFilePath)
+	assert.Equal(t, session.Id("sess-plan"), turn.Meta.SessionId)
+}
+
+func TestClaude_PlanModeReentryAttachment(t *testing.T) {
+	p := NewParser()
+
+	data, err := os.ReadFile("fixtures/attachments.jsonl")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(splitLines(data)[4]) // plan_mode_reentry attachment
+
+	assert.NotNil(t, turn)
+	assert.Equal(t, "/Users/user/.claude/plans/some-plan.md", turn.PlanFilePath)
 	assert.Equal(t, session.Id("sess-plan"), turn.Meta.SessionId)
 }
 

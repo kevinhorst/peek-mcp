@@ -138,7 +138,7 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 		return nil
 	}
 
-	if attachment.Type != AttachmentTypePlanMode && attachment.Type != AttachmentTypePlanFileReference {
+	if !isPlanAttachment(attachment.Type) {
 		return nil
 	}
 
@@ -148,10 +148,20 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 
 	return &session.Turn{
 		PlanFilePath: attachment.PlanFilePath,
+		PlanContent:  attachment.PlanContent,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 		},
 	}
+}
+
+func isPlanAttachment(t string) bool {
+	switch t {
+	case AttachmentTypePlanMode, AttachmentTypePlanFileReference,
+		AttachmentTypePlanModeExit, AttachmentTypePlanModeReentry:
+		return true
+	}
+	return false
 }
 
 func extractTextBlocks(raw json.RawMessage) string {
