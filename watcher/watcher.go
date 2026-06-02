@@ -24,7 +24,7 @@ type watchedFile struct {
 	offset int64
 }
 type Watcher struct {
-	agent    session.Source
+	agent    session.Agent
 	agentDir string
 	files    map[string]*watchedFile
 	mu       sync.Mutex
@@ -32,7 +32,7 @@ type Watcher struct {
 	store    *session.Store
 }
 
-func New(agent session.Source, agentDir string, parser parser, store *session.Store) *Watcher {
+func New(agent session.Agent, agentDir string, parser parser, store *session.Store) *Watcher {
 	return &Watcher{
 		agent:    agent,
 		agentDir: agentDir,
