@@ -123,17 +123,23 @@ func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 			n = DefaultReturnedTurns
 		}
 
-		diff := sess.DiffOutput
-		if size := intArgFromRequest(request, "diff_size"); size > 0 && len(diff) > size {
-			diff = diff[:size] + fmt.Sprintf("\n[truncated: exceeded %d bytes]", size)
-		}
+		turns := truncateTurns(sess.Turns(n), DefaultTurnTextMax)
+		plan := truncateString(sess.PlanContent, DefaultPlanMax)
 
-		result := sessionFullResult{
-			Turns: sess.Turns(n),
-			Plan:  sess.PlanContent,
+		diffMax := DefaultDiffMax
+		if size := intArgFromRequest(request, "diff_size"); size > 0 {
+			diffMax = size
+		}
+		diff := truncateString(sess.DiffOutput, diffMax)
+
+		result := &sessionFullResult{
+			Turns: turns,
+			Plan:  plan,
 			Diff:  diff,
 		}
-		return respondWithJson(map[string]any{"session": result})
+		result = enforceResponseBudget(result, MaxResponseBytes)
+
+		return respondWithStructured(map[string]any{"session": result})
 	}
 }
 
@@ -150,7 +156,7 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("session_latest: No sessions found"), nil
 		}
 
-		turns := lastSession.Turns(turnNumber)
+		turns := truncateTurns(lastSession.Turns(turnNumber), DefaultTurnTextMax)
 		if len(turns) == 0 {
 			return mcp.NewToolResultText("No turns found"), nil
 		}
@@ -172,7 +178,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 			}
 		}
 
-		return respondWithJson(map[string]any{"sessions": items})
+		return respondWithStructured(map[string]any{"sessions": items})
 	}
 }
 
@@ -196,7 +202,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
 		}
 
-		turns := currentSession.Turns(turnNumber)
+		turns := truncateTurns(currentSession.Turns(turnNumber), DefaultTurnTextMax)
 		if len(turns) == 0 {
 			return mcp.NewToolResultError("No turns found"), nil
 		}
@@ -228,7 +234,7 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("No plan found for this session"), nil
 		}
 
-		return respondWithText(currentSession.PlanContent)
+		return respondWithText(truncateString(currentSession.PlanContent, DefaultPlanMax))
 	}
 }
 
@@ -255,11 +261,11 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			currentSession = sess
 		}
 
-		output := currentSession.DiffOutput
-		size := intArgFromRequest(request, "size")
-		if size > 0 && len(output) > size {
-			output = output[:size] + fmt.Sprintf("\n[truncated: diff exceeded %d bytes]", size)
+		maxSize := DefaultDiffMax
+		if size := intArgFromRequest(request, "size"); size > 0 {
+			maxSize = size
 		}
+		output := truncateString(currentSession.DiffOutput, maxSize)
 
 		return respondWithText(output)
 	}
@@ -288,11 +294,11 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			currentSession = sess
 		}
 
-		output := currentSession.UncommittedDiff
-		size := intArgFromRequest(request, "size")
-		if size > 0 && len(output) > size {
-			output = output[:size] + fmt.Sprintf("\n[truncated: diff exceeded %d bytes]", size)
+		maxSize := DefaultUncommDiffMax
+		if size := intArgFromRequest(request, "size"); size > 0 {
+			maxSize = size
 		}
+		output := truncateString(currentSession.UncommittedDiff, maxSize)
 
 		return respondWithText(output)
 	}
@@ -322,11 +328,17 @@ func respondWithText(response any) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultText(string(data)), nil
 }
 
-func respondWithJson(response any) (*mcp.CallToolResult, error) {
-	resp, err := mcp.NewToolResultJSON(response)
-	if err != nil {
-		return nil, fmt.Errorf("creating tool result: %w", err)
-	}
-
-	return resp, nil
+// respondWithStructured returns StructuredContent with a minimal text fallback.
+// mcp-go's NewToolResultJSON duplicates the full payload into both Content[0].text
+// and StructuredContent, which doubles the response size (e.g. 9MB → 19MB).
+func respondWithStructured(response any) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			mcp.TextContent{
+				Type: "text",
+				Text: "See structuredContent for the full response.",
+			},
+		},
+		StructuredContent: response,
+	}, nil
 }
