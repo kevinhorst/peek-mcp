@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// TODO: abort if neither claudeHome nor codexHome are set
 var startCmd = &cobra.Command{
 	Use:               "start",
 	Short:             "Start the peek-mcp server",
