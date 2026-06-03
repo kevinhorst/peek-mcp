@@ -10,7 +10,7 @@ import (
 func provideCompleteSession() *Session {
 	return &Session{
 		Meta:          Meta{SessionId: Id("sess-123")},
-		Source:        SourceClaude,
+		Agent:         AgentClaude,
 		LastActive:    time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
 		TurnsFinished: NewTurnBuffer(20),
 	}
@@ -54,7 +54,7 @@ func TestSession_Validate(t *testing.T) {
 
 	// fail-invalid-source
 	form = provideCompleteSession()
-	form.Source = Source("openai")
+	form.Agent = Agent("openai")
 	test = &testCase{
 		_id:         "fail-invalid-source",
 		_shouldPass: false,
@@ -64,7 +64,7 @@ func TestSession_Validate(t *testing.T) {
 
 	// fail-empty-source
 	form = provideCompleteSession()
-	form.Source = ""
+	form.Agent = ""
 	test = &testCase{
 		_id:         "fail-empty-source",
 		_shouldPass: false,
@@ -84,7 +84,7 @@ func TestSession_Validate(t *testing.T) {
 
 	// pass-codex-source
 	form = provideCompleteSession()
-	form.Source = SourceCodex
+	form.Agent = AgentCodex
 	test = &testCase{
 		_id:         "pass-codex-source",
 		_shouldPass: true,

@@ -6,18 +6,18 @@ import (
 )
 
 type (
-	Id     string
-	Source string
+	Id    string
+	Agent string
 )
 
 const (
-	SourceClaude Source = "claude"
-	SourceCodex  Source = "codex"
+	AgentClaude Agent = "claude"
+	AgentCodex  Agent = "codex"
 )
 
 type Session struct {
 	Meta            Meta      `json:"meta"`
-	Source          Source    `json:"source"`
+	Agent           Agent     `json:"agent"`
 	LastActive      time.Time `json:"last_active"`
 	TotalUsage      Usage     `json:"total_usage"`
 	FilePath        string    `json:"-"`
@@ -86,8 +86,8 @@ func (s *Session) Validate() error {
 		return errors.New("id must not be empty")
 	}
 
-	if s.Source != SourceClaude && s.Source != SourceCodex {
-		return errors.New("source must be \"claude\" or \"codex\"")
+	if s.Agent != AgentClaude && s.Agent != AgentCodex {
+		return errors.New("agent must be \"claude\" or \"codex\"")
 	}
 
 	if s.LastActive.IsZero() {

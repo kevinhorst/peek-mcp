@@ -12,17 +12,17 @@ import (
 
 func TestGetOrCreate_New(t *testing.T) {
 	s := NewStore(10)
-	sess := s.getOrCreate("s1", "claude")
+	sess := s.getOrCreate("s1", AgentClaude)
 
 	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
-	assert.Equal(t, SourceClaude, sess.Source)
+	assert.Equal(t, AgentClaude, sess.Agent)
 	assert.NotNil(t, sess.TurnsFinished)
 }
 
 func TestGetOrCreate_Existing(t *testing.T) {
 	s := NewStore(10)
-	s1 := s.getOrCreate("s1", "claude")
-	s2 := s.getOrCreate("s1", "claude")
+	s1 := s.getOrCreate("s1", AgentClaude)
+	s2 := s.getOrCreate("s1", AgentClaude)
 
 	assert.Same(t, s1, s2)
 }
@@ -35,7 +35,7 @@ func TestGet_NotFound(t *testing.T) {
 
 func TestGet_Found(t *testing.T) {
 	s := NewStore(10)
-	s.getOrCreate("s1", "codex")
+	s.getOrCreate("s1", AgentCodex)
 
 	sess, ok := s.GetById("s1")
 	assert.True(t, ok)
@@ -51,13 +51,13 @@ func TestList_SortedByLastActive(t *testing.T) {
 	s := NewStore(10)
 	now := time.Now()
 
-	s1 := s.getOrCreate("s1", "claude")
+	s1 := s.getOrCreate("s1", AgentClaude)
 	s1.LastActive = now.Add(-2 * time.Hour)
 
-	s2 := s.getOrCreate("s2", "codex")
+	s2 := s.getOrCreate("s2", AgentCodex)
 	s2.LastActive = now
 
-	s3 := s.getOrCreate("s3", "claude")
+	s3 := s.getOrCreate("s3", AgentClaude)
 	s3.LastActive = now.Add(-1 * time.Hour)
 
 	list := s.List()
@@ -65,6 +65,29 @@ func TestList_SortedByLastActive(t *testing.T) {
 	assert.Equal(t, Id("s2"), list[0].Meta.SessionId)
 	assert.Equal(t, Id("s3"), list[1].Meta.SessionId)
 	assert.Equal(t, Id("s1"), list[2].Meta.SessionId)
+}
+
+func TestList_FilteredByAgent(t *testing.T) {
+	s := NewStore(10)
+	now := time.Now()
+
+	s1 := s.getOrCreate("s1", AgentClaude)
+	s1.LastActive = now.Add(-2 * time.Hour)
+
+	s2 := s.getOrCreate("s2", AgentCodex)
+	s2.LastActive = now
+
+	s3 := s.getOrCreate("s3", AgentClaude)
+	s3.LastActive = now.Add(-1 * time.Hour)
+
+	claude := s.List(AgentClaude)
+	assert.Len(t, claude, 2)
+	assert.Equal(t, Id("s3"), claude[0].Meta.SessionId)
+	assert.Equal(t, Id("s1"), claude[1].Meta.SessionId)
+
+	codex := s.List(AgentCodex)
+	assert.Len(t, codex, 1)
+	assert.Equal(t, Id("s2"), codex[0].Meta.SessionId)
 }
 
 func TestMostRecent_Empty(t *testing.T) {
@@ -77,13 +100,32 @@ func TestMostRecent(t *testing.T) {
 	s := NewStore(10)
 	now := time.Now()
 
-	s1 := s.getOrCreate("s1", "claude")
+	s1 := s.getOrCreate("s1", AgentClaude)
 	s1.LastActive = now.Add(-1 * time.Hour)
 
-	s2 := s.getOrCreate("s2", "codex")
+	s2 := s.getOrCreate("s2", AgentCodex)
 	s2.LastActive = now
 
 	sess, ok := s.Last()
+	assert.True(t, ok)
+	assert.Equal(t, Id("s2"), sess.Meta.SessionId)
+}
+
+func TestLast_FilteredByAgent(t *testing.T) {
+	s := NewStore(10)
+	now := time.Now()
+
+	s1 := s.getOrCreate("s1", AgentClaude)
+	s1.LastActive = now.Add(-1 * time.Hour)
+
+	s2 := s.getOrCreate("s2", AgentCodex)
+	s2.LastActive = now
+
+	sess, ok := s.Last(AgentClaude)
+	assert.True(t, ok)
+	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
+
+	sess, ok = s.Last(AgentCodex)
 	assert.True(t, ok)
 	assert.Equal(t, Id("s2"), sess.Meta.SessionId)
 }
@@ -149,7 +191,7 @@ func TestConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.getOrCreate(id, "claude")
+			s.getOrCreate(id, AgentClaude)
 		}()
 
 		wg.Add(1)

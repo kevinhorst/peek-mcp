@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// TODO: abort if neither claudeHome nor codexHome are set
 var startCmd = &cobra.Command{
 	Use:               "start",
 	Short:             "Start the peek-mcp server",
@@ -53,33 +54,46 @@ var startCmd = &cobra.Command{
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer cancel()
 
-		store := session.NewStore(depth)
-		go func() {
-			watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
-			err := watcher.New(session.SourceClaude, watchedDir, claude.NewParser(), store).Run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				slog.Error("claude watcher error", "err", err)
-				os.Exit(1)
-			}
-		}()
+		var agents []session.Agent
+		if claudeHome != "" {
+			agents = append(agents, session.AgentClaude)
+		}
+		if codexHome != "" {
+			agents = append(agents, session.AgentCodex)
+		}
 
-		go func() {
-			watchedDir := filepath.Join(codexHome, codex.SessionDir)
-			err := watcher.New(session.SourceCodex, watchedDir, codex.NewParser(), store).Run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				slog.Error("codex watcher error", "err", err)
-				os.Exit(1)
-			}
-		}()
+		store := session.NewStore(depth, agents...)
 
-		go func() {
-			plansDir := filepath.Join(claudeHome, "plans")
-			err := watcher.NewPlanWatcher(plansDir, store).Run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				slog.Error("plan watcher error", "err", err)
-				os.Exit(1)
-			}
-		}()
+		if claudeHome != "" {
+			go func() {
+				watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
+				err := watcher.New(session.AgentClaude, watchedDir, claude.NewParser(), store).Run(ctx)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					slog.Error("claude watcher error", "err", err)
+					os.Exit(1)
+				}
+			}()
+
+			go func() {
+				plansDir := filepath.Join(claudeHome, "plans")
+				err := watcher.NewPlanWatcher(plansDir, store).Run(ctx)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					slog.Error("plan watcher error", "err", err)
+					os.Exit(1)
+				}
+			}()
+		}
+
+		if codexHome != "" {
+			go func() {
+				watchedDir := filepath.Join(codexHome, codex.SessionDir)
+				err := watcher.New(session.AgentCodex, watchedDir, codex.NewParser(), store).Run(ctx)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					slog.Error("codex watcher error", "err", err)
+					os.Exit(1)
+				}
+			}()
+		}
 
 		go func() {
 			err := watcher.NewDiffWatcher(store, diffTarget, pollInterval, pollWindow).Run(ctx)

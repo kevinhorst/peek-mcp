@@ -27,6 +27,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithNumber("diff_size",
 				mcp.Description("Max bytes for diff output (0 = no limit)"),
 			),
+			mcp.WithString("agent",
+				mcp.Description("Agent: \"claude\" or \"codex\". Defaults to the only enabled agent when just one is configured."),
+			),
 		),
 		sessionFullHandler(store),
 	)
@@ -37,13 +40,19 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithNumber("n",
 				mcp.Description("Number of turns to return (default 5)"),
 			),
+			mcp.WithString("agent",
+				mcp.Description("Agent: \"claude\" or \"codex\". Defaults to the only enabled agent when just one is configured."),
+			),
 		),
 		sessionLatestHandler(store),
 	)
 
 	server.AddTool(
 		mcp.NewTool("session_list",
-			mcp.WithDescription("Lists all sessions. Returns session ID, last activity timestamp, and whether a plan or diff is available."),
+			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available."),
+			mcp.WithString("agent",
+				mcp.Description("Agent: \"claude\" or \"codex\". Defaults to the only enabled agent when just one is configured."),
+			),
 		),
 		sessionListHandler(store),
 	)
@@ -68,6 +77,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("id",
 				mcp.Description("Session ID (optional, defaults to the most recently active session)"),
 			),
+			mcp.WithString("agent",
+				mcp.Description("Agent: \"claude\" or \"codex\". Defaults to the only enabled agent when just one is configured."),
+			),
 		),
 		sessionPlanHandler(store),
 	)
@@ -80,6 +92,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 			mcp.WithNumber("size",
 				mcp.Description("Max bytes to return from diff output (0 = no limit)"),
+			),
+			mcp.WithString("agent",
+				mcp.Description("Agent: \"claude\" or \"codex\". Defaults to the only enabled agent when just one is configured."),
 			),
 		),
 		sessionDiffHandler(store),
@@ -94,6 +109,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithNumber("size",
 				mcp.Description("Max bytes to return from diff output (0 = no limit)"),
 			),
+			mcp.WithString("agent",
+				mcp.Description("Agent: \"claude\" or \"codex\". Defaults to the only enabled agent when just one is configured."),
+			),
 		),
 		sessionUncommittedDiffHandler(store),
 	)
@@ -101,6 +119,11 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		agent, err := resolveAgent(s, request)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
 		var sess *session.Session
 
 		args := request.GetArguments()
@@ -111,7 +134,7 @@ func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 			}
 			sess = found
 		} else {
-			found, ok := s.Last()
+			found, ok := s.Last(agent)
 			if !ok {
 				return mcp.NewToolResultText("no sessions found"), nil
 			}
@@ -139,13 +162,18 @@ func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		agent, err := resolveAgent(s, request)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
 		turnNumber := DefaultReturnedTurns
 		n := intArgFromRequest(request, "n")
 		if n > 0 {
 			turnNumber = n
 		}
 
-		lastSession, ok := s.Last()
+		lastSession, ok := s.Last(agent)
 		if !ok {
 			return mcp.NewToolResultText("session_latest: No sessions found"), nil
 		}
@@ -161,11 +189,17 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sessions := s.List()
+		agent, err := resolveAgent(s, request)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		sessions := s.List(agent)
 		items := make([]sessionListItem, len(sessions))
 		for i, sess := range sessions {
 			items[i] = sessionListItem{
 				Id:         sess.Meta.SessionId,
+				Agent:      sess.Agent,
 				LastActive: sess.LastActive,
 				HasPlan:    sess.PlanContent != "" || sess.PlanFilePath != "",
 				HasDiff:    sess.DiffOutput != "",
@@ -207,6 +241,11 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		agent, err := resolveAgent(s, request)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
 		var currentSession *session.Session
 
 		args := request.GetArguments()
@@ -217,7 +256,7 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 			}
 			currentSession = sess
 		} else {
-			sess, ok := s.Last()
+			sess, ok := s.Last(agent)
 			if !ok {
 				return respondWithText("No sessions found.")
 			}
@@ -234,6 +273,11 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		agent, err := resolveAgent(s, request)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
 		var currentSession *session.Session
 
 		args := request.GetArguments()
@@ -248,7 +292,7 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			}
 			currentSession = sess
 		} else {
-			sess, ok := s.Last()
+			sess, ok := s.Last(agent)
 			if !ok {
 				return respondWithText("No sessions found.")
 			}
@@ -267,6 +311,11 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		agent, err := resolveAgent(s, request)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
 		var currentSession *session.Session
 
 		args := request.GetArguments()
@@ -281,7 +330,7 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			}
 			currentSession = sess
 		} else {
-			sess, ok := s.Last()
+			sess, ok := s.Last(agent)
 			if !ok {
 				return respondWithText("No sessions found.")
 			}
@@ -296,6 +345,12 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 
 		return respondWithText(output)
 	}
+}
+
+func resolveAgent(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
+	args := request.GetArguments()
+	raw, _ := args["agent"].(string)
+	return s.ResolveAgent(session.Agent(raw))
 }
 
 func intArgFromRequest(request mcp.CallToolRequest, name string) int {
