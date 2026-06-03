@@ -132,7 +132,7 @@ func TestLast_FilteredByAgent(t *testing.T) {
 
 func TestAddTurn_PlanInlineContent(t *testing.T) {
 	s := NewStore(10)
-	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		PlanFilePath: "/nonexistent/plan.md",
 		PlanContent:  "# Inline Plan",
 		Meta:         &Meta{SessionId: "s1"},
@@ -149,7 +149,7 @@ func TestAddTurn_PlanFileReadFallback(t *testing.T) {
 	os.WriteFile(planPath, []byte("# Disk Plan"), 0644)
 
 	s := NewStore(10)
-	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		PlanFilePath: planPath,
 		Meta:         &Meta{SessionId: "s1"},
 	})
@@ -161,14 +161,14 @@ func TestAddTurn_PlanFileReadFallback(t *testing.T) {
 func TestAddTurn_PlanFileReadFailure_PreservesExisting(t *testing.T) {
 	s := NewStore(10)
 	// First turn sets plan content via inline
-	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		PlanFilePath: "/some/plan.md",
 		PlanContent:  "# Existing Plan",
 		Meta:         &Meta{SessionId: "s1"},
 	})
 
 	// Second turn references a non-existent file with no inline content
-	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		PlanFilePath: "/nonexistent/plan.md",
 		Meta:         &Meta{SessionId: "s1"},
 	})
