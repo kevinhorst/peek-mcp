@@ -149,6 +149,7 @@ func TestClaude_PlanModeAttachment(t *testing.T) {
 	assert.NotNil(t, turn)
 	assert.Equal(t, "/Users/user/.claude/plans/some-plan.md", turn.PlanFilePath)
 	assert.Equal(t, session.Id("sess-plan"), turn.Meta.SessionId)
+	assert.Equal(t, "/Users/user/project", turn.Meta.CWD)
 }
 
 func TestClaude_PlanFileReferenceAttachment(t *testing.T) {

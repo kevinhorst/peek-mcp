@@ -151,6 +151,7 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 		PlanContent:  attachment.PlanContent,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
+			CWD:       entry.CurrentWorkingDir,
 		},
 	}
 }
