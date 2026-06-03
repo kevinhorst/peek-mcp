@@ -179,6 +179,25 @@ func TestAddTurn_PlanFileReadFailure_PreservesExisting(t *testing.T) {
 	assert.Equal(t, "# Existing Plan", sess.PlanContent)
 }
 
+func TestAddTurn_PlanWorktreeFallback(t *testing.T) {
+	// Simulate worktree: plan file lives at <cwd>/.claude/plans/<name>.md
+	// but the attachment reports ~/.claude/plans/<name>.md (wrong path)
+	cwd := t.TempDir()
+	plansDir := filepath.Join(cwd, ".claude", "plans")
+	os.MkdirAll(plansDir, 0755)
+	os.WriteFile(filepath.Join(plansDir, "my-plan.md"), []byte("# Worktree Plan"), 0644)
+
+	s := NewStore(10)
+	s.AddTurnBySessionId("s1", SourceClaude, &Turn{
+		PlanFilePath: "/Users/someone/.claude/plans/my-plan.md", // wrong global path
+		Meta:         &Meta{SessionId: "s1", CWD: cwd},
+	})
+
+	sess, _ := s.GetById("s1")
+	assert.Equal(t, "# Worktree Plan", sess.PlanContent)
+	assert.Equal(t, filepath.Join(plansDir, "my-plan.md"), sess.PlanFilePath)
+}
+
 func TestConcurrentAccess(t *testing.T) {
 	s := NewStore(10)
 	var wg sync.WaitGroup

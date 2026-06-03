@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"sync"
@@ -56,12 +57,23 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 			return
 		}
 
-		content, err := os.ReadFile(turn.PlanFilePath)
-		if err != nil {
-			slog.Warn("Failed to read plan file", "path", turn.PlanFilePath, "err", err)
+		if content, err := os.ReadFile(turn.PlanFilePath); err == nil {
+			session.PlanContent = string(content)
 			return
 		}
-		session.PlanContent = string(content)
+
+		// Worktree fallback: Claude Code reports plan path as ~/.claude/plans/<name>
+		// but worktree sessions write to <cwd>/.claude/plans/<name>.
+		if cwd := turn.Meta.CWD; cwd != "" {
+			alt := filepath.Join(cwd, ".claude", "plans", filepath.Base(turn.PlanFilePath))
+			if content, err := os.ReadFile(alt); err == nil {
+				session.PlanFilePath = alt
+				session.PlanContent = string(content)
+				return
+			}
+		}
+
+		slog.Warn("Failed to read plan file", "path", turn.PlanFilePath)
 		return
 	}
 
