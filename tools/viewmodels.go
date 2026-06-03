@@ -7,9 +7,10 @@ import (
 )
 
 type sessionFullResult struct {
-	Turns []*session.Turn `json:"turns"`
-	Plan  string          `json:"plan,omitempty"`
-	Diff  string          `json:"diff,omitempty"`
+	Turns     []*session.Turn `json:"turns"`
+	Plan      string          `json:"plan,omitempty"`
+	Diff      string          `json:"diff,omitempty"`
+	Truncated bool            `json:"truncated,omitempty"`
 }
 
 type sessionListItem struct {
