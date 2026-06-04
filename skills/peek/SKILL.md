@@ -15,6 +15,9 @@ description: >
 | `/peek diff` | `session_diff` | git diff only |
 | `/peek <id>` or `/peek <id> [n]` | `session_full` with id | specific session |
 
+All tools need an required `agent` param (`"claude"` or `"codex"`). Pass it when the
+user qualifies the command, e.g. `/peek codex`. If the user doesn't qualify, default to Claude.
+
 ## Output format
 
 Do NOT reproduce the tool result. The data is already in context for the LLM — formatting it again wastes time and tokens.
