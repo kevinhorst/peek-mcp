@@ -152,7 +152,7 @@ func init() {
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
 	flags.String("diff-target", "main", "Branch to diff against for session_diff")
-	flags.Duration("poll-interval", time.Second, "How often to recompute the live uncommitted diff (git diff HEAD)")
+	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
