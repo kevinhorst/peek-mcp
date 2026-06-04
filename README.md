@@ -115,6 +115,16 @@ Add to `.claude/settings.json` in your project:
 }
 ```
 
+## Connecting to Codex
+
+Add to `~/codex/config.toml`:
+
+```toml
+[mcp_servers.peek-mcp]
+command = "/Users/kevinpersonal/GolandProjects/peek-mcp/dist/peek-mcp"
+args = ["start", "--transport=stdio", "--depth=20", "--claude-home=/Users/kevinpersonal/.claude", "--codex-home=/Users/kevinpersonal/.codex", "--diff-target=main"]
+```
+
 ## Hot reload (live diff)
 
 To keep Claude Code grounded in your current work as you edit — a "hot reload" — peek-mcp keeps an up-to-date `git diff HEAD` for each active repo and writes it to `<gitDir>/peek-diff` (inside `.git/`, so it is never committed and resolves correctly inside linked worktrees). A `UserPromptSubmit` hook then injects that diff into context on every prompt. The hook needs only `git` and `cat` — no peek binary on `PATH`, no server call — so it works under both the HTTP and `.mcpb` deployments.
