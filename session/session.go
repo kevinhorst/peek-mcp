@@ -31,19 +31,6 @@ type Session struct {
 	TurnsFinished   *TurnBuffer
 }
 
-func (s *Session) Turns(number int) []*Turn {
-	if s.TurnActive == nil {
-		return s.TurnsFinished.Last(number)
-	}
-
-	buffer := &TurnBuffer{
-		capacity: s.TurnsFinished.capacity,
-		items:    append([]*Turn{s.TurnActive}, s.TurnsFinished.items...),
-	}
-
-	return buffer.Last(number)
-}
-
 func (s *Session) AddTurn(nextTurn *Turn) {
 	// always update meta info
 	s.Meta.Update(nextTurn.Meta)
@@ -76,6 +63,26 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 	}
 
 	s.TurnActive = nextTurn
+}
+func (s *Session) HasNewTitle(title string) bool {
+	if title == "" {
+		return false
+	}
+
+	return s.Title != title
+}
+
+func (s *Session) Turns(number int) []*Turn {
+	if s.TurnActive == nil {
+		return s.TurnsFinished.Last(number)
+	}
+
+	buffer := &TurnBuffer{
+		capacity: s.TurnsFinished.capacity,
+		items:    append([]*Turn{s.TurnActive}, s.TurnsFinished.items...),
+	}
+
+	return buffer.Last(number)
 }
 
 func (s *Session) Validate() error {
