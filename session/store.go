@@ -54,12 +54,14 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	defer s.mu.Unlock()
 
 	// update only title
-	if turn.CustomTitle != "" && turn.CustomTitle != session.Title {
+	if session.HasNewTitle(turn.CustomTitle) {
 		slog.Debug("Updating title", "session", id, "title", turn.CustomTitle)
 
+		old := hashTitle(session.Title)
 		if session.Title != "" {
-			delete(s.IdByTitle, hashTitle(session.Title))
+			delete(s.IdByTitle, old)
 		}
+
 		session.Title = turn.CustomTitle
 		s.IdByTitle[hashTitle(turn.CustomTitle)] = id
 		return
@@ -161,6 +163,10 @@ func (s *Store) GetByTitle(title string) (*Session, bool) {
 
 // hashTitle returns the SHA-256 hex digest of the normalized (lowercase, trimmed) title.
 func hashTitle(title string) string {
+	if title == "" {
+		return ""
+	}
+
 	normalized := strings.ToLower(strings.TrimSpace(title))
 	sum := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(sum[:])
