@@ -1,6 +1,8 @@
 package session
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -8,20 +10,24 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 )
 
 type Store struct {
-	mu            sync.RWMutex
-	sessions      map[Id]*Session
+	mu sync.RWMutex
+
+	IdByTitle     map[string]Id // SHA-256 hex of normalized title → session Id
+	TurnAdded     chan Id
 	depth         int
 	enabledAgents []Agent
-	TurnAdded     chan Id
+	sessions      map[Id]*Session
 }
 
 func NewStore(depth int, agents ...Agent) *Store {
 	return &Store{
 		sessions:      make(map[Id]*Session),
+		IdByTitle:     make(map[string]Id),
 		depth:         depth,
 		enabledAgents: agents,
 		TurnAdded:     make(chan Id, 16), // small fixed buffer; dropped notifications are fine — next turn re-triggers
@@ -47,7 +53,19 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// update plan content only
+	// update only title
+	if turn.AITitle != "" {
+		slog.Debug("Updating title", "session", id, "title", turn.AITitle)
+
+		if session.Title != "" {
+			delete(s.IdByTitle, hashTitle(session.Title))
+		}
+		session.Title = turn.AITitle
+		s.IdByTitle[hashTitle(turn.AITitle)] = id
+		return
+	}
+
+	// update only plan content
 	if turn.PlanFilePath != "" {
 		slog.Debug("Updating plan", "session", id)
 		session.PlanFilePath = turn.PlanFilePath
@@ -77,6 +95,7 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 		return
 	}
 
+	// update user or assistent turn
 	session.AddTurn(turn)
 
 	select {
@@ -126,6 +145,25 @@ func (s *Store) GetById(id Id) (*Session, bool) {
 	}
 
 	return session, ok
+}
+
+func (s *Store) GetByTitle(title string) (*Session, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	id, ok := s.IdByTitle[hashTitle(title)]
+	if !ok {
+		return nil, false
+	}
+	sess, ok := s.sessions[id]
+	return sess, ok
+}
+
+// hashTitle returns the SHA-256 hex digest of the normalized (lowercase, trimmed) title.
+func hashTitle(title string) string {
+	normalized := strings.ToLower(strings.TrimSpace(title))
+	sum := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Store) Last(agents ...Agent) (*Session, bool) {

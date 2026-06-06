@@ -15,6 +15,7 @@ type Turn struct {
 	Usage        *Usage    `json:"usage,omitempty"`      // optional
 	PlanFilePath string    `json:"-"`                    // plan signal only, not serialized
 	PlanContent  string    `json:"-"`                    // inline plan content from attachment
+	AITitle      string    `json:"-"`                    // title signal only, not serialized
 }
 
 func (t *Turn) Validate() error {
@@ -30,6 +31,14 @@ func (t *Turn) Validate() error {
 	if t.PlanFilePath != "" {
 		if t.Meta.SessionId == "" {
 			return errors.New("Turn.Validate: plan signal turn requires session ID")
+		}
+		return nil
+	}
+
+	// title-signal turns only carry a session ID and title
+	if t.AITitle != "" {
+		if t.Meta.SessionId == "" {
+			return errors.New("Turn.Validate: title signal turn requires session ID")
 		}
 		return nil
 	}

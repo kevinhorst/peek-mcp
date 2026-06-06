@@ -18,6 +18,7 @@ const (
 type Session struct {
 	Meta            Meta      `json:"meta"`
 	Agent           Agent     `json:"agent"`
+	Title           string    `json:"title,omitempty"`
 	LastActive      time.Time `json:"last_active"`
 	TotalUsage      Usage     `json:"total_usage"`
 	FilePath        string    `json:"-"`
