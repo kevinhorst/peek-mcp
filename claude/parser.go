@@ -36,8 +36,8 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 		return p.handleAssistant(entry)
 	case EntryTypeAttachment:
 		return p.handleAttachment(entry)
-	case EntryTypeAITitle:
-		return p.handleAITitle(entry)
+	case EntryTypeCustomTitle:
+		return p.handleCustomTitle(entry)
 	default:
 		return nil
 	}
@@ -167,13 +167,13 @@ func isPlanAttachment(t string) bool {
 	return false
 }
 
-func (p *Parser) handleAITitle(entry *Entry) *session.Turn {
-	if entry.AITitle == "" {
+func (p *Parser) handleCustomTitle(entry *Entry) *session.Turn {
+	if entry.CustomTitle == "" {
 		return nil
 	}
 
 	return &session.Turn{
-		AITitle: entry.AITitle,
+		CustomTitle: entry.CustomTitle,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 		},

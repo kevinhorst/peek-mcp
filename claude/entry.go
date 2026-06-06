@@ -13,7 +13,7 @@ const (
 	EntryTypeQueueOperation = "queue-operation"
 	EntryTypeAssistant      = "assistant"
 	EntryTypeAttachment     = "attachment"
-	EntryTypeAITitle        = "ai-title"
+	EntryTypeCustomTitle    = "custom-title"
 )
 
 type Entry struct {
@@ -27,7 +27,7 @@ type Entry struct {
 	SessionId         session.Id      `json:"sessionId"`
 	Timestamp         time.Time       `json:"timestamp"`
 	Type              string          `json:"type"`
-	AITitle           string          `json:"aiTitle"`
+	CustomTitle       string          `json:"customTitle"`
 }
 
 func (e *Entry) Validate() error {
@@ -39,7 +39,7 @@ func (e *Entry) Validate() error {
 		return errors.New("type must not be empty")
 	}
 
-	if (e.Type == EntryTypeUser || e.Type == EntryTypeAssistant || e.Type == EntryTypeAITitle) && e.SessionId == "" {
+	if (e.Type == EntryTypeUser || e.Type == EntryTypeAssistant || e.Type == EntryTypeCustomTitle) && e.SessionId == "" {
 		return errors.New("session_id must not be empty")
 	}
 

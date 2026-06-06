@@ -207,24 +207,24 @@ func TestClaude_NonPlanAttachmentSkipped(t *testing.T) {
 	assert.Nil(t, turn)
 }
 
-func TestClaude_AITitle(t *testing.T) {
+func TestClaude_CustomTitle(t *testing.T) {
 	p := NewParser()
 
-	data, err := os.ReadFile("fixtures/ai_title.json")
+	data, err := os.ReadFile("fixtures/custom_title.json")
 	if err != nil {
 		t.Fatalf("failed to read fixture: %v", err)
 	}
 	turn := p.ParseLine(bytes.TrimSpace(data))
 
 	assert.NotNil(t, turn)
-	assert.Equal(t, "Login simplification", turn.AITitle)
+	assert.Equal(t, "Login simplification", turn.CustomTitle)
 	assert.Equal(t, session.Id("sess-1"), turn.Meta.SessionId)
 }
 
-func TestClaude_AITitle_Empty(t *testing.T) {
+func TestClaude_CustomTitle_Empty(t *testing.T) {
 	p := NewParser()
 
-	line := []byte(`{"type":"ai-title","sessionId":"sess-1","aiTitle":""}`)
+	line := []byte(`{"type":"custom-title","sessionId":"sess-1","customTitle":""}`)
 	turn := p.ParseLine(line)
 
 	assert.Nil(t, turn)
