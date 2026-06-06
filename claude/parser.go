@@ -36,6 +36,8 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 		return p.handleAssistant(entry)
 	case EntryTypeAttachment:
 		return p.handleAttachment(entry)
+	case EntryTypeAITitle:
+		return p.handleAITitle(entry)
 	default:
 		return nil
 	}
@@ -163,6 +165,19 @@ func isPlanAttachment(t string) bool {
 		return true
 	}
 	return false
+}
+
+func (p *Parser) handleAITitle(entry *Entry) *session.Turn {
+	if entry.AITitle == "" {
+		return nil
+	}
+
+	return &session.Turn{
+		AITitle: entry.AITitle,
+		Meta: &session.Meta{
+			SessionId: entry.SessionId,
+		},
+	}
 }
 
 func extractTextBlocks(raw json.RawMessage) string {
