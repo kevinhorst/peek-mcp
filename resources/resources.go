@@ -73,6 +73,7 @@ func sessionFullResourceHandler(store *session.Store) server.ResourceTemplateHan
 
 type sessionListEntry struct {
 	Id         session.Id `json:"id"`
+	Title      string     `json:"title,omitempty"`
 	LastActive string     `json:"last_active"`
 	HasPlan    bool       `json:"has_plan"`
 	HasDiff    bool       `json:"has_diff"`
@@ -85,6 +86,7 @@ func sessionListResourceHandler(store *session.Store) server.ResourceTemplateHan
 		for i, sess := range sessions {
 			entries[i] = sessionListEntry{
 				Id:         sess.Meta.SessionId,
+				Title:      sess.Title,
 				LastActive: sess.LastActive.Format("2006-01-02T15:04:05Z"),
 				HasPlan:    sess.PlanContent != "",
 				HasDiff:    sess.DiffOutput != "",
