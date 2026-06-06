@@ -32,13 +32,49 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build .mcpb + darwin binary
-        run: make build-mcpb
+      - name: Import Apple certificate
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PW=$(uuidgen)
+
+          # Create ephemeral keychain and make it the default for codesign lookups
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security unlock-keychain  -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security list-keychain   -d user -s "$KEYCHAIN"
+
+          # Import certificate and allow codesign/notarytool to use it without prompt
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN"
+
+      - name: Build darwin universal binary
+        run: make build-darwin-universal
+
+      - name: Sign darwin binary
+        run: |
+          make sign-darwin APPLE_IDENTITY="Developer ID Application: ${{ secrets.APPLE_SIGNER_NAME }}"
+
+      - name: Notarize darwin binary
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: make notarize-darwin
+
+      - name: Build .mcpb bundle
+        run: make build-mcpb-only
 
       - name: Build linux binaries
         run: |
           make build-linux-amd64
           make build-linux-arm64
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
 
       - uses: softprops/action-gh-release@v2
         with:
