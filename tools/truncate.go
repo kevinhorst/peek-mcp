@@ -61,10 +61,9 @@ func enforceResponseBudget(result *sessionFullResult, budget int) *sessionFullRe
 	}
 
 	out := &sessionFullResult{
-		Turns:     result.Turns,
-		Plan:      result.Plan,
-		Diff:      result.Diff,
-		Truncated: len(data) > budget,
+		Turns: result.Turns,
+		Plan:  result.Plan,
+		Diff:  result.Diff,
 	}
 
 	// Trim diff first (independently fetchable via session_diff)

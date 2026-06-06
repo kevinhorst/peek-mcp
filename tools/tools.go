@@ -17,7 +17,7 @@ const (
 func Register(server *server.MCPServer, store *session.Store) {
 	server.AddTool(
 		mcp.NewTool("session_full",
-			mcp.WithDescription("Returns turns, plan, and git diff for a session in one call. Prefer this over calling session_latest, session_plan, and session_diff separately."),
+			mcp.WithDescription("Returns turns, plan, and git diff for a session in one call. Prefer this over calling session_latest, session_plan, and session_diff separately. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
 			mcp.WithString("id",
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
@@ -30,6 +30,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("agent",
 				mcp.Required(),
 				mcp.Description("Agent: \"claude\" or \"codex\". Defaults to the only enabled agent when just one is configured."),
+			),
+			mcp.WithString("request_id",
+				mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 			),
 		),
 		sessionFullHandler(store),
@@ -125,14 +128,31 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := request.GetArguments()
+
+		// Continuation: return next page for an existing request
+		if reqId, ok := args["request_id"].(string); ok && reqId != "" {
+			page, hasMore, found := nextPage(reqId)
+			if !found {
+				return mcp.NewToolResultError(fmt.Sprintf("request_id %q not found or expired", reqId)), nil
+			}
+			result := &sessionFullResultPaginated{
+				Session: page,
+				HasMore: hasMore,
+			}
+			if hasMore {
+				result.RequestId = reqId
+			}
+			return respondWithStructured(result)
+		}
+
+		// First call: resolve session and build pages
 		agent, err := resolveAgent(s, request)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		var sess *session.Session
-
-		args := request.GetArguments()
 		if id, ok := args["id"].(string); ok && id != "" {
 			found, ok := s.GetById(session.Id(id))
 			if !ok {
@@ -152,22 +172,18 @@ func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 			n = DefaultReturnedTurns
 		}
 
-		turns := truncateTurns(sess.Turns(n), DefaultTurnTextMax)
-		plan := truncateString(sess.PlanContent, DefaultPlanMax)
+		turns := sess.Turns(n)
+		plan := sess.PlanContent
+		diff := sess.DiffOutput
 
-		diffMax := DefaultDiffMax
-		if size := intArgFromRequest(request, "diff_size"); size > 0 {
-			diffMax = size
-		}
-		diff := truncateString(sess.DiffOutput, diffMax)
-
-		result := &sessionFullResult{
-			Turns: turns,
-			Plan:  plan,
-			Diff:  diff,
+		if size := intArgFromRequest(request, "diff_size"); size > 0 && len(diff) > size {
+			diff = utf8SafeSlice(diff, size)
 		}
 
-		return respondWithStructured(map[string]any{"session": result})
+		pages := buildPages(turns, plan, diff)
+		result := storePagination(pages)
+
+		return respondWithStructured(result)
 	}
 }
 

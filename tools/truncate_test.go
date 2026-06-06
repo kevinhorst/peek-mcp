@@ -95,8 +95,8 @@ func TestEnforceResponseBudget_UnderBudget(t *testing.T) {
 	}
 
 	out := enforceResponseBudget(result, MaxResponseBytes)
-	if out.Truncated {
-		t.Error("should not be truncated when under budget")
+	if out.Plan != "small plan" || out.Diff != "small diff" {
+		t.Error("should not modify content when under budget")
 	}
 }
 
@@ -113,9 +113,6 @@ func TestEnforceResponseBudget_OversizedDiff(t *testing.T) {
 	}
 
 	out := enforceResponseBudget(result, MaxResponseBytes)
-	if !out.Truncated {
-		t.Error("should be marked as truncated")
-	}
 	if len(out.Diff) >= 900*1024 {
 		t.Error("diff should have been trimmed")
 	}
