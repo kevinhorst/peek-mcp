@@ -21,6 +21,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("id",
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
+			mcp.WithString("title",
+				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+			),
 			mcp.WithNumber("n",
 				mcp.Description("Number of turns to return (default 5)"),
 			),
@@ -62,10 +65,12 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	server.AddTool(
 		mcp.NewTool("session_get",
-			mcp.WithDescription("Returns the last N turns from a specific session by ID."),
+			mcp.WithDescription("Returns the last N turns from a specific session by ID or title."),
 			mcp.WithString("id",
 				mcp.Description("Session ID"),
-				mcp.Required(),
+			),
+			mcp.WithString("title",
+				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
 			),
 			mcp.WithNumber("n",
 				mcp.Description("Number of turns to return (default 5)"),
@@ -80,6 +85,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("id",
 				mcp.Description("Session ID (optional, defaults to the most recently active session)"),
 			),
+			mcp.WithString("title",
+				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+			),
 			mcp.WithString("agent",
 				mcp.Required(),
 				mcp.Description("Agent: \"claude\" or \"codex\""),
@@ -93,6 +101,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithDescription("Returns the pre-computed git diff for a session. The diff is run against the configured target branch (default: main) in the session's working directory, and refreshed automatically on each new turn. If id is omitted, uses the most recent session."),
 			mcp.WithString("id",
 				mcp.Description("Session ID (omit for most recent session)"),
+			),
+			mcp.WithString("title",
+				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
 			),
 			mcp.WithNumber("size",
 				mcp.Description("Max bytes to return from diff output (0 = no limit)"),
@@ -110,6 +121,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithDescription("Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees. If id is omitted, uses the most recent session."),
 			mcp.WithString("id",
 				mcp.Description("Session ID (omit for most recent session)"),
+			),
+			mcp.WithString("title",
+				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
 			),
 			mcp.WithNumber("size",
 				mcp.Description("Max bytes to return from diff output (0 = no limit)"),
@@ -130,16 +144,8 @@ func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		var sess *session.Session
-
-		args := request.GetArguments()
-		if id, ok := args["id"].(string); ok && id != "" {
-			found, ok := s.GetById(session.Id(id))
-			if !ok {
-				return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
-			}
-			sess = found
-		} else {
+		sess, err := resolveSession(s, request)
+		if err != nil {
 			found, ok := s.Last(agent)
 			if !ok {
 				return mcp.NewToolResultText("no sessions found"), nil
@@ -211,6 +217,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 			items[i] = sessionListItem{
 				Id:         sess.Meta.SessionId,
 				Agent:      sess.Agent,
+				Title:      sess.Title,
 				LastActive: sess.LastActive,
 				HasPlan:    sess.PlanContent != "" || sess.PlanFilePath != "",
 				HasDiff:    sess.DiffOutput != "",
@@ -223,22 +230,15 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := request.GetArguments()
-
-		id, ok := args["id"].(string)
-		if !ok || id == "" {
-			return mcp.NewToolResultError("id parameter is required"), nil
+		currentSession, err := resolveSession(s, request)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 
 		turnNumber := DefaultReturnedTurns
 		n := intArgFromRequest(request, "n")
 		if n > 0 {
 			turnNumber = n
-		}
-
-		currentSession, ok := s.GetById(session.Id(id))
-		if !ok {
-			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
 		}
 
 		turns := truncateTurns(currentSession.Turns(turnNumber), DefaultTurnTextMax)
@@ -257,21 +257,13 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		var currentSession *session.Session
-
-		args := request.GetArguments()
-		if id, ok := args["id"].(string); ok && id != "" {
-			sess, found := s.GetById(session.Id(id))
-			if !found {
-				return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
-			}
-			currentSession = sess
-		} else {
-			sess, ok := s.Last(agent)
+		currentSession, err := resolveSession(s, request)
+		if err != nil {
+			found, ok := s.Last(agent)
 			if !ok {
-				return respondWithText("No sessions found.")
+				return mcp.NewToolResultText("No sessions found"), nil
 			}
-			currentSession = sess
+			currentSession = found
 		}
 
 		if currentSession.PlanContent == "" {
@@ -289,25 +281,13 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		var currentSession *session.Session
-
-		args := request.GetArguments()
-		if idVal, ok := args["id"]; ok && idVal != nil {
-			id, _ := idVal.(string)
-			if id == "" {
-				return mcp.NewToolResultError("id must be a non-empty string"), nil
-			}
-			sess, found := s.GetById(session.Id(id))
-			if !found {
-				return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
-			}
-			currentSession = sess
-		} else {
-			sess, ok := s.Last(agent)
+		currentSession, err := resolveSession(s, request)
+		if err != nil {
+			found, ok := s.Last(agent)
 			if !ok {
-				return respondWithText("No sessions found.")
+				return mcp.NewToolResultText("No sessions found"), nil
 			}
-			currentSession = sess
+			currentSession = found
 		}
 
 		maxSize := DefaultDiffMax
@@ -327,25 +307,13 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		var currentSession *session.Session
-
-		args := request.GetArguments()
-		if idVal, ok := args["id"]; ok && idVal != nil {
-			id, _ := idVal.(string)
-			if id == "" {
-				return mcp.NewToolResultError("id must be a non-empty string"), nil
-			}
-			sess, found := s.GetById(session.Id(id))
-			if !found {
-				return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
-			}
-			currentSession = sess
-		} else {
-			sess, ok := s.Last(agent)
+		currentSession, err := resolveSession(s, request)
+		if err != nil {
+			found, ok := s.Last(agent)
 			if !ok {
-				return respondWithText("No sessions found.")
+				return mcp.NewToolResultText("No sessions found"), nil
 			}
-			currentSession = sess
+			currentSession = found
 		}
 
 		maxSize := DefaultUncommDiffMax
@@ -356,6 +324,31 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 
 		return respondWithText(output)
 	}
+}
+
+// resolveSession looks up a session by id or title from request args.
+// Returns an error if neither is provided, or the referenced session is not found.
+// Precedence: id > title.
+func resolveSession(s *session.Store, request mcp.CallToolRequest) (*session.Session, error) {
+	args := request.GetArguments()
+
+	if id, ok := args["id"].(string); ok && id != "" {
+		sess, found := s.GetById(session.Id(id))
+		if !found {
+			return nil, fmt.Errorf("session %q not found", id)
+		}
+		return sess, nil
+	}
+
+	if title, ok := args["title"].(string); ok && title != "" {
+		sess, found := s.GetByTitle(title)
+		if !found {
+			return nil, fmt.Errorf("no session matching title %q", title)
+		}
+		return sess, nil
+	}
+
+	return nil, fmt.Errorf("id or title parameter is required")
 }
 
 func resolveAgent(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
@@ -388,9 +381,6 @@ func respondWithText(response any) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultText(string(data)), nil
 }
 
-// respondWithStructured returns StructuredContent with a minimal text fallback.
-// mcp-go's NewToolResultJSON duplicates the full payload into both Content[0].text
-// and StructuredContent, which doubles the response size (e.g. 9MB → 19MB).
 func respondWithStructured(response any) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
