@@ -54,7 +54,7 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	defer s.mu.Unlock()
 
 	// update only title
-	if turn.AITitle != "" {
+	if turn.AITitle != "" && turn.AITitle != session.Title {
 		slog.Debug("Updating title", "session", id, "title", turn.AITitle)
 
 		if session.Title != "" {
