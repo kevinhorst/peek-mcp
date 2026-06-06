@@ -54,14 +54,14 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	defer s.mu.Unlock()
 
 	// update only title
-	if turn.AITitle != "" && turn.AITitle != session.Title {
-		slog.Debug("Updating title", "session", id, "title", turn.AITitle)
+	if turn.CustomTitle != "" && turn.CustomTitle != session.Title {
+		slog.Debug("Updating title", "session", id, "title", turn.CustomTitle)
 
 		if session.Title != "" {
 			delete(s.IdByTitle, hashTitle(session.Title))
 		}
-		session.Title = turn.AITitle
-		s.IdByTitle[hashTitle(turn.AITitle)] = id
+		session.Title = turn.CustomTitle
+		s.IdByTitle[hashTitle(turn.CustomTitle)] = id
 		return
 	}
 

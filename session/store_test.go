@@ -18,7 +18,7 @@ func provideCompleteStore() *Store {
 	now := time.Now()
 
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
-		AITitle: "Login simplification",
+		CustomTitle: "Login simplification",
 		Meta:    &Meta{SessionId: "s1"},
 	})
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
@@ -29,7 +29,7 @@ func provideCompleteStore() *Store {
 	})
 
 	s.AddTurnBySessionId("s2", AgentCodex, &Turn{
-		AITitle: "Auth refactor",
+		CustomTitle: "Auth refactor",
 		Meta:    &Meta{SessionId: "s2"},
 	})
 	s.AddTurnBySessionId("s2", AgentCodex, &Turn{
@@ -231,7 +231,7 @@ func TestAddTurn_PlanWorktreeFallback(t *testing.T) {
 	assert.Equal(t, filepath.Join(plansDir, "my-plan.md"), sess.PlanFilePath)
 }
 
-func TestAddTurn_AITitle(t *testing.T) {
+func TestAddTurn_CustomTitle(t *testing.T) {
 	type testCase struct {
 		_id         string
 		_shouldPass bool
@@ -245,7 +245,7 @@ func TestAddTurn_AITitle(t *testing.T) {
 	// pass-set-title
 	setTitleStore := NewStore(10)
 	setTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
-		AITitle: "Login simplification",
+		CustomTitle: "Login simplification",
 		Meta:    &Meta{SessionId: "s1"},
 	})
 
@@ -261,11 +261,11 @@ func TestAddTurn_AITitle(t *testing.T) {
 	// pass-update-title
 	updateTitleStore := NewStore(10)
 	updateTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
-		AITitle: "Old title",
+		CustomTitle: "Old title",
 		Meta:    &Meta{SessionId: "s1"},
 	})
 	updateTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
-		AITitle: "New title",
+		CustomTitle: "New title",
 		Meta:    &Meta{SessionId: "s1"},
 	})
 
@@ -344,11 +344,11 @@ func TestGetByTitle(t *testing.T) {
 	// fail-title-update-removes-old-index
 	storeWithUpdate := NewStore(10)
 	storeWithUpdate.AddTurnBySessionId("s1", AgentClaude, &Turn{
-		AITitle: "Old title",
+		CustomTitle: "Old title",
 		Meta:    &Meta{SessionId: "s1"},
 	})
 	storeWithUpdate.AddTurnBySessionId("s1", AgentClaude, &Turn{
-		AITitle: "New title",
+		CustomTitle: "New title",
 		Meta:    &Meta{SessionId: "s1"},
 	})
 
