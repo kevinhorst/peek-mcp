@@ -26,13 +26,27 @@ build-linux-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
 
 
-build-mcpb: build-darwin-universal
+build-mcpb: build-darwin-universal build-mcpb-only
+
+build-mcpb-only:
 	@rm -rf $(STAGE) && mkdir -p $(STAGE)/server
 	cp mcpb/manifest.json $(STAGE)/manifest.json
 	cp $(DIST)/peek-mcp $(STAGE)/server/peek-mcp
 	chmod +x $(STAGE)/server/peek-mcp
 	cd $(STAGE) && zip -r ../peek-mcp.mcpb . -x '*.DS_Store'
 	@echo "==> built $(DIST)/peek-mcp.mcpb"
+
+
+sign-darwin:
+	codesign --force --options runtime --sign "$(APPLE_IDENTITY)" $(DIST)/peek-mcp
+
+
+notarize-darwin:
+	xcrun notarytool submit $(DIST)/peek-mcp \
+		--apple-id "$(APPLE_ID)" \
+		--password "$(APPLE_APP_PASSWORD)" \
+		--team-id "$(APPLE_TEAM_ID)" \
+		--wait
 
 
 clean-dist:
