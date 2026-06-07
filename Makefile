@@ -27,7 +27,7 @@ build-local: clean-dist
 	go build -o dist/peek-mcp .
 
 
-build-mcpb: build-darwin-universal build-mcpb-only
+build-mcpb: build-darwin-universal sign-darwin build-mcpb-only
 
 build-mcpb-only:
 	@rm -rf $(STAGE) && mkdir -p $(STAGE)/server
