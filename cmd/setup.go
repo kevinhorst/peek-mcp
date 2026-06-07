@@ -126,12 +126,14 @@ func setupClaudeDesktop(p *prompter) error {
 	if err != nil {
 		return fmt.Errorf("cannot determine peek-mcp binary path: %w", err)
 	}
+
 	fmt.Printf("  Binary: %s\n", binPath)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
+
 	path := filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
 	fmt.Printf("  Config: %s\n", path)
 
@@ -139,6 +141,7 @@ func setupClaudeDesktop(p *prompter) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("reading %s: %w", path, err)
 	}
+
 	cfg := map[string]any{}
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &cfg); err != nil {
@@ -150,6 +153,7 @@ func setupClaudeDesktop(p *prompter) error {
 	if servers == nil {
 		servers = map[string]any{}
 	}
+
 	if _, exists := servers["peek-mcp"]; exists {
 		if !p.Confirm("  peek-mcp is already configured. Overwrite?", false) {
 			fmt.Println("  Skipped.")
@@ -191,7 +195,7 @@ func setupCodex(p *prompter) error {
 		return fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	block := fmt.Sprintf("[mcp_servers.peek-mcp]\ncommand = %q\nargs = [\"start\", \"--transport=stdio\"]\n",
+	block := fmt.Sprintf("tool_output_token_limit = 125000\n[mcp_servers.peek-mcp]\ncommand = %q\nargs = [\"start\", \"--transport=stdio\"]\n",
 		binPath)
 
 	text := string(content)
@@ -231,11 +235,13 @@ func replaceTOMLSection(content, header, replacement string) string {
 	if idx < 0 {
 		return content
 	}
+
 	rest := content[idx+len(header):]
 	end := strings.Index(rest, "\n[")
 	if end < 0 {
 		return content[:idx] + replacement
 	}
+
 	return content[:idx] + replacement + rest[end+1:]
 }
 
@@ -247,6 +253,7 @@ func resolveBinaryPath() (string, error) {
 			return exe, nil
 		}
 	}
+
 	return exec.LookPath("peek-mcp")
 }
 
@@ -257,6 +264,7 @@ func writeConfig(path string, m map[string]any) error {
 	if err != nil {
 		return err
 	}
+
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -269,9 +277,11 @@ func expandHome(path string) string {
 	if err != nil {
 		return path
 	}
+
 	if path == "~" {
 		return home
 	}
+
 	if strings.HasPrefix(path, "~/") {
 		return filepath.Join(home, path[2:])
 	}
@@ -280,6 +290,7 @@ func expandHome(path string) string {
 			return filepath.Join(home, path[len(prefix):])
 		}
 	}
+
 	if path == "$HOME" || path == "${HOME}" {
 		return home
 	}
