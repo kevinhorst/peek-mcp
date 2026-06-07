@@ -20,8 +20,10 @@ When the input looks like a session ID (UUID-style), pass it as `id`. Otherwise 
 `id` takes precedence over `title` when both are provided.
 Title matching is exact (case-insensitive) — substrings will not match.
 
-All tools need a required `agent` param (`"claude"` or `"codex"`). Pass it when the
-user qualifies the command, e.g. `/peek codex`. If the user doesn't qualify, default to Claude.
+Only `session_latest` requires the `agent` param (`"claude"` or `"codex"`). All other
+tools accept it optionally — it's only needed as a fallback when no `id` or `title` is
+provided. Pass it when the user qualifies the command (e.g. `/peek codex`). If the user
+doesn't qualify, default to `"claude"`.
 
 ## Pagination
 

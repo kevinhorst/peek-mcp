@@ -45,8 +45,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
 | `n` | number | no | Number of turns to return (default 5) |
-| `diff_size` | number | no | Max bytes for diff output (0 = no limit) |
-| `agent` | string | yes | Agent: `claude` or `codex`. Defaults to the only enabled agent when just one is configured |
+| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `request_id` | string | no | Pagination request ID from a previous response |
 
 **`session_latest`** Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out.
@@ -60,7 +59,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `agent` | string | yes | Agent: `claude` or `codex` |
+| `agent` | string | no | Agent: `claude` or `codex`. Lists all sessions when omitted |
 
 **`session_get`** Returns the last N turns from a specific session by ID or title.
 
@@ -76,7 +75,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
-| `agent` | string | yes | Agent: `claude` or `codex` |
+| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 **`session_diff`** Returns the pre-computed git diff for a session, run against the configured target branch (default: `main`) and refreshed automatically on each new turn.
 
@@ -84,8 +83,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
-| `size` | number | no | Max bytes to return (0 = no limit) |
-| `agent` | string | yes | Agent: `claude` or `codex` |
+| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 **`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
 
@@ -93,8 +91,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
-| `size` | number | no | Max bytes to return (0 = no limit) |
-| `agent` | string | yes | Agent: `claude` or `codex` |
+| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 ## Supported agents
 

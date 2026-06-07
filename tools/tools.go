@@ -32,12 +32,8 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithNumber("n",
 				mcp.Description("Number of turns to return (default 5)"),
 			),
-			mcp.WithNumber("diff_size",
-				mcp.Description("Max bytes for diff output (0 = no limit)"),
-			),
 			mcp.WithString("agent",
-				mcp.Required(),
-				mcp.Description("Agent: \"claude\" or \"codex\". Defaults to the only enabled agent when just one is configured."),
+				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
 			),
 			mcp.WithString("request_id",
 				mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
@@ -64,8 +60,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 		mcp.NewTool("session_list",
 			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available."),
 			mcp.WithString("agent",
-				mcp.Required(),
-				mcp.Description("Agent: \"claude\" or \"codex\""),
+				mcp.Description("Agent: \"claude\" or \"codex\". Lists all sessions when omitted."),
 			),
 		),
 		sessionListHandler(store),
@@ -97,8 +92,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
 			),
 			mcp.WithString("agent",
-				mcp.Required(),
-				mcp.Description("Agent: \"claude\" or \"codex\""),
+				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
 			),
 		),
 		sessionPlanHandler(store),
@@ -113,12 +107,8 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("title",
 				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
 			),
-			mcp.WithNumber("size",
-				mcp.Description("Max bytes to return from diff output (0 = no limit)"),
-			),
 			mcp.WithString("agent",
-				mcp.Required(),
-				mcp.Description("Agent: \"claude\" or \"codex\""),
+				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
 			),
 		),
 		sessionDiffHandler(store),
@@ -133,12 +123,8 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("title",
 				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
 			),
-			mcp.WithNumber("size",
-				mcp.Description("Max bytes to return from diff output (0 = no limit)"),
-			),
 			mcp.WithString("agent",
-				mcp.Required(),
-				mcp.Description("Agent: \"claude\" or \"codex\""),
+				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
 			),
 		),
 		sessionUncommittedDiffHandler(store),
@@ -170,13 +156,12 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 		}
 
 		// First call: resolve session and build pages
-		agent, err := resolveAgentFromRequest(s, request)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
 		sess, err := resolveSession(s, request)
 		if err != nil {
+			agent, agentErr := resolveAgentFromRequest(s, request)
+			if agentErr != nil {
+				return mcp.NewToolResultError(agentErr.Error()), nil
+			}
 			found, ok := s.Last(agent)
 			if !ok {
 				return mcp.NewToolResultText("no sessions found"), nil
@@ -243,11 +228,13 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		agent, err := resolveAgentFromRequest(s, request)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
 
-		sessions := s.List(agent)
+		var sessions []*session.Session
+		if err != nil {
+			sessions = s.List()
+		} else {
+			sessions = s.List(agent)
+		}
 		items := make([]sessionListItem, len(sessions))
 		for i, sess := range sessions {
 			items[i] = sessionListItem{
@@ -288,13 +275,12 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgentFromRequest(s, request)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			agent, agentErr := resolveAgentFromRequest(s, request)
+			if agentErr != nil {
+				return mcp.NewToolResultError(agentErr.Error()), nil
+			}
 			found, ok := s.Last(agent)
 			if !ok {
 				return respondWithText("No sessions found.")
@@ -312,13 +298,12 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgentFromRequest(s, request)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			agent, agentErr := resolveAgentFromRequest(s, request)
+			if agentErr != nil {
+				return mcp.NewToolResultError(agentErr.Error()), nil
+			}
 			found, ok := s.Last(agent)
 			if !ok {
 				return respondWithText("No sessions found.")
@@ -332,13 +317,12 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgentFromRequest(s, request)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			agent, agentErr := resolveAgentFromRequest(s, request)
+			if agentErr != nil {
+				return mcp.NewToolResultError(agentErr.Error()), nil
+			}
 			found, ok := s.Last(agent)
 			if !ok {
 				return respondWithText("No sessions found.")
