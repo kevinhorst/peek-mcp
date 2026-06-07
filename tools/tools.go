@@ -143,8 +143,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 				return mcp.NewToolResultError(fmt.Sprintf("request_id %q not found or expired", reqId)), nil
 			}
 
-			hasMore := next != nil
-			if !hasMore {
+			if !pageStore.hasNext(reqId) {
 				pageStore.remove(reqId)
 				reqId = ""
 			}
@@ -152,7 +151,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 			result := &sessionFullResultPage{
 				sessionFullResult: next,
 				RequestId:         reqId,
-				HasMore:           hasMore,
+				HasMore:           pageStore.hasNext(reqId),
 			}
 			return respondWithStructured(result)
 		}

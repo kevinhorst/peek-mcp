@@ -12,18 +12,6 @@ type PageStore struct {
 	PagesByRequestId map[string]<-chan *sessionFullResult
 }
 
-func (s *PageStore) next(requestId string) (*sessionFullResult, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	result, ok := s.PagesByRequestId[requestId]
-	if !ok {
-		return nil, false
-	}
-
-	return <-result, true
-}
-
 func (s *PageStore) add(requestId string, results []*sessionFullResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -35,6 +23,30 @@ func (s *PageStore) add(requestId string, results []*sessionFullResult) {
 
 	close(queue)
 	s.PagesByRequestId[requestId] = queue
+}
+
+func (s *PageStore) hasNext(requestId string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result, ok := s.PagesByRequestId[requestId]
+	if !ok {
+		return false
+	}
+
+	return len(result) > 0
+}
+
+func (s *PageStore) next(requestId string) (*sessionFullResult, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result, ok := s.PagesByRequestId[requestId]
+	if !ok {
+		return nil, false
+	}
+
+	return <-result, true
 }
 
 func (s *PageStore) remove(requestId string) {
