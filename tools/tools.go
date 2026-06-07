@@ -19,24 +19,40 @@ const (
 	MaxResponseBytesCodex  = 0          // 0 = no pagination
 )
 
-func maxResponseBytes(ctx context.Context) int {
+func clientName(ctx context.Context) string {
 	s := server.ClientSessionFromContext(ctx)
 	if s == nil {
-		return MaxResponseBytesClaude
+		return ""
 	}
 
 	withInfo, ok := s.(server.SessionWithClientInfo)
 	if !ok {
+		return ""
+	}
+	name := strings.ToLower(withInfo.GetClientInfo().Name)
+	slog.Info("clientName: Resolved client name: ", name, "")
+
+	return name
+}
+
+func isClaude(ctx context.Context) bool {
+	name := clientName(ctx)
+
+	return name != "" && !strings.Contains(name, "codex")
+}
+
+func maxResponseBytes(ctx context.Context) int {
+	if isClaude(ctx) {
 		return MaxResponseBytesClaude
 	}
+	return MaxResponseBytesCodex
+}
 
-	name := strings.ToLower(withInfo.GetClientInfo().Name)
-	slog.Debug("resolved MCP client", "name", name)
-
-	if strings.Contains(name, "codex") {
-		return MaxResponseBytesCodex
+func respond(ctx context.Context, response any) (*mcp.CallToolResult, error) {
+	if isClaude(ctx) {
+		return respondWithText(response)
 	}
-	return MaxResponseBytesClaude
+	return respondWithStructured(response)
 }
 
 func Register(server *server.MCPServer, store *session.Store) {
@@ -176,7 +192,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 				RequestId:         reqId,
 				HasMore:           pageStore.hasNext(reqId),
 			}
-			return respondWithStructured(result)
+			return respond(ctx, result)
 		}
 
 		// First call: resolve session and build pages
@@ -218,14 +234,14 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 
 		resultPage := newSessionFullResultPage(firstPage)
 		if len(nextPages) == 0 {
-			return respondWithStructured(resultPage)
+			return respond(ctx, resultPage)
 		}
 
 		requestId := uuid.NewString()
 		pageStore.add(requestId, nextPages)
 
 		resultPage.WithRequestId(requestId)
-		return respondWithStructured(resultPage)
+		return respond(ctx, resultPage)
 	}
 }
 
