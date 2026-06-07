@@ -15,12 +15,18 @@ const (
 	DefaultReturnedTurns = 20
 )
 
+func withMaxResultSize() *mcp.Meta {
+	return mcp.NewMetaFromMap(map[string]any{
+		"anthropic/maxResultSizeChars": 500_000,
+	})
+}
+
 func Register(server *server.MCPServer, store *session.Store) {
 	pageStore := &PageStore{
 		PagesByRequestId: make(map[string]<-chan *sessionFullResult),
 	}
 
-	server.AddTool(
+	sessionFull :=
 		mcp.NewTool("session_full",
 			mcp.WithDescription("Returns turns, plan, and git diff for a session in one call. Prefer this over calling session_latest, session_plan, and session_diff separately. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
 			mcp.WithString("id",
@@ -38,51 +44,49 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("request_id",
 				mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 			),
-		),
-		sessionFullHandler(store, pageStore),
-	)
+		)
+	sessionFull.Meta = withMaxResultSize()
+	server.AddTool(sessionFull, sessionFullHandler(store, pageStore))
 
-	server.AddTool(
-		mcp.NewTool("session_latest",
-			mcp.WithDescription("Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out."),
-			mcp.WithNumber("n",
-				mcp.Description("Number of turns to return (default 5)"),
-			),
-			mcp.WithString("agent",
-				mcp.Required(),
-				mcp.Description("Agent: \"claude\" or \"codex\""),
-			),
+	sessionLatest := mcp.NewTool("session_latest",
+		mcp.WithDescription("Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out."),
+		mcp.WithNumber("n",
+			mcp.Description("Number of turns to return (default 5)"),
 		),
-		sessionLatestHandler(store),
+		mcp.WithString("agent",
+			mcp.Required(),
+			mcp.Description("Agent: \"claude\" or \"codex\""),
+		),
 	)
+	sessionLatest.Meta = withMaxResultSize()
+	server.AddTool(sessionLatest, sessionLatestHandler(store))
 
-	server.AddTool(
+	sessionList :=
 		mcp.NewTool("session_list",
 			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available."),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Lists all sessions when omitted."),
 			),
-		),
-		sessionListHandler(store),
-	)
+		)
+	sessionList.Meta = withMaxResultSize()
+	server.AddTool(sessionList, sessionListHandler(store))
 
-	server.AddTool(
-		mcp.NewTool("session_get",
-			mcp.WithDescription("Returns the last N turns from a specific session by ID or title."),
-			mcp.WithString("id",
-				mcp.Description("Session ID"),
-			),
-			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
-			),
-			mcp.WithNumber("n",
-				mcp.Description("Number of turns to return (default 5)"),
-			),
+	sessionGet := mcp.NewTool("session_get",
+		mcp.WithDescription("Returns the last N turns from a specific session by ID or title."),
+		mcp.WithString("id",
+			mcp.Description("Session ID"),
 		),
-		sessionGetHandler(store),
+		mcp.WithString("title",
+			mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+		),
+		mcp.WithNumber("n",
+			mcp.Description("Number of turns to return (default 5)"),
+		),
 	)
+	sessionGet.Meta = withMaxResultSize()
+	server.AddTool(sessionGet, sessionGetHandler(store))
 
-	server.AddTool(
+	sessionPlan :=
 		mcp.NewTool("session_plan",
 			mcp.WithDescription("Returns the current plan for the given session (or the most recently active session if no ID is provided). Returns an empty response if the session has no plan."),
 			mcp.WithString("id",
@@ -94,11 +98,11 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
 			),
-		),
-		sessionPlanHandler(store),
-	)
+		)
+	sessionPlan.Meta = withMaxResultSize()
+	server.AddTool(sessionPlan, sessionPlanHandler(store))
 
-	server.AddTool(
+	sessionDiff :=
 		mcp.NewTool("session_diff",
 			mcp.WithDescription("Returns the pre-computed git diff for a session. The diff is run against the configured target branch (default: main) in the session's working directory, and refreshed automatically on each new turn. If id is omitted, uses the most recent session."),
 			mcp.WithString("id",
@@ -110,11 +114,11 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
 			),
-		),
-		sessionDiffHandler(store),
-	)
+		)
+	sessionDiff.Meta = withMaxResultSize()
+	server.AddTool(sessionDiff, sessionDiffHandler(store))
 
-	server.AddTool(
+	sessionUncommittedDiff :=
 		mcp.NewTool("session_uncommitted_diff",
 			mcp.WithDescription("Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees. If id is omitted, uses the most recent session."),
 			mcp.WithString("id",
@@ -126,9 +130,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
 			),
-		),
-		sessionUncommittedDiffHandler(store),
-	)
+		)
+	sessionUncommittedDiff.Meta = withMaxResultSize()
+	server.AddTool(sessionUncommittedDiff, sessionUncommittedDiffHandler(store))
 }
 
 func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandlerFunc {

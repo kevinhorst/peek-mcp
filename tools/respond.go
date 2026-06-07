@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	MaxResponseBytesClaude = 800 * 1024 // 800KB — Claude's 1MB limit with headroom
+	MaxResponseBytesClaude = 400 * 1024 // 400KB — stays under maxResultSizeChars ceiling
 	MaxResponseBytesCodex  = 0          // 0 = no pagination
 )
 
