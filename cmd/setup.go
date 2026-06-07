@@ -272,10 +272,12 @@ func expandHome(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		return filepath.Join(home, path[2:])
 	}
-	if strings.HasPrefix(path, "$HOME/") {
-		return filepath.Join(home, path[6:])
+	for _, prefix := range []string{"$HOME/", "${HOME}/"} {
+		if strings.HasPrefix(path, prefix) {
+			return filepath.Join(home, path[len(prefix):])
+		}
 	}
-	if path == "$HOME" {
+	if path == "$HOME" || path == "${HOME}" {
 		return home
 	}
 	return path

@@ -75,8 +75,10 @@ func TestExpandHome(t *testing.T) {
 
 	assert.Equal(t, filepath.Join(home, ".claude"), expandHome("~/.claude"))
 	assert.Equal(t, filepath.Join(home, ".codex"), expandHome("$HOME/.codex"))
+	assert.Equal(t, filepath.Join(home, ".claude"), expandHome("${HOME}/.claude"))
 	assert.Equal(t, home, expandHome("~"))
 	assert.Equal(t, home, expandHome("$HOME"))
+	assert.Equal(t, home, expandHome("${HOME}"))
 	assert.Equal(t, "/absolute/path", expandHome("/absolute/path"))
 	assert.Equal(t, "relative/path", expandHome("relative/path"))
 }

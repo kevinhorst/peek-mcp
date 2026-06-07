@@ -202,17 +202,18 @@ var pathFlags = map[string]bool{
 
 func applyEnvFallbacks(cmd *cobra.Command) {
 	for flag, env := range envFallbacks {
-		if cmd.Flags().Changed(flag) {
-			continue
+		if !cmd.Flags().Changed(flag) {
+			if val, ok := os.LookupEnv(env); ok {
+				cmd.Flags().Set(flag, val)
+			}
 		}
-		val, ok := os.LookupEnv(env)
-		if !ok {
-			continue
+	}
+	// Expand ~ and $HOME in path flags regardless of source (flag, env, or manifest).
+	for flag := range pathFlags {
+		val, _ := cmd.Flags().GetString(flag)
+		if expanded := expandHome(val); expanded != val {
+			cmd.Flags().Set(flag, expanded)
 		}
-		if pathFlags[flag] {
-			val = expandHome(val)
-		}
-		cmd.Flags().Set(flag, val)
 	}
 }
 
