@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	MaxResponseBytesClaude = 400 * 1024 // 400KB — stays under maxResultSizeChars ceiling
+	MaxResponseBytesClaude = 100 * 1024 // 400KB — stays under maxResultSizeChars ceiling
 	MaxResponseBytesCodex  = 0          // 0 = no pagination
 )
 
