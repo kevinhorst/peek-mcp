@@ -15,8 +15,12 @@ description: >
 | `/peek diff` | `session_diff` | git diff only |
 | `/peek <id>` or `/peek <id> [n]` | `session_full` with id | specific session |
 
-All tools need an required `agent` param (`"claude"` or `"codex"`). Pass it when the
+All tools need a required `agent` param (`"claude"` or `"codex"`). Pass it when the
 user qualifies the command, e.g. `/peek codex`. If the user doesn't qualify, default to Claude.
+
+## Pagination
+
+`session_full` responses may be paginated. When the response contains `has_more: true` and a `request_id`, you MUST call `session_full` again with that `request_id` to get the next page. Keep calling until `has_more` is false or `request_id` is absent. Do NOT call `session_diff` or `session_plan` separately — all content (turns, plan, diff) arrives through the paginated `session_full` responses.
 
 ## Output format
 
