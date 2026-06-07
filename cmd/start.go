@@ -15,7 +15,6 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/codex"
-	"github.com/kevinhorst/peek-mcp/resources"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/kevinhorst/peek-mcp/watcher"
@@ -110,7 +109,6 @@ var startCmd = &cobra.Command{
 			server.WithResourceCapabilities(false, true),
 		)
 		tools.Register(srv, store)
-		resources.Register(srv, store)
 
 		switch transport {
 		case "stdio":
