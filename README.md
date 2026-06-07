@@ -70,6 +70,14 @@ cd peek-mcp
 go build -o peek-mcp .
 ```
 
+## Quick setup
+
+```bash
+peek-mcp
+```
+
+Running `peek-mcp` with no arguments launches an interactive wizard that writes the correct config for your environment (Claude Code, Codex CLI, or both). It detects existing configs and merges without destroying other keys.
+
 ## Usage
 
 ```bash
@@ -93,6 +101,24 @@ peek-mcp start --port 4242 --depth 20
 | `--codex-home` | `~/.codex` | Override Codex session root |
 | `--diff-target` | `main` | Branch to diff against for `session_diff` |
 | `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
+| `--poll-window` | `1h` | Only poll repos whose session was active within this window |
+
+### Environment variables
+
+Every flag has a corresponding environment variable that is used when the flag is not explicitly set. This is useful for the Claude Desktop `.mcpb` bundle where flags cannot be changed at runtime.
+
+| Variable | Flag |
+|----------|------|
+| `PEEK_TRANSPORT` | `--transport` |
+| `PEEK_PORT` | `--port` |
+| `PEEK_DEPTH` | `--depth` |
+| `PEEK_CLAUDE_HOME` | `--claude-home` |
+| `PEEK_CODEX_HOME` | `--codex-home` |
+| `PEEK_DIFF_TARGET` | `--diff-target` |
+| `PEEK_POLL_INTERVAL` | `--poll-interval` |
+| `PEEK_POLL_WINDOW` | `--poll-window` |
+| `PEEK_LOG_LEVEL` | `--log-level` |
 
 ## Connecting to Claude Chat
 
