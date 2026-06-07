@@ -64,7 +64,7 @@ serve-stdio: build-local
 
 
 sign-darwin:
-	codesign --force --options runtime --sign "$(APPLE_IDENTITY)" $(DIST)/peek-mcp
+	codesign --force --options runtime --sign - $(DIST)/peek-mcp
 
 
 test:
