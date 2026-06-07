@@ -13,7 +13,12 @@ description: >
 | `/peek list` | `session_list` | shows all sessions with plan/diff flags |
 | `/peek plan` | `session_plan` | current plan only |
 | `/peek diff` | `session_diff` | git diff only |
-| `/peek <id>` or `/peek <id> [n]` | `session_full` with id | specific session |
+| `/peek <id>` or `/peek <id> [n]` | `session_full` with `id` param | specific session by ID |
+| `/peek <title>` or `/peek <title> [n]` | `session_full` with `title` param | exact title match (case-insensitive) |
+
+When the input looks like a session ID (UUID-style), pass it as `id`. Otherwise pass it as `title`.
+`id` takes precedence over `title` when both are provided.
+Title matching is exact (case-insensitive) — substrings will not match.
 
 All tools need a required `agent` param (`"claude"` or `"codex"`). Pass it when the
 user qualifies the command, e.g. `/peek codex`. If the user doesn't qualify, default to Claude.

@@ -18,6 +18,7 @@ const (
 type Session struct {
 	Meta            Meta      `json:"meta"`
 	Agent           Agent     `json:"agent"`
+	Title           string    `json:"title,omitempty"`
 	LastActive      time.Time `json:"last_active"`
 	TotalUsage      Usage     `json:"total_usage"`
 	FilePath        string    `json:"-"`
@@ -28,19 +29,6 @@ type Session struct {
 	UncommittedDiff string    `json:"-"` // git diff HEAD, refreshed by the poller
 	TurnActive      *Turn     `json:"-"`
 	TurnsFinished   *TurnBuffer
-}
-
-func (s *Session) Turns(number int) []*Turn {
-	if s.TurnActive == nil {
-		return s.TurnsFinished.Last(number)
-	}
-
-	buffer := &TurnBuffer{
-		capacity: s.TurnsFinished.capacity,
-		items:    append([]*Turn{s.TurnActive}, s.TurnsFinished.items...),
-	}
-
-	return buffer.Last(number)
 }
 
 func (s *Session) AddTurn(nextTurn *Turn) {
@@ -75,6 +63,26 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 	}
 
 	s.TurnActive = nextTurn
+}
+func (s *Session) HasNewTitle(title string) bool {
+	if title == "" {
+		return false
+	}
+
+	return s.Title != title
+}
+
+func (s *Session) Turns(number int) []*Turn {
+	if s.TurnActive == nil {
+		return s.TurnsFinished.Last(number)
+	}
+
+	buffer := &TurnBuffer{
+		capacity: s.TurnsFinished.capacity,
+		items:    append([]*Turn{s.TurnActive}, s.TurnsFinished.items...),
+	}
+
+	return buffer.Last(number)
 }
 
 func (s *Session) Validate() error {

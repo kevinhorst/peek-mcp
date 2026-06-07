@@ -10,6 +10,38 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// provideCompleteStore returns a Store pre-populated with two sessions:
+//   - "s1" (Claude, titled "Login simplification", active 1h ago)
+//   - "s2" (Codex, titled "Auth refactor", active now)
+func provideCompleteStore() *Store {
+	s := NewStore(10)
+	now := time.Now()
+
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		CustomTitle: "Login simplification",
+		Meta:    &Meta{SessionId: "s1"},
+	})
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		Role:      RoleUser,
+		Text:      "What does this do?",
+		Timestamp: now.Add(-1 * time.Hour),
+		Meta:      &Meta{SessionId: "s1", CWD: "/project", GitBranch: "main"},
+	})
+
+	s.AddTurnBySessionId("s2", AgentCodex, &Turn{
+		CustomTitle: "Auth refactor",
+		Meta:    &Meta{SessionId: "s2"},
+	})
+	s.AddTurnBySessionId("s2", AgentCodex, &Turn{
+		Role:      RoleUser,
+		Text:      "Refactor auth",
+		Timestamp: now,
+		Meta:      &Meta{SessionId: "s2", CWD: "/project", GitBranch: "feat"},
+	})
+
+	return s
+}
+
 func TestGetOrCreate_New(t *testing.T) {
 	s := NewStore(10)
 	sess := s.getOrCreate("s1", AgentClaude)
@@ -27,19 +59,56 @@ func TestGetOrCreate_Existing(t *testing.T) {
 	assert.Same(t, s1, s2)
 }
 
-func TestGet_NotFound(t *testing.T) {
-	s := NewStore(10)
-	_, ok := s.GetById("nonexistent")
-	assert.False(t, ok)
-}
+func TestGetById(t *testing.T) {
+	type testCase struct {
+		_id         string
+		_shouldPass bool
 
-func TestGet_Found(t *testing.T) {
-	s := NewStore(10)
-	s.getOrCreate("s1", AgentCodex)
+		store   *Store
+		queryId Id
+	}
 
-	sess, ok := s.GetById("s1")
-	assert.True(t, ok)
-	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
+	tests := make([]*testCase, 0)
+
+	// pass-found
+	test := &testCase{
+		_id:         "pass-found",
+		_shouldPass: true,
+
+		store:   provideCompleteStore(),
+		queryId: "s1",
+	}
+	tests = append(tests, test)
+
+	// fail-not-found
+	test = &testCase{
+		_id:         "fail-not-found",
+		_shouldPass: false,
+
+		store:   provideCompleteStore(),
+		queryId: "nonexistent",
+	}
+	tests = append(tests, test)
+
+	// fail-empty-store
+	test = &testCase{
+		_id:         "fail-empty-store",
+		_shouldPass: false,
+
+		store:   NewStore(10),
+		queryId: "s1",
+	}
+	tests = append(tests, test)
+
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			sess, ok := test.store.GetById(test.queryId)
+			assert.Equalf(t, test._shouldPass, ok, "GetById(%q)", test.queryId)
+			if test._shouldPass {
+				assert.Equal(t, test.queryId, sess.Meta.SessionId)
+			}
+		})
+	}
 }
 
 func TestList_Empty(t *testing.T) {
@@ -48,42 +117,20 @@ func TestList_Empty(t *testing.T) {
 }
 
 func TestList_SortedByLastActive(t *testing.T) {
-	s := NewStore(10)
-	now := time.Now()
-
-	s1 := s.getOrCreate("s1", AgentClaude)
-	s1.LastActive = now.Add(-2 * time.Hour)
-
-	s2 := s.getOrCreate("s2", AgentCodex)
-	s2.LastActive = now
-
-	s3 := s.getOrCreate("s3", AgentClaude)
-	s3.LastActive = now.Add(-1 * time.Hour)
+	s := provideCompleteStore()
 
 	list := s.List()
-	assert.Len(t, list, 3)
+	assert.Len(t, list, 2)
 	assert.Equal(t, Id("s2"), list[0].Meta.SessionId)
-	assert.Equal(t, Id("s3"), list[1].Meta.SessionId)
-	assert.Equal(t, Id("s1"), list[2].Meta.SessionId)
+	assert.Equal(t, Id("s1"), list[1].Meta.SessionId)
 }
 
 func TestList_FilteredByAgent(t *testing.T) {
-	s := NewStore(10)
-	now := time.Now()
-
-	s1 := s.getOrCreate("s1", AgentClaude)
-	s1.LastActive = now.Add(-2 * time.Hour)
-
-	s2 := s.getOrCreate("s2", AgentCodex)
-	s2.LastActive = now
-
-	s3 := s.getOrCreate("s3", AgentClaude)
-	s3.LastActive = now.Add(-1 * time.Hour)
+	s := provideCompleteStore()
 
 	claude := s.List(AgentClaude)
-	assert.Len(t, claude, 2)
-	assert.Equal(t, Id("s3"), claude[0].Meta.SessionId)
-	assert.Equal(t, Id("s1"), claude[1].Meta.SessionId)
+	assert.Len(t, claude, 1)
+	assert.Equal(t, Id("s1"), claude[0].Meta.SessionId)
 
 	codex := s.List(AgentCodex)
 	assert.Len(t, codex, 1)
@@ -97,14 +144,7 @@ func TestMostRecent_Empty(t *testing.T) {
 }
 
 func TestMostRecent(t *testing.T) {
-	s := NewStore(10)
-	now := time.Now()
-
-	s1 := s.getOrCreate("s1", AgentClaude)
-	s1.LastActive = now.Add(-1 * time.Hour)
-
-	s2 := s.getOrCreate("s2", AgentCodex)
-	s2.LastActive = now
+	s := provideCompleteStore()
 
 	sess, ok := s.Last()
 	assert.True(t, ok)
@@ -112,14 +152,7 @@ func TestMostRecent(t *testing.T) {
 }
 
 func TestLast_FilteredByAgent(t *testing.T) {
-	s := NewStore(10)
-	now := time.Now()
-
-	s1 := s.getOrCreate("s1", AgentClaude)
-	s1.LastActive = now.Add(-1 * time.Hour)
-
-	s2 := s.getOrCreate("s2", AgentCodex)
-	s2.LastActive = now
+	s := provideCompleteStore()
 
 	sess, ok := s.Last(AgentClaude)
 	assert.True(t, ok)
@@ -198,8 +231,160 @@ func TestAddTurn_PlanWorktreeFallback(t *testing.T) {
 	assert.Equal(t, filepath.Join(plansDir, "my-plan.md"), sess.PlanFilePath)
 }
 
+func TestAddTurn_CustomTitle(t *testing.T) {
+	type testCase struct {
+		_id         string
+		_shouldPass bool
+
+		store     *Store
+		wantTitle string
+	}
+
+	tests := make([]*testCase, 0)
+
+	// pass-set-title
+	setTitleStore := NewStore(10)
+	setTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		CustomTitle: "Login simplification",
+		Meta:    &Meta{SessionId: "s1"},
+	})
+
+	test := &testCase{
+		_id:         "pass-set-title",
+		_shouldPass: true,
+
+		store:     setTitleStore,
+		wantTitle: "Login simplification",
+	}
+	tests = append(tests, test)
+
+	// pass-update-title
+	updateTitleStore := NewStore(10)
+	updateTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		CustomTitle: "Old title",
+		Meta:    &Meta{SessionId: "s1"},
+	})
+	updateTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		CustomTitle: "New title",
+		Meta:    &Meta{SessionId: "s1"},
+	})
+
+	test = &testCase{
+		_id:         "pass-update-title",
+		_shouldPass: true,
+
+		store:     updateTitleStore,
+		wantTitle: "New title",
+	}
+	tests = append(tests, test)
+
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			sess, ok := test.store.GetById("s1")
+			assert.Equalf(t, test._shouldPass, ok, "session should exist")
+			assert.Equal(t, test.wantTitle, sess.Title)
+		})
+	}
+}
+
+func TestGetByTitle(t *testing.T) {
+	type testCase struct {
+		_id                string
+		_shouldPass        bool
+		_expectedSessionId Id
+
+		store *Store
+		query string
+	}
+
+	tests := make([]*testCase, 0)
+
+	// pass-exact-match
+	test := &testCase{
+		_id:         "pass-exact-match",
+		_shouldPass: true,
+
+		store:              provideCompleteStore(),
+		query:              "Login simplification",
+		_expectedSessionId: "s1",
+	}
+	tests = append(tests, test)
+
+	// pass-case-insensitive
+	test = &testCase{
+		_id:         "pass-case-insensitive",
+		_shouldPass: true,
+
+		store:              provideCompleteStore(),
+		query:              "login simplification",
+		_expectedSessionId: "s1",
+	}
+	tests = append(tests, test)
+
+	// fail-not-found
+	test = &testCase{
+		_id:         "fail-not-found",
+		_shouldPass: false,
+
+		store: provideCompleteStore(),
+		query: "nonexistent",
+	}
+	tests = append(tests, test)
+
+	// fail-substring-does-not-match
+	test = &testCase{
+		_id:         "fail-substring-does-not-match",
+		_shouldPass: false,
+
+		store: provideCompleteStore(),
+		query: "Login",
+	}
+	tests = append(tests, test)
+
+	// fail-title-update-removes-old-index
+	storeWithUpdate := NewStore(10)
+	storeWithUpdate.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		CustomTitle: "Old title",
+		Meta:    &Meta{SessionId: "s1"},
+	})
+	storeWithUpdate.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		CustomTitle: "New title",
+		Meta:    &Meta{SessionId: "s1"},
+	})
+
+	test = &testCase{
+		_id:         "fail-title-update-removes-old-index",
+		_shouldPass: false,
+
+		store: storeWithUpdate,
+		query: "Old title",
+	}
+	tests = append(tests, test)
+
+	// pass-title-update-new-title-resolves
+	test = &testCase{
+		_id:         "pass-title-update-new-title-resolves",
+		_shouldPass: true,
+
+		store:              storeWithUpdate,
+		query:              "New title",
+		_expectedSessionId: "s1",
+	}
+	tests = append(tests, test)
+
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			sess, ok := test.store.GetByTitle(test.query)
+			assert.Equalf(t, test._shouldPass, ok, "GetByTitle(%q)", test.query)
+			if test._shouldPass {
+				assert.Equal(t, test._expectedSessionId, sess.Meta.SessionId)
+			}
+		})
+	}
+}
+
 func TestConcurrentAccess(t *testing.T) {
-	s := NewStore(10)
+	s := provideCompleteStore()
 	var wg sync.WaitGroup
 
 	// Concurrent readers and writers. Writers only use GetOrCreate (which holds the lock).
