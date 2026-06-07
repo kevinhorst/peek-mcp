@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"os/signal"
 	"path/filepath"
 	"time"
@@ -30,6 +31,7 @@ var startCmd = &cobra.Command{
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	Run: func(cmd *cobra.Command, args []string) {
 		applyEnvFallbacks(cmd)
+		warnMaxOutputTokens()
 		flags := cmd.Flags()
 		logLevel, _ := flags.GetString("log-level")
 		transport, _ := flags.GetString("transport")
@@ -196,6 +198,19 @@ var envFallbacks = map[string]string{
 var pathFlags = map[string]bool{
 	"claude-home": true,
 	"codex-home":  true,
+}
+
+const recommendedMaxOutputTokens = 125_000
+
+func warnMaxOutputTokens() {
+	val, ok := os.LookupEnv("MAX_MCP_OUTPUT_TOKENS")
+	if !ok {
+		slog.Warn("MAX_MCP_OUTPUT_TOKENS is not set; large responses may be truncated — run 'peek-mcp setup' to configure automatically")
+		return
+	}
+	if n, err := strconv.Atoi(val); err == nil && n < recommendedMaxOutputTokens {
+		slog.Warn("MAX_MCP_OUTPUT_TOKENS is below recommended minimum", "current", n, "recommended", recommendedMaxOutputTokens)
+	}
 }
 
 func applyEnvFallbacks(cmd *cobra.Command) {

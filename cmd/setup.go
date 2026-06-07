@@ -102,6 +102,9 @@ func setupClaudeCode(p *prompter) error {
 		"type":    "stdio",
 		"command": binPath,
 		"args":    []string{"start", "--transport=stdio"},
+		"env": map[string]any{
+			"MAX_MCP_OUTPUT_TOKENS": "125000",
+		},
 	}
 	cfg["mcpServers"] = servers
 
