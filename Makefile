@@ -3,10 +3,6 @@ STAGE   := $(DIST)/bundle
 LDFLAGS := -s -w
 GOENV := GOOS=darwin CGO_ENABLED=0
 
-build-local: clean-dist
-	@mkdir -p $(DIST)
-	go build -o dist/peek-mcp .
-
 
 build-darwin-universal:
 	@mkdir -p $(DIST)
@@ -26,6 +22,11 @@ build-linux-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
 
 
+build-local: clean-dist
+	@mkdir -p $(DIST)
+	go build -o dist/peek-mcp .
+
+
 build-mcpb: build-darwin-universal build-mcpb-only
 
 build-mcpb-only:
@@ -37,8 +38,13 @@ build-mcpb-only:
 	@echo "==> built $(DIST)/peek-mcp.mcpb"
 
 
-sign-darwin:
-	codesign --force --options runtime --sign "$(APPLE_IDENTITY)" $(DIST)/peek-mcp
+clean-dist:
+	rm -rf $(DIST)
+
+
+git-release:
+	git commit -am "cmd: release v$(VERSION)"
+	git tag v$(VERSION)
 
 
 notarize-darwin:
@@ -49,21 +55,16 @@ notarize-darwin:
 		--wait
 
 
-clean-dist:
-	rm -rf $(DIST)
-
-
-git-release:
-	git commit -am "cmd: release v$(VERSION)"
-	git tag v$(VERSION)
-
-
 serve-http: build-local
 	./dist/peek-mcp start --log-level debug
 
 
 serve-stdio: build-local
 	./dist/peek-mcp start --transport stdio
+
+
+sign-darwin:
+	codesign --force --options runtime --sign "$(APPLE_IDENTITY)" $(DIST)/peek-mcp
 
 
 test:
