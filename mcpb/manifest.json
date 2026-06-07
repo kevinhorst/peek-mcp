@@ -27,7 +27,10 @@
         "--claude-home=${user_config.claude_home}",
         "--codex-home=${user_config.codex_home}",
         "--diff-target=${user_config.diff_target}"
-      ]
+      ],
+      "env": {
+        "MAX_MCP_OUTPUT_TOKENS": "125000"
+      }
     }
   },
   "tools": [
