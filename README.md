@@ -6,9 +6,12 @@ A lightweight MCP server that reads Claude Code and Codex CLI sessions directly 
 
 Opus finishes a task. I am quite often in the situation that I want to have a quick follow-up question or analysis on the output. If I then prompt Opus or another bigger model, it eats up valuable tokens and especially much more time than necessary. So I want to use Sonnet or GPT5-mini to review it quickly, but copying the context by hand is cumbersome.
 
-As of 05.04.2026 (update: 10.05.2026 - still nothing), there seems to be no other way to do cross-session communication between different integrations than to either copy or prompt the model to read the respective session directory directly, which works, but is also slow.
+As of 05.04.2026 , there seems to be no other way to do cross-session communication between different integrations than to either copy or prompt the model to read the respective session directory directly, which works, but is also slow.
+- update: 10.05.2026 - still nothing
+- update 07.06.2026 - Claude Code now has "Memory" (not to be confused with MEMORY.md), so it can reference previous sessions. Helpful, but not enough
 
 There seem to be some MCP servers that kinda, maybe do what I need, but they did not quite fit my case, so I wrote my own, which is more tailored to my current workflow.
+Examples: TBD
 
 I wanted to avoid any interruption in said workflow, so an approach where the agent pushes to an MCP was ruled out. The session files are on disk, so I figured that should be a good starting point and took it from there. It is also an experiment for a codebase with heavy use of agentic development (but not vibe coding).
 
@@ -46,8 +49,6 @@ In addition to turns, peek-mcp passively watches two more sources:
 **`session_plan(id?)`** Returns the current plan for a session. Returns an empty response if the session has no plan. Omit `id` to use the most recently active session.
 
 **`session_diff(id?, size?)`** Returns the pre-computed git diff for a session, run against the configured target branch and refreshed automatically on each new turn. `size` limits the response to N bytes (0 = no limit). Omit `id` to use the most recently active session.
-
-**`session_uncommitted_diff(id?, size?)`** Returns the live uncommitted git diff (`git diff HEAD`, i.e. staged + unstaged changes) for a session, refreshed continuously as files are saved — not only on new turns. Resolved in the session's own working tree, so it is correct inside linked git worktrees. `size` limits the response to N bytes (0 = no limit). Omit `id` to use the most recently active session. See [Hot reload](#hot-reload-live-diff) for injecting this into Claude Code automatically.
 
 ## Supported agents
 
