@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -12,9 +13,14 @@ import (
 
 const (
 	DefaultReturnedTurns = 5
+	MaxResponseBytes     = 800 * 1024 // 800KB total response budget
 )
 
 func Register(server *server.MCPServer, store *session.Store) {
+	pageStore := &PageStore{
+		PagesByRequestId: make(map[string]<-chan *sessionFullResult),
+	}
+
 	server.AddTool(
 		mcp.NewTool("session_full",
 			mcp.WithDescription("Returns turns, plan, and git diff for a session in one call. Prefer this over calling session_latest, session_plan, and session_diff separately. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
@@ -35,7 +41,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 			),
 		),
-		sessionFullHandler(store),
+		sessionFullHandler(store, pageStore),
 	)
 
 	server.AddTool(
@@ -126,22 +132,27 @@ func Register(server *server.MCPServer, store *session.Store) {
 	)
 }
 
-func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
+func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
 
 		// Continuation: return next page for an existing request
 		if reqId, ok := args["request_id"].(string); ok && reqId != "" {
-			page, hasMore, found := nextPage(reqId)
-			if !found {
+			next, ok := pageStore.next(reqId)
+			if !ok {
 				return mcp.NewToolResultError(fmt.Sprintf("request_id %q not found or expired", reqId)), nil
 			}
-			result := &sessionFullResultPaginated{
-				Session: page,
-				HasMore: hasMore,
+
+			hasMore := next == nil
+			if !hasMore {
+				pageStore.remove(reqId)
+				reqId = ""
 			}
-			if hasMore {
-				result.RequestId = reqId
+
+			result := &sessionFullResultPage{
+				sessionFullResult: next,
+				RequestId:         reqId,
+				HasMore:           hasMore,
 			}
 			return respondWithStructured(result)
 		}
@@ -172,18 +183,27 @@ func sessionFullHandler(s *session.Store) server.ToolHandlerFunc {
 			n = DefaultReturnedTurns
 		}
 
-		turns := sess.Turns(n)
-		plan := sess.PlanContent
-		diff := sess.DiffOutput
+		data, err := json.Marshal(sess.Turns(n))
+		if err != nil {
+			return nil, fmt.Errorf("marshaling turns: %w", err)
+		}
+		turns := string(data)
 
-		if size := intArgFromRequest(request, "diff_size"); size > 0 && len(diff) > size {
-			diff = utf8SafeSlice(diff, size)
+		diff := sess.DiffOutput
+		plan := sess.PlanContent
+
+		firstPage, nextPages := NewPageBuilder(MaxResponseBytes).build(turns, plan, diff)
+
+		resultPage := newSessionFullResultPage(firstPage)
+		if len(nextPages) == 0 {
+			return respondWithStructured(resultPage)
 		}
 
-		pages := buildPages(turns, plan, diff)
-		result := storePagination(pages)
+		resultPage.RequestId = uuid.NewString()
+		resultPage.HasMore = true
 
-		return respondWithStructured(result)
+		pageStore.add(resultPage.RequestId, nextPages)
+		return respondWithStructured(resultPage)
 	}
 }
 
@@ -205,7 +225,7 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("session_latest: No sessions found"), nil
 		}
 
-		turns := truncateTurns(lastSession.Turns(turnNumber), DefaultTurnTextMax)
+		turns := lastSession.Turns(turnNumber)
 		if len(turns) == 0 {
 			return mcp.NewToolResultText("No turns found"), nil
 		}
@@ -257,7 +277,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", id)), nil
 		}
 
-		turns := truncateTurns(currentSession.Turns(turnNumber), DefaultTurnTextMax)
+		turns := currentSession.Turns(turnNumber)
 		if len(turns) == 0 {
 			return mcp.NewToolResultError("No turns found"), nil
 		}
@@ -294,7 +314,7 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("No plan found for this session"), nil
 		}
 
-		return respondWithText(truncateString(currentSession.PlanContent, DefaultPlanMax))
+		return respondWithText(currentSession.PlanContent)
 	}
 }
 
@@ -326,13 +346,7 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			currentSession = sess
 		}
 
-		maxSize := DefaultDiffMax
-		if size := intArgFromRequest(request, "size"); size > 0 {
-			maxSize = size
-		}
-		output := truncateString(currentSession.DiffOutput, maxSize)
-
-		return respondWithText(output)
+		return respondWithText(currentSession.DiffOutput)
 	}
 }
 
@@ -364,13 +378,7 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			currentSession = sess
 		}
 
-		maxSize := DefaultUncommDiffMax
-		if size := intArgFromRequest(request, "size"); size > 0 {
-			maxSize = size
-		}
-		output := truncateString(currentSession.UncommittedDiff, maxSize)
-
-		return respondWithText(output)
+		return respondWithText(currentSession.UncommittedDiff)
 	}
 }
 
