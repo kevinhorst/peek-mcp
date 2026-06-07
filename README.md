@@ -148,7 +148,7 @@ Add to `~/codex/config.toml`:
 ```toml
 [mcp_servers.peek-mcp]
 command = "/Users/kevinpersonal/GolandProjects/peek-mcp/dist/peek-mcp"
-args = ["start", "--transport=stdio", "--depth=20", "--claude-home=/Users/kevinpersonal/.claude", "--codex-home=/Users/kevinpersonal/.codex", "--diff-target=main"]
+args = ["start", "--transport=stdio", "--depth=100", "--claude-home=/Users/kevinpersonal/.claude", "--codex-home=/Users/kevinpersonal/.codex", "--diff-target=main"]
 ```
 
 ## Hot reload (live diff)
