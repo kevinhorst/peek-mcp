@@ -35,13 +35,16 @@ func clientNameFromRequest(ctx context.Context) string {
 		return ""
 	}
 	name := strings.ToLower(withInfo.GetClientInfo().Name)
-	slog.Info("clientName: Resolved client name: ", name, "")
+	slog.Info("clientName: Resolved client name:", name, "")
 
 	return name
 }
 
 func isClaude(ctx context.Context) bool {
 	name := clientNameFromRequest(ctx)
+	if name == "" {
+		return true
+	}
 
-	return name != "" && !strings.Contains(name, "codex")
+	return strings.Contains(name, "claude")
 }

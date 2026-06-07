@@ -68,7 +68,7 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 	// Check if everything fits in a single page
 	contentSize := len(turns) + len(plan) + len(diff)
 	if b.Size <= 0 || contentSize <= b.Size {
-		slog.Debug("PageBuilder.build: fits in a single page", "size", contentSize)
+		slog.Info("PageBuilder.build: fits in a single page", "size", contentSize, "page_size", b.Size)
 		first = &sessionFullResult{
 			Turns: turns,
 			Plan:  plan,
@@ -80,7 +80,7 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 	// Check how many pages we need to build, round up
 	pageCount := math.Ceil(float64(contentSize) / float64(b.Size))
 	pages := make([]*sessionFullResult, int(pageCount))
-	slog.Debug("PageBuilder.build: building", "pageCount", pageCount, "size", b.Size)
+	slog.Info("PageBuilder.build: building", "pageCount", pageCount, "size", b.Size)
 
 	for i := 0; i < int(pageCount); i++ {
 		pages[i] = &sessionFullResult{}
