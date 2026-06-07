@@ -23,35 +23,37 @@ func runSetup(_ *cobra.Command, _ []string) {
 
 	p := newPrompter()
 	choice := p.Choose("Which environment do you want to configure?", []string{
-		"Claude Code  (~/.claude/settings.json)",
-		"Codex CLI    (~/.codex/config.toml)",
-		"Both",
+		"Claude Code     (~/.claude/settings.json)",
+		"Claude Desktop  (claude_desktop_config.json)",
+		"Codex CLI       (~/.codex/config.toml)",
+		"All",
 		"Exit",
 	}, 0)
 
+	type setupFn func(*prompter) error
+	var steps []setupFn
+
 	switch choice {
 	case 0:
-		if err := setupClaudeCode(p); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		steps = []setupFn{setupClaudeCode}
 	case 1:
-		if err := setupCodex(p); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		steps = []setupFn{setupClaudeDesktop}
 	case 2:
-		if err := setupClaudeCode(p); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println()
-		if err := setupCodex(p); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		steps = []setupFn{setupCodex}
+	case 3:
+		steps = []setupFn{setupClaudeCode, setupClaudeDesktop, setupCodex}
 	default:
 		return
+	}
+
+	for i, fn := range steps {
+		if i > 0 {
+			fmt.Println()
+		}
+		if err := fn(p); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	fmt.Println("\nDone. Start the server with: peek-mcp start")
@@ -59,6 +61,12 @@ func runSetup(_ *cobra.Command, _ []string) {
 
 func setupClaudeCode(p *prompter) error {
 	fmt.Println("Configuring peek-mcp for Claude Code...")
+
+	binPath, err := resolveBinaryPath()
+	if err != nil {
+		return fmt.Errorf("cannot determine peek-mcp binary path: %w", err)
+	}
+	fmt.Printf("  Binary: %s\n", binPath)
 
 	path := filepath.Join(defaultHome(".claude"), "settings.json")
 	fmt.Printf("  Config: %s\n", path)
@@ -87,8 +95,8 @@ func setupClaudeCode(p *prompter) error {
 	}
 
 	servers["peek-mcp"] = map[string]any{
-		"type": "http",
-		"url":  "http://localhost:4242/mcp",
+		"command": binPath,
+		"args":    []string{"start", "--transport=stdio"},
 	}
 	cfg["mcpServers"] = servers
 
@@ -138,6 +146,61 @@ func installHotReloadHook(path string, cfg map[string]any) error {
 		return err
 	}
 	fmt.Println("  ✓ Installed UserPromptSubmit hook.")
+	return nil
+}
+
+func setupClaudeDesktop(p *prompter) error {
+	fmt.Println("Configuring peek-mcp for Claude Desktop...")
+
+	binPath, err := resolveBinaryPath()
+	if err != nil {
+		return fmt.Errorf("cannot determine peek-mcp binary path: %w", err)
+	}
+	fmt.Printf("  Binary: %s\n", binPath)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	path := filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+	fmt.Printf("  Config: %s\n", path)
+
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	cfg := map[string]any{}
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return fmt.Errorf("%s contains invalid JSON: %w", path, err)
+		}
+	}
+
+	servers, _ := cfg["mcpServers"].(map[string]any)
+	if servers == nil {
+		servers = map[string]any{}
+	}
+	if _, exists := servers["peek-mcp"]; exists {
+		if !p.Confirm("  peek-mcp is already configured. Overwrite?", false) {
+			fmt.Println("  Skipped.")
+			return nil
+		}
+	}
+
+	servers["peek-mcp"] = map[string]any{
+		"command": binPath,
+		"args":    []string{"start", "--transport=stdio"},
+	}
+	cfg["mcpServers"] = servers
+
+	if !p.Confirm("  Write config?", true) {
+		fmt.Println("  Skipped.")
+		return nil
+	}
+	if err := writeConfig(path, cfg); err != nil {
+		return err
+	}
+	fmt.Println("  ✓ Wrote Claude Desktop config.")
 	return nil
 }
 
