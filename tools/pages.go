@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"log/slog"
+	"math"
 	"sync"
 	"unicode/utf8"
 )
@@ -52,7 +54,9 @@ func NewPageBuilder(size int) *PageBuilder {
 
 func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult, next []*sessionFullResult) {
 	// Check if everything fits in a single page
-	if len(turns+plan+diff) <= b.Size {
+	contentSize := len(turns) + len(plan) + len(diff)
+	if contentSize <= b.Size {
+		slog.Debug("PageBuilder.build: fits in a single page", "size", contentSize)
 		first = &sessionFullResult{
 			Turns: turns,
 			Plan:  plan,
@@ -60,12 +64,39 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 		}
 		return first, nil
 	}
-	// Build first page until size is reached
-	// ...
 
-	// Build next pages with Size as their max size
-	// ...
-	return first, next
+	// Check how many pages we need to build, round up
+	pageCount := math.Ceil(float64(contentSize) / float64(b.Size))
+	pages := make([]*sessionFullResult, int(pageCount))
+	slog.Debug("PageBuilder.build: building", "pageCount", pageCount, "size", b.Size)
+
+	for i := 0; i < int(pageCount); i++ {
+		pages[i] = &sessionFullResult{}
+		size := b.Size
+
+		// drain turns, plan and diff into pages by priority
+		turnChunk := utf8SafeSlice(turns, size)
+		pages[i].Turns = turnChunk
+		turns = turns[len(turnChunk):]
+		if len(turnChunk) == size {
+			continue
+		}
+		size = size - len(turnChunk)
+
+		planChunk := utf8SafeSlice(plan, size)
+		pages[i].Plan = planChunk
+		plan = plan[len(planChunk):]
+		if len(planChunk) == size {
+			continue
+		}
+		size = size - len(planChunk)
+
+		diffChunk := utf8SafeSlice(diff, size)
+		pages[i].Diff = diffChunk
+		diff = diff[len(diffChunk):]
+	}
+
+	return pages[0], pages[1:]
 }
 
 func utf8SafeSlice(s string, maxBytes int) string {

@@ -199,10 +199,10 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 			return respondWithStructured(resultPage)
 		}
 
-		resultPage.RequestId = uuid.NewString()
-		resultPage.HasMore = true
+		requestId := uuid.NewString()
+		pageStore.add(requestId, nextPages)
 
-		pageStore.add(resultPage.RequestId, nextPages)
+		resultPage.WithRequestId(requestId)
 		return respondWithStructured(resultPage)
 	}
 }
