@@ -15,7 +15,7 @@ type sessionFullResult struct {
 type sessionFullResultPage struct {
 	*sessionFullResult
 	RequestId string `json:"request_id,omitempty"`
-	HasMore   bool   `json:"has_more,omitempty"`
+	HasMore   bool   `json:"has_more"`
 }
 
 func newSessionFullResultPage(result *sessionFullResult) *sessionFullResultPage {
