@@ -30,6 +30,7 @@ var startCmd = &cobra.Command{
 	Long:              `Start the peek-mcp MCP server with the given configuration.`,
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	Run: func(cmd *cobra.Command, args []string) {
+		applyEnvFallbacks(cmd)
 		flags := cmd.Flags()
 		logLevel, _ := flags.GetString("log-level")
 		transport, _ := flags.GetString("transport")
@@ -180,6 +181,39 @@ type statusWriter struct {
 func (sw *statusWriter) WriteHeader(code int) {
 	sw.code = code
 	sw.ResponseWriter.WriteHeader(code)
+}
+
+var envFallbacks = map[string]string{
+	"transport":     "PEEK_TRANSPORT",
+	"port":          "PEEK_PORT",
+	"depth":         "PEEK_DEPTH",
+	"claude-home":   "PEEK_CLAUDE_HOME",
+	"codex-home":    "PEEK_CODEX_HOME",
+	"diff-target":   "PEEK_DIFF_TARGET",
+	"poll-interval": "PEEK_POLL_INTERVAL",
+	"poll-window":   "PEEK_POLL_WINDOW",
+	"log-level":     "PEEK_LOG_LEVEL",
+}
+
+var pathFlags = map[string]bool{
+	"claude-home": true,
+	"codex-home":  true,
+}
+
+func applyEnvFallbacks(cmd *cobra.Command) {
+	for flag, env := range envFallbacks {
+		if cmd.Flags().Changed(flag) {
+			continue
+		}
+		val, ok := os.LookupEnv(env)
+		if !ok {
+			continue
+		}
+		if pathFlags[flag] {
+			val = expandHome(val)
+		}
+		cmd.Flags().Set(flag, val)
+	}
 }
 
 func defaultHome(name string) string {
