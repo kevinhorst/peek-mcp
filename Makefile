@@ -48,7 +48,7 @@ git-release:
 
 
 notarize-darwin:
-	xcrun notarytool submit $(DIST)/peek-mcp \
+	xcrun notarytool submit $(DIST)/peek-mcp.mcpb \
 		--apple-id "$(APPLE_ID)" \
 		--password "$(APPLE_APP_PASSWORD)" \
 		--team-id "$(APPLE_TEAM_ID)" \
