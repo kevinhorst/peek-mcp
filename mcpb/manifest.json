@@ -43,9 +43,9 @@
       "type": "number",
       "title": "Ring buffer depth",
       "description": "Maximum turns kept per session.",
-      "default": 20,
+      "default": 50,
       "min": 1,
-      "max": 1000,
+      "max": 500,
       "required": true
     },
     "claude_home": {
