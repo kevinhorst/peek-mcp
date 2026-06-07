@@ -38,17 +38,63 @@ In addition to turns, peek-mcp passively watches two more sources:
 
 ## MCP Tools
 
-**`session_full(id?, n?, diff_size?)`** Returns turns, plan, and git diff for a session in one call. Prefer this over calling `session_latest`, `session_plan`, and `session_diff` separately. Omit `id` to use the most recently active session.
+**`session_full`** Returns turns, plan, and git diff for a session in one call. Prefer this over calling `session_latest`, `session_plan`, and `session_diff` separately. Responses are paginated: if `has_more` is true, call again with the returned `request_id` to get the next page.
 
-**`session_latest(n?)`** Returns the last N human/assistant turn pairs from the most recently active session. Defaults to 5. Tool calls and tool results are filtered out.
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | no | Session ID (omit for most recent session) |
+| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `n` | number | no | Number of turns to return (default 5) |
+| `diff_size` | number | no | Max bytes for diff output (0 = no limit) |
+| `agent` | string | yes | Agent: `claude` or `codex`. Defaults to the only enabled agent when just one is configured |
+| `request_id` | string | no | Pagination request ID from a previous response |
 
-**`session_list()`** Lists all known sessions with metadata: session ID, last activity timestamp, and whether a plan or diff is available.
+**`session_latest`** Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out.
 
-**`session_get(id, n?)`** Returns the last N turns from a specific session by ID.
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `n` | number | no | Number of turns to return (default 5) |
+| `agent` | string | yes | Agent: `claude` or `codex` |
 
-**`session_plan(id?)`** Returns the current plan for a session. Returns an empty response if the session has no plan. Omit `id` to use the most recently active session.
+**`session_list`** Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available.
 
-**`session_diff(id?, size?)`** Returns the pre-computed git diff for a session, run against the configured target branch and refreshed automatically on each new turn. `size` limits the response to N bytes (0 = no limit). Omit `id` to use the most recently active session.
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `agent` | string | yes | Agent: `claude` or `codex` |
+
+**`session_get`** Returns the last N turns from a specific session by ID or title.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | no | Session ID |
+| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `n` | number | no | Number of turns to return (default 5) |
+
+**`session_plan`** Returns the current plan for a session. Returns an empty response if the session has no plan.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | no | Session ID (omit for most recent session) |
+| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `agent` | string | yes | Agent: `claude` or `codex` |
+
+**`session_diff`** Returns the pre-computed git diff for a session, run against the configured target branch (default: `main`) and refreshed automatically on each new turn.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | no | Session ID (omit for most recent session) |
+| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `size` | number | no | Max bytes to return (0 = no limit) |
+| `agent` | string | yes | Agent: `claude` or `codex` |
+
+**`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | no | Session ID (omit for most recent session) |
+| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `size` | number | no | Max bytes to return (0 = no limit) |
+| `agent` | string | yes | Agent: `claude` or `codex` |
 
 ## Supported agents
 
