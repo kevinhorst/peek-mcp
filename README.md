@@ -168,8 +168,6 @@ Merge `hooks/settings.snippet.json` into your project `.claude/settings.json`:
 }
 ```
 
-A separate observer session can read the same diff via the `session_uncommitted_diff` tool.
-
 ## Installing in Claude Desktop (.mcpb)
 
 For one-click install on macOS — useful for distributing peek-mcp inside an organisation — peek-mcp ships as an [MCP Bundle](https://github.com/modelcontextprotocol/mcpb). The bundle is a self-contained `.mcpb` file with a universal (arm64 + amd64) macOS binary inside.
