@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/kevinhorst/peek-mcp/session"
@@ -14,46 +12,8 @@ import (
 )
 
 const (
-	DefaultReturnedTurns   = 5
-	MaxResponseBytesClaude = 800 * 1024 // 800KB — Claude's 1MB limit with headroom
-	MaxResponseBytesCodex  = 0          // 0 = no pagination
+	DefaultReturnedTurns = 5
 )
-
-func clientName(ctx context.Context) string {
-	s := server.ClientSessionFromContext(ctx)
-	if s == nil {
-		return ""
-	}
-
-	withInfo, ok := s.(server.SessionWithClientInfo)
-	if !ok {
-		return ""
-	}
-	name := strings.ToLower(withInfo.GetClientInfo().Name)
-	slog.Info("clientName: Resolved client name: ", name, "")
-
-	return name
-}
-
-func isClaude(ctx context.Context) bool {
-	name := clientName(ctx)
-
-	return name != "" && !strings.Contains(name, "codex")
-}
-
-func maxResponseBytes(ctx context.Context) int {
-	if isClaude(ctx) {
-		return MaxResponseBytesClaude
-	}
-	return MaxResponseBytesCodex
-}
-
-func respond(ctx context.Context, response any) (*mcp.CallToolResult, error) {
-	if isClaude(ctx) {
-		return respondWithText(response)
-	}
-	return respondWithStructured(response)
-}
 
 func Register(server *server.MCPServer, store *session.Store) {
 	pageStore := &PageStore{
@@ -196,7 +156,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 		}
 
 		// First call: resolve session and build pages
-		agent, err := resolveAgent(s, request)
+		agent, err := resolveAgentFromRequest(s, request)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -247,7 +207,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 
 func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgent(s, request)
+		agent, err := resolveAgentFromRequest(s, request)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -274,7 +234,7 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgent(s, request)
+		agent, err := resolveAgentFromRequest(s, request)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -326,7 +286,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgent(s, request)
+		agent, err := resolveAgentFromRequest(s, request)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -358,7 +318,7 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgent(s, request)
+		agent, err := resolveAgentFromRequest(s, request)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -390,7 +350,7 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 
 func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgent(s, request)
+		agent, err := resolveAgentFromRequest(s, request)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -420,47 +380,8 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	}
 }
 
-func resolveAgent(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
+func resolveAgentFromRequest(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
 	args := request.GetArguments()
 	raw, _ := args["agent"].(string)
 	return s.ResolveAgent(session.Agent(raw))
-}
-
-func intArgFromRequest(request mcp.CallToolRequest, name string) int {
-	args := request.GetArguments()
-	value, ok := args[name]
-	if !ok {
-		return 0
-	}
-
-	floatVal, ok := value.(float64)
-	if !ok {
-		return 0
-	}
-
-	return int(floatVal)
-}
-
-func respondWithText(response any) (*mcp.CallToolResult, error) {
-	data, err := json.Marshal(response)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling turns: %w", err)
-	}
-
-	return mcp.NewToolResultText(string(data)), nil
-}
-
-// respondWithStructured returns StructuredContent with a minimal text fallback.
-// mcp-go's NewToolResultJSON duplicates the full payload into both Content[0].text
-// and StructuredContent, which doubles the response size (e.g. 9MB → 19MB).
-func respondWithStructured(response any) (*mcp.CallToolResult, error) {
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			mcp.TextContent{
-				Type: "text",
-				Text: "See structuredContent for the full response.",
-			},
-		},
-		StructuredContent: response,
-	}, nil
 }
