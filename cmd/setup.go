@@ -23,7 +23,7 @@ func runSetup(_ *cobra.Command, _ []string) {
 
 	p := newPrompter()
 	choice := p.Choose("Which environment do you want to configure?", []string{
-		"Claude Code     (~/.claude/settings.json)",
+		"Claude Code     (~/.claude.json)",
 		"Claude Desktop  (claude_desktop_config.json)",
 		"Codex CLI       (~/.codex/config.toml)",
 		"All",
@@ -68,7 +68,11 @@ func setupClaudeCode(p *prompter) error {
 	}
 	fmt.Printf("  Binary: %s\n", binPath)
 
-	path := filepath.Join(defaultHome(".claude"), "settings.json")
+	home, err2 := os.UserHomeDir()
+	if err2 != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err2)
+	}
+	path := filepath.Join(home, ".claude.json")
 	fmt.Printf("  Config: %s\n", path)
 
 	// Read existing config or start fresh.
@@ -95,6 +99,7 @@ func setupClaudeCode(p *prompter) error {
 	}
 
 	servers["peek-mcp"] = map[string]any{
+		"type":    "stdio",
 		"command": binPath,
 		"args":    []string{"start", "--transport=stdio"},
 	}
@@ -108,44 +113,6 @@ func setupClaudeCode(p *prompter) error {
 		return err
 	}
 	fmt.Println("  ✓ Wrote MCP server config.")
-
-	if p.Confirm("  Install hot-reload hook? (injects live git diff into every prompt)", true) {
-		if err := installHotReloadHook(path, cfg); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func installHotReloadHook(path string, cfg map[string]any) error {
-	raw, _ := json.Marshal(cfg)
-	if strings.Contains(string(raw), "peek-diff") {
-		fmt.Println("  ✓ Hook already present.")
-		return nil
-	}
-
-	hookEntry := map[string]any{
-		"hooks": []any{
-			map[string]any{
-				"type":    "command",
-				"command": `cat "$(git rev-parse --git-path peek-diff)" 2>/dev/null`,
-			},
-		},
-	}
-
-	hooks, _ := cfg["hooks"].(map[string]any)
-	if hooks == nil {
-		hooks = map[string]any{}
-	}
-	existing, _ := hooks["UserPromptSubmit"].([]any)
-	hooks["UserPromptSubmit"] = append(existing, hookEntry)
-	cfg["hooks"] = hooks
-
-	if err := writeConfig(path, cfg); err != nil {
-		return err
-	}
-	fmt.Println("  ✓ Installed UserPromptSubmit hook.")
 	return nil
 }
 
