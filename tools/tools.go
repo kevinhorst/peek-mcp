@@ -143,7 +143,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 				return mcp.NewToolResultError(fmt.Sprintf("request_id %q not found or expired", reqId)), nil
 			}
 
-			hasMore := next == nil
+			hasMore := next != nil
 			if !hasMore {
 				pageStore.remove(reqId)
 				reqId = ""
