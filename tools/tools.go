@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DefaultReturnedTurns = 5
+	DefaultReturnedTurns = 20
 )
 
 func Register(server *server.MCPServer, store *session.Store) {
@@ -351,7 +351,6 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 }
 
 // resolveSession looks up a session by id or title from request args.
-// Returns an error if neither is provided, or the referenced session is not found.
 // Precedence: id > title.
 func resolveSession(s *session.Store, request mcp.CallToolRequest) (*session.Session, error) {
 	args := request.GetArguments()
