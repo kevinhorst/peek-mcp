@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	MaxResponseBytesClaude = 100 * 1024 // 400KB — stays under maxResultSizeChars ceiling
+	MaxResponseBytesClaude = 100 * 1024 // 100Kb - Claude Code Desktop ignored all attempts at increasing it
 	MaxResponseBytesCodex  = 0          // 0 = no pagination
 )
 
