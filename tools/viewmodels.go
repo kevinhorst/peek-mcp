@@ -24,6 +24,11 @@ func newSessionFullResultPage(result *sessionFullResult) *sessionFullResultPage 
 	}
 }
 
+func (p *sessionFullResultPage) WithRequestId(id string) {
+	p.HasMore = true
+	p.RequestId = id
+}
+
 type sessionListItem struct {
 	Id         session.Id    `json:"id"`
 	Agent      session.Agent `json:"agent"`
