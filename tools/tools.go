@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/kevinhorst/peek-mcp/session"
@@ -12,9 +14,30 @@ import (
 )
 
 const (
-	DefaultReturnedTurns = 5
-	MaxResponseBytes     = 800 * 1024 // 800KB total response budget
+	DefaultReturnedTurns   = 5
+	MaxResponseBytesClaude = 800 * 1024 // 800KB — Claude's 1MB limit with headroom
+	MaxResponseBytesCodex  = 0          // 0 = no pagination
 )
+
+func maxResponseBytes(ctx context.Context) int {
+	s := server.ClientSessionFromContext(ctx)
+	if s == nil {
+		return MaxResponseBytesClaude
+	}
+
+	withInfo, ok := s.(server.SessionWithClientInfo)
+	if !ok {
+		return MaxResponseBytesClaude
+	}
+
+	name := strings.ToLower(withInfo.GetClientInfo().Name)
+	slog.Debug("resolved MCP client", "name", name)
+
+	if strings.Contains(name, "codex") {
+		return MaxResponseBytesCodex
+	}
+	return MaxResponseBytesClaude
+}
 
 func Register(server *server.MCPServer, store *session.Store) {
 	pageStore := &PageStore{
@@ -191,7 +214,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 		diff := sess.DiffOutput
 		plan := sess.PlanContent
 
-		firstPage, nextPages := NewPageBuilder(MaxResponseBytes).build(turns, plan, diff)
+		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).build(turns, plan, diff)
 
 		resultPage := newSessionFullResultPage(firstPage)
 		if len(nextPages) == 0 {

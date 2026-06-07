@@ -67,7 +67,7 @@ func NewPageBuilder(size int) *PageBuilder {
 func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult, next []*sessionFullResult) {
 	// Check if everything fits in a single page
 	contentSize := len(turns) + len(plan) + len(diff)
-	if contentSize <= b.Size {
+	if b.Size <= 0 || contentSize <= b.Size {
 		slog.Debug("PageBuilder.build: fits in a single page", "size", contentSize)
 		first = &sessionFullResult{
 			Turns: turns,
