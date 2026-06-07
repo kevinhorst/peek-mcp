@@ -7,15 +7,21 @@ import (
 )
 
 type sessionFullResult struct {
-	Turns []*session.Turn `json:"turns,omitempty"`
-	Plan  string          `json:"plan,omitempty"`
-	Diff  string          `json:"diff,omitempty"`
+	Turns string `json:"turns,omitempty"`
+	Plan  string `json:"plan,omitempty"`
+	Diff  string `json:"diff,omitempty"`
 }
 
-type sessionFullResultPaginated struct {
-	Session   *sessionFullResult `json:"session"`
-	RequestId string             `json:"request_id,omitempty"`
-	HasMore   bool               `json:"has_more,omitempty"`
+type sessionFullResultPage struct {
+	*sessionFullResult
+	RequestId string `json:"request_id,omitempty"`
+	HasMore   bool   `json:"has_more,omitempty"`
+}
+
+func newSessionFullResultPage(result *sessionFullResult) *sessionFullResultPage {
+	return &sessionFullResultPage{
+		sessionFullResult: result,
+	}
 }
 
 type sessionListItem struct {
