@@ -1,6 +1,6 @@
 # Concept: Peek Codex Search by Title
 
-> **Status:** Draft
+> **Status:** In Review
 > **Author:** Kevin Horst
 > **Date:** 2026-07-06
 
@@ -36,14 +36,15 @@
 - Watch `~/.codex/archived_sessions/` rollouts.
 
 **Challenges:**
-- Index write semantics unknown: append-only (duplicate ids on rename) vs rewritten in place.
+- Index write semantics (verified in Codex source): name updates are appended (duplicate ids on rename, newest wins); thread deletion rewrites the whole file atomically via temp file + rename — the file inode gets replaced, so byte offsets break.
 - Duplicate titles are real (observed: "Propagate Supabase schema" four times with distinct ids).
 - Index rows may reference sessions whose rollouts were never parsed (archived/pruned).
 - Ordering: an index entry may appear before or after the rollout's first turns.
 
 **Approach:**
-- Re-read the whole index file on every fsnotify write (39 lines observed; trivially cheap), last line per id wins — correct under both append and rewrite semantics. Do **not** reuse the offset-tailing session `Watcher`; a rewrite would break offsets.
+- Re-read the whole index file on every fsnotify Write/Create (39 lines observed; trivially cheap), last line per id wins — correct under both append and rewrite semantics. Do **not** reuse the offset-tailing session `Watcher`; the atomic rewrite replaces the inode. Watch the **parent directory** with a filename filter (the `PlanWatcher` pattern) so the watch survives the temp-file + rename replacement.
 - Exact match on duplicates: most-recently-active session wins. Ambiguity is surfaced only in substring mode (candidate list).
+- When the caller passes `agent`, both exact and substring matches are filtered to that agent; without it, search spans all agents.
 - `GetByTitle` already tolerates `IdByTitle` pointing at a missing session (returns not-found); keep that.
 - Both arrival orders converge because `Store.AddTurnBySessionId` handles title-signal turns idempotently via `HasNewTitle`, and `getOrCreate` accepts title-only sessions.
 
@@ -57,10 +58,14 @@
 - Matching order: exact normalized (lowercase/trim) hash — unchanged; then case-insensitive substring over plain titles. 0 matches → error (current message); 1 → session; >1 → error listing up to 5 candidates (title, id, last_active), sorted by last_active desc.
 - Sessions created purely from an index row (title known, no turns yet) are allowed: `session_list` shows them; turn-returning tools report "No turns found".
 - No new MCP tools; only `title` parameter descriptions change.
+- Index write semantics: name updates append a new row per id (newest wins); thread deletion rewrites the file atomically via temp file + rename. Watcher watches the parent directory (Write/Create, filename filter) so the watch survives the inode replacement. (Evidence: `codex-rs/rollout/src/session_index.rs` — `append_thread_name` "Name updates are append-only; the most recent entry wins", `remove_thread_name_entries` temp+rename.)
+- `thread_name` is never present at session start: Codex writes it after the first turn (auto-named) or on manual rename; some sessions never get one. The derived-title fallback covers the first-turn gap and permanently-unnamed sessions. (Evidence: local index — one entry per id, written 3 s–3 min after rollout start; 6 of 48 rollouts have no entry.)
+- [USER] Agent scoping: when the caller passes `agent`, exact and substring matches are filtered to that agent; without it, search spans all agents. (Today's exact lookup ignores `agent` — this is a refinement; honoring an explicit arg is least surprising.)
+- Archived rollouts stay listed in the index (evidence: archived id `019f2410-…` present in the live index); their titles resolve to title-only sessions ("No turns found"). Watching `~/.codex/archived_sessions/` stays Backlog.
+- [USER] Ambiguity candidate cap stays 5 — covers the observed worst case (4 identical titles) and keeps the error string tool-friendly.
+- [USER] Title-only sessions seed `LastActive` from the index row's `updated_at`; turn timestamps take over once turns arrive. (Otherwise zero `LastActive` breaks most-recently-active duplicate resolution and candidate sorting.)
+- [USER] Index-row removal (thread deletion) is not reconciled: the watcher only adds/updates titles, so a deleted thread's title stays in memory until restart. Consistent with the session watcher, which never removes sessions; a title pointing at a missing session already returns not-found.
 
 **Open Questions:**
-1. Does Codex rewrite `session_index.jsonl` on rename/update or append a new row with the same id? (Design tolerates both; verify with a live rename.)
-2. Is `thread_name` present from session start or only after the first assistant turn completes? Determines how long the derived-title fallback is visible.
-3. Should substring matching search across both agents when the caller is a third client (e.g. Claude Desktop), or only within the resolved agent? (Proposal: only within the resolved agent.)
-4. Are `~/.codex/archived_sessions/` rollouts still listed in the index, and should Peek watch that directory too?
-5. Is 5 the right cap for the ambiguity candidate list?
+
+*(none — all resolved 2026-07-15, see Decisions)*

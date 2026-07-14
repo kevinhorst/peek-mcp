@@ -8,11 +8,13 @@
 
 1. Codex writes or updates `~/.codex/session_index.jsonl`.
 2. Backend
-   1. `cmd/start.go`: when `codexHome != ""`, start `watcher.NewCodexIndexWatcher(filepath.Join(codexHome, "session_index.jsonl"), store)` alongside the session watcher.
-   2. On startup and on each fsnotify Write/Create for that path (debounced 250 ms): read the entire file, JSON-decode line-wise into `codex.IndexEntry`; skip malformed lines with `slog.Debug`.
-   3. For each entry, last occurrence per id wins.
-   4. Emit `store.AddTurnBySessionId(entry.Id, session.AgentCodex, &session.Turn{CustomTitle: entry.ThreadName, Meta: &session.Meta{SessionId: entry.Id}})` — reuses the existing title-signal path (store updates `Session.Title` and `IdByTitle`, deleting the old hash first).
-   5. Store records `TitleSource = "index"` and registers the plain normalized title in `plainTitleById`.
+   1. `cmd/start.go`: when `codexHome != ""`, start `watcher.NewCodexIndexWatcher(codexHome, store)` alongside the session watcher.
+   2. Watch the `codexHome` **directory** (not the file path) for fsnotify Write/Create events whose name is `session_index.jsonl` — the `PlanWatcher` pattern. Codex's deletion path replaces the file atomically (temp file + rename), so a watch on the file path would die with the old inode.
+   3. On startup and on each matching event (debounced 250 ms): read the entire file, JSON-decode line-wise into `codex.IndexEntry`; skip malformed lines with `slog.Debug`.
+   4. For each entry, last occurrence per id wins.
+   5. Emit `store.AddTurnBySessionId(entry.Id, session.AgentCodex, &session.Turn{CustomTitle: entry.ThreadName, Meta: &session.Meta{SessionId: entry.Id}})` — reuses the existing title-signal path (store updates `Session.Title` and `IdByTitle`, deleting the old hash first).
+   6. Store records `TitleSource = "index"` and registers the plain normalized title in `plainTitleById`. For sessions without turns, `LastActive` is seeded from the entry's `updated_at`; turn timestamps take over once turns arrive.
+   7. Rows removed by Codex (thread deletion) are not reconciled: the watcher only adds/updates; a stale title pointing at a missing session returns not-found.
 
 ### Derived-title fallback
 
@@ -23,10 +25,10 @@
 
 ### Lookup with substring fallback
 
-1. Tool call passes `title` (any agent).
-2. Backend (`Store.GetByTitle`, extended; `resolveSession` in tools/tools.go unchanged)
-   1. Hash-exact lookup in `IdByTitle` → hit → return session.
-   2. Miss → scan `plainTitleById` for case-insensitive substring; collect matches sorted by `LastActive` desc.
+1. Tool call passes `title`, optionally with `agent`.
+2. Backend (`Store.GetByTitle`, extended; `resolveSession` in tools/tools.go passes the parsed `agent` through)
+   1. Hash-exact lookup in `IdByTitle` → hit whose agent matches the filter (or no filter) → return session.
+   2. Miss → scan `plainTitleById` for case-insensitive substring, restricted to the `agent` filter when present; collect matches sorted by `LastActive` desc.
    3. 1 match → return; >1 → error listing up to 5 candidates as `(title, id, last_active)`; 0 → current "no session matching title" error.
 
 ---
@@ -56,7 +58,7 @@
 **Internal / Not Exported:**
 - id: session id, matches rollout `session_meta` id (session.Id)
 - thread_name: Codex-maintained session title (string)
-- updated_at: last update timestamp (time.Time)
+- updated_at: last update timestamp (time.Time); seeds `LastActive` for sessions without turns
 
 ### session.Session (extended)
 
@@ -79,7 +81,7 @@
 
 No new tools. Parameter description update on the five `title`-accepting tools:
 
-> title: Session title. Exact match first (case-insensitive); falls back to substring match. For Codex, titles come from Codex's session index (thread name).
+> title: Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name).
 
 ---
 
@@ -87,8 +89,7 @@ No new tools. Parameter description update on the five `title`-accepting tools:
 
 ### Watcher
 
-- Verify index rewrite-vs-append semantics with a live session rename (concept open question 1).
-- Consider watching `~/.codex/archived_sessions/` (open question 4).
+- Consider watching `~/.codex/archived_sessions/` (backlog; archived rollouts stay listed in the index, so their titles resolve to title-only sessions meanwhile).
 
 ### Title sources
 
@@ -97,5 +98,5 @@ No new tools. Parameter description update on the five `title`-accepting tools:
 
 ### Testing
 
-- Index watcher: full re-read on rewrite, last-line-wins on duplicate ids, debounce, malformed-line skip.
-- Store: derived-vs-index precedence, substring match ordering, ambiguity error format, title-only session creation.
+- Index watcher: full re-read on rewrite, last-line-wins on duplicate ids, debounce, malformed-line skip, watch survives atomic file replacement (temp+rename).
+- Store: derived-vs-index precedence, substring match ordering, ambiguity error format, title-only session creation, agent-filtered lookup, `LastActive` seeding from `updated_at`.
