@@ -2,8 +2,10 @@
 {{if .Empty}}
 <div class="empty">No diff.</div>
 {{else}}
-{{if .Target}}<span class="label">vs {{.Target}}</span>{{end}}
-{{if .Truncated}}<span class="badge badge-dim">truncated at 256 KB</span>{{end}}
+<div class="description">
+  {{if .Target}}vs {{.Target}}{{end}}
+  {{if .Truncated}}<span class="badge badge-dim">truncated at 256 KB</span>{{end}}
+</div>
 <pre class="file-view">{{.Diff}}</pre>
 {{end}}
 </div>
