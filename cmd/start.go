@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -93,6 +93,14 @@ var startCmd = &cobra.Command{
 				err := watcher.New(session.AgentCodex, watchedDir, codex.NewParser(), store).Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("codex watcher error", "err", err)
+					os.Exit(1)
+				}
+			}()
+
+			go func() {
+				err := watcher.NewCodexIndexWatcher(codexHome, store).Run(ctx)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					slog.Error("codex index watcher error", "err", err)
 					os.Exit(1)
 				}
 			}()
