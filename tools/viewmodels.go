@@ -37,4 +37,5 @@ type sessionListItem struct {
 	LastActive  time.Time           `json:"last_active"`
 	HasPlan     bool                `json:"has_plan"`
 	HasDiff     bool                `json:"has_diff"`
+	Meta        session.Meta        `json:"meta"`
 }

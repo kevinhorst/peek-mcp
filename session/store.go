@@ -76,30 +76,12 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	if turn.PlanFilePath != "" {
 		slog.Debug("Updating plan", "session", id)
 		session.PlanFilePath = turn.PlanFilePath
+		s.updatePlanContent(session, turn)
 
-		if turn.PlanContent != "" {
-			session.PlanContent = turn.PlanContent
+		// Codex plan turns are also chat turns; Claude plan signals carry no text
+		if turn.Text == "" {
 			return
 		}
-
-		if content, err := os.ReadFile(turn.PlanFilePath); err == nil {
-			session.PlanContent = string(content)
-			return
-		}
-
-		// Worktree fallback: Claude Code reports plan path as ~/.claude/plans/<name>
-		// but worktree sessions write to <cwd>/.claude/plans/<name>.
-		if cwd := turn.Meta.CWD; cwd != "" {
-			alt := filepath.Join(cwd, ".claude", "plans", filepath.Base(turn.PlanFilePath))
-			if content, err := os.ReadFile(alt); err == nil {
-				session.PlanFilePath = alt
-				session.PlanContent = string(content)
-				return
-			}
-		}
-
-		slog.Warn("Failed to read plan file", "path", turn.PlanFilePath)
-		return
 	}
 
 	isUntitled := session.Title == ""
@@ -253,6 +235,31 @@ func (s *Store) setTitle(session *Session, title string, source TitleSource) {
 	session.Title = title
 	session.TitleSource = source
 	s.plainTitleById[session.Meta.SessionId] = strings.ToLower(strings.TrimSpace(title))
+}
+
+func (s *Store) updatePlanContent(session *Session, turn *Turn) {
+	if turn.PlanContent != "" {
+		session.PlanContent = turn.PlanContent
+		return
+	}
+
+	if content, err := os.ReadFile(turn.PlanFilePath); err == nil {
+		session.PlanContent = string(content)
+		return
+	}
+
+	// Worktree fallback: Claude Code reports plan path as ~/.claude/plans/<name>
+	// but worktree sessions write to <cwd>/.claude/plans/<name>.
+	if cwd := turn.Meta.CWD; cwd != "" {
+		alt := filepath.Join(cwd, ".claude", "plans", filepath.Base(turn.PlanFilePath))
+		if content, err := os.ReadFile(alt); err == nil {
+			session.PlanFilePath = alt
+			session.PlanContent = string(content)
+			return
+		}
+	}
+
+	slog.Warn("Failed to read plan file", "path", turn.PlanFilePath)
 }
 
 func (s *Store) sortByLastActiveDesc(agents ...Agent) []*Session {

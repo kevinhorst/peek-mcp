@@ -13,9 +13,17 @@ const (
 	SessionDir = "sessions"
 	IndexFile  = "session_index.jsonl"
 
+	// PlanFilePathProposedPlan marks Codex plans, which have no backing file.
+	// The store never reads it: PlanContent is always set alongside.
+	PlanFilePathProposedPlan = "codex:proposed_plan"
+
 	codexMessageType    = "message"
 	codexInputTextType  = "input_text"
 	codexOutputTextType = "output_text"
+
+	proposedPlanOpenTag  = "<proposed_plan>"
+	proposedPlanCloseTag = "</proposed_plan>"
+	maxPlanBytes         = 32 * 1024
 )
 
 type Parser struct {
@@ -63,11 +71,29 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *sessi
 		return nil
 	}
 
+	// Sub-agent rollouts are separate helper sessions — the Codex analog of
+	// Claude's isSidechain filter. sessionId stays unset, so every later
+	// line of this file is ignored (parser state is per file, see watcher).
+	if meta.Source.IsSubagent() {
+		slog.Debug("handleSessionMeta: Dropping sub-agent rollout", "id", meta.Id)
+		return nil
+	}
+
 	p.sessionId = meta.Id
 
 	gitBranch := ""
+	origin := &session.Origin{
+		AgentNickname:  meta.Source.AgentNickname,
+		CliVersion:     meta.CLIVersion,
+		ForkedFromId:   meta.ForkedFromId,
+		Originator:     meta.Originator,
+		ParentThreadId: meta.Source.ParentThreadId,
+		SourceKind:     meta.Source.Kind,
+	}
 	if meta.Git != nil {
-		gitBranch = meta.Git.CommitHash
+		gitBranch = meta.Git.Branch
+		origin.CommitHash = meta.Git.CommitHash
+		origin.RepositoryUrl = meta.Git.RepositoryURL
 	}
 
 	return &session.Turn{
@@ -77,6 +103,7 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *sessi
 			SessionId: meta.Id,
 			CWD:       meta.CWD,
 			GitBranch: gitBranch,
+			Origin:    origin,
 		},
 	}
 }
@@ -177,7 +204,7 @@ func (p *Parser) handleAssistantMessage(item *ResponseItem, ts time.Time) *sessi
 		return nil
 	}
 
-	return &session.Turn{
+	turn := &session.Turn{
 		Role:      session.RoleAssistant,
 		Text:      text,
 		Timestamp: ts,
@@ -186,6 +213,13 @@ func (p *Parser) handleAssistantMessage(item *ResponseItem, ts time.Time) *sessi
 			Model:     p.model,
 		},
 	}
+
+	if plan := extractProposedPlan(text); plan != "" {
+		turn.PlanContent = plan
+		turn.PlanFilePath = PlanFilePathProposedPlan
+	}
+
+	return turn
 }
 
 func (p *Parser) extractText(blocks []ContentBlock, targetType string) string {
@@ -199,6 +233,38 @@ func (p *Parser) extractText(blocks []ContentBlock, targetType string) string {
 		}
 	}
 	return builder.String()
+}
+
+// extractProposedPlan returns the content of the last complete
+// <proposed_plan> block; tags sit on their own lines per the plan-mode spec.
+func extractProposedPlan(text string) string {
+	lines := strings.Split(text, "\n")
+
+	start := -1
+	end := -1
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == proposedPlanOpenTag {
+			start = index
+			end = -1
+			continue
+		}
+
+		isUnclosedBlock := start >= 0 && end < 0
+		if trimmed == proposedPlanCloseTag && isUnclosedBlock {
+			end = index
+		}
+	}
+	if start < 0 || end < 0 {
+		return ""
+	}
+
+	plan := strings.Join(lines[start+1:end], "\n")
+	if len(plan) > maxPlanBytes {
+		slog.Warn("extractProposedPlan: Plan exceeds size cap, truncating", "bytes", len(plan))
+		plan = plan[:maxPlanBytes]
+	}
+	return plan
 }
 
 func convertUsage(codexUsage *TokenUsage) session.Usage {

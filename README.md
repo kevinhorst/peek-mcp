@@ -55,7 +55,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `n` | number | no | Number of turns to return (default 5) |
 | `agent` | string | yes | Agent: `claude` or `codex` |
 
-**`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, and whether a plan or diff is available.
+**`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, whether a plan or diff is available, and session metadata (cwd, git branch, model, origin).
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -70,7 +70,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
 | `n` | number | no | Number of turns to return (default 5) |
 
-**`session_plan`** Returns the current plan for a session. Returns an empty response if the session has no plan.
+**`session_plan`** Returns the current plan for a session. For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block. Returns an empty response if the session has no plan.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -100,6 +100,20 @@ In addition to turns, peek-mcp passively watches two more sources:
 |-------|-------------|
 | Claude Code | `~/.claude/projects/<encoded-cwd>/*.jsonl` |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
+
+### Agent parity
+
+| Capability | Claude Code | Codex |
+|---|---|---|
+| Title | explicit custom titles | not yet (codex_title_search concept) |
+| Plan | plan-mode plan file (watched live) | latest `proposed_plan` block |
+| Git metadata | branch per entry | branch, commit hash, repo URL from `session_meta` |
+| Client metadata | CLI version | originator, CLI version, source, fork lineage |
+| Model | per assistant message | per turn context |
+| Token usage | summed per message | not yet (usage_reporting concept) |
+| Tool calls | filtered out | filtered out |
+| Sub-agent sessions | hidden (sidechains) | hidden (sub-agent rollouts) |
+| Pagination | by client capability | by client capability |
 
 ## Installation
 

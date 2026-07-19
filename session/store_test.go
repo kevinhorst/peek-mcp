@@ -62,6 +62,43 @@ func TestGetOrCreate_Existing(t *testing.T) {
 	assert.Same(t, s1, s2)
 }
 
+func TestAddTurnBySessionId_PlanSentinel(t *testing.T) {
+	s := NewStore(10)
+	now := time.Now()
+
+	// sentinel path + PlanContent: content stored, path never read as a file
+	s.AddTurnBySessionId("s3", AgentCodex, &Turn{
+		Role:         RoleAssistant,
+		Text:         "reasoning\n<proposed_plan>\n# Plan\n</proposed_plan>",
+		Timestamp:    now,
+		PlanFilePath: "codex:proposed_plan",
+		PlanContent:  "# Plan",
+		Meta:         &Meta{SessionId: "s3"},
+	})
+
+	sess, ok := s.GetById("s3")
+	assert.True(t, ok)
+	assert.Equal(t, "# Plan", sess.PlanContent)
+	assert.Equal(t, "codex:proposed_plan", sess.PlanFilePath)
+
+	// plan turn with text also lands as a chat turn
+	turns := sess.Turns(10)
+	assert.Len(t, turns, 1)
+	assert.Contains(t, turns[0].Text, "# Plan")
+
+	// plan turn without text (Claude shape) is not a chat turn
+	s.AddTurnBySessionId("s4", AgentClaude, &Turn{
+		PlanFilePath: "codex:proposed_plan",
+		PlanContent:  "# Other plan",
+		Meta:         &Meta{SessionId: "s4"},
+	})
+
+	sess, ok = s.GetById("s4")
+	assert.True(t, ok)
+	assert.Equal(t, "# Other plan", sess.PlanContent)
+	assert.Empty(t, sess.Turns(10))
+}
+
 func TestGetById(t *testing.T) {
 	type testCase struct {
 		_id         string
