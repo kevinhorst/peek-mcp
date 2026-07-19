@@ -147,6 +147,8 @@ peek-mcp start --port 4242 --depth 20
 | `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
 | `--poll-window` | `1h` | Only poll repos whose session was active within this window |
+| `--control-port` | `0` | Control server port (dashboard + JSON API + SSE); `0` disables. Suggested: `4243` |
+| `--control-token` | — | Optional bearer token protecting the control server |
 
 ### Environment variables
 
@@ -162,7 +164,25 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_DIFF_TARGET` | `--diff-target` |
 | `PEEK_POLL_INTERVAL` | `--poll-interval` |
 | `PEEK_POLL_WINDOW` | `--poll-window` |
+| `PEEK_CONTROL_PORT` | `--control-port` |
+| `PEEK_CONTROL_TOKEN` | `--control-token` |
 | `PEEK_LOG_LEVEL` | `--log-level` |
+
+## Control server (dashboard + JSON API)
+
+```bash
+peek-mcp start --control-port 4243
+```
+
+Serves a live dashboard on `http://127.0.0.1:4243/` in both transports — session list, turns, plan, and diffs update as agents work. The same data is scriptable as JSON:
+
+```bash
+curl -s http://127.0.0.1:4243/api/sessions | jq
+curl -s "http://127.0.0.1:4243/api/sessions/<id>/diff?size=0" | jq -r .diff
+curl -N http://127.0.0.1:4243/api/events
+```
+
+The server is read-only, binds to loopback only, rejects non-local `Host` headers, and sends no CORS headers. With `--control-token <t>`, requests need `Authorization: Bearer <t>` — or open `http://127.0.0.1:4243/?token=<t>` once in the browser to set a session cookie.
 
 ## Connecting to Claude Chat
 
