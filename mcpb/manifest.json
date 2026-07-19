@@ -26,7 +26,8 @@
         "--depth=${user_config.depth}",
         "--claude-home=${user_config.claude_home}",
         "--codex-home=${user_config.codex_home}",
-        "--diff-target=${user_config.diff_target}"
+        "--diff-target=${user_config.diff_target}",
+        "--control-port=${user_config.control_port}"
       ],
       "env": {
         "MAX_MCP_OUTPUT_TOKENS": "125000"
@@ -70,6 +71,15 @@
       "title": "Diff target",
       "description": "Override the branch to diff against for session_diff.",
       "default": "main",
+      "required": false
+    },
+    "control_port": {
+      "type": "number",
+      "title": "Control dashboard port",
+      "description": "Local dashboard + JSON API port (0 disables).",
+      "default": 4243,
+      "min": 0,
+      "max": 65535,
       "required": false
     }
   },
