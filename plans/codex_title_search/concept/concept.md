@@ -1,6 +1,6 @@
 # Concept: Peek Codex Search by Title
 
-> **Status:** In Review
+> **Status:** Approved
 > **Author:** Kevin Horst
 > **Date:** 2026-07-06
 
