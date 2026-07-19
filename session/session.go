@@ -6,8 +6,9 @@ import (
 )
 
 type (
-	Id    string
-	Agent string
+	Id          string
+	Agent       string
+	TitleSource string
 )
 
 const (
@@ -15,19 +16,26 @@ const (
 	AgentCodex  Agent = "codex"
 )
 
+const (
+	TitleSourceCustom  TitleSource = "custom"
+	TitleSourceDerived TitleSource = "derived"
+	TitleSourceIndex   TitleSource = "index"
+)
+
 type Session struct {
-	Meta            Meta      `json:"meta"`
-	Agent           Agent     `json:"agent"`
-	Title           string    `json:"title,omitempty"`
-	LastActive      time.Time `json:"last_active"`
-	TotalUsage      Usage     `json:"total_usage"`
-	FilePath        string    `json:"-"`
-	PlanFilePath    string    `json:"-"`
-	PlanContent     string    `json:"-"`
-	DiffOutput      string    `json:"-"`
-	DiffTarget      string    `json:"-"`
-	UncommittedDiff string    `json:"-"` // git diff HEAD, refreshed by the poller
-	TurnActive      *Turn     `json:"-"`
+	Meta            Meta        `json:"meta"`
+	Agent           Agent       `json:"agent"`
+	Title           string      `json:"title,omitempty"`
+	TitleSource     TitleSource `json:"title_source,omitempty"`
+	LastActive      time.Time   `json:"last_active"`
+	TotalUsage      Usage       `json:"total_usage"`
+	FilePath        string      `json:"-"`
+	PlanFilePath    string      `json:"-"`
+	PlanContent     string      `json:"-"`
+	DiffOutput      string      `json:"-"`
+	DiffTarget      string      `json:"-"`
+	UncommittedDiff string      `json:"-"` // git diff HEAD, refreshed by the poller
+	TurnActive      *Turn       `json:"-"`
 	TurnsFinished   *TurnBuffer
 }
 
@@ -64,8 +72,12 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 
 	s.TurnActive = nextTurn
 }
-func (s *Session) HasNewTitle(title string) bool {
+func (s *Session) HasNewTitle(title string, source TitleSource) bool {
 	if title == "" {
+		return false
+	}
+
+	if titleSourceRank(source) < titleSourceRank(s.TitleSource) {
 		return false
 	}
 
@@ -107,4 +119,16 @@ func (s *Session) Validate() error {
 	}
 
 	return nil
+}
+
+func titleSourceRank(source TitleSource) int {
+	switch source {
+	case TitleSourceCustom:
+		return 2
+	case TitleSourceIndex:
+		return 1
+	case TitleSourceDerived:
+		return 0
+	}
+	return 0
 }
