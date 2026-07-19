@@ -14,6 +14,63 @@ func provideCompleteSessionMeta() *SessionMeta {
 	}
 }
 
+func TestSource_UnmarshalJSON(t *testing.T) {
+	type testCase struct {
+		_expected Source
+		_id       string
+
+		data string
+	}
+
+	tests := make([]*testCase, 0)
+
+	// string-source
+	test := &testCase{
+		_id:       "string-source",
+		_expected: Source{Kind: "vscode"},
+		data:      `"vscode"`,
+	}
+	tests = append(tests, test)
+
+	// subagent-object
+	test = &testCase{
+		_id: "subagent-object",
+		_expected: Source{
+			AgentNickname:  "Hume",
+			Kind:           SourceKindSubagent,
+			ParentThreadId: "sess-parent",
+		},
+		data: `{"subagent":{"thread_spawn":{"parent_thread_id":"sess-parent","agent_nickname":"Hume"}}}`,
+	}
+	tests = append(tests, test)
+
+	// malformed-object
+	test = &testCase{
+		_id:       "malformed-object",
+		_expected: Source{Kind: SourceKindUnknown},
+		data:      `{"something":"else"}`,
+	}
+	tests = append(tests, test)
+
+	// non-string-non-object
+	test = &testCase{
+		_id:       "non-string-non-object",
+		_expected: Source{Kind: SourceKindUnknown},
+		data:      `42`,
+	}
+	tests = append(tests, test)
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			var source Source
+			err := source.UnmarshalJSON([]byte(test.data))
+			assert.NoError(t, err)
+			assert.Equal(t, test._expected, source)
+		})
+	}
+}
+
 func TestSessionMeta_Validate(t *testing.T) {
 	type testCase struct {
 		_id         string
