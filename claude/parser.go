@@ -177,6 +177,7 @@ func (p *Parser) handleCustomTitle(entry *Entry) *session.Turn {
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 		},
+		TitleSource: session.TitleSourceCustom,
 	}
 }
 
