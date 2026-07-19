@@ -1,0 +1,26 @@
+{{template "head" .}}
+{{template "nav" .}}
+<h1>{{.Title}}</h1>
+<div class="description">
+  <span class="badge">{{.Summary.Agent}}</span>
+  {{if .Summary.CWD}}{{baseName .Summary.CWD}}{{if .Summary.GitBranch}} @ {{.Summary.GitBranch}}{{end}}{{end}}
+  {{if .Summary.Model}}· {{.Summary.Model}}{{end}}
+  · {{ts .Summary.LastActive}}
+</div>
+<h2>Turns</h2>
+<div hx-get="/fragments/sessions/{{.Summary.Id}}/turns" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+  <div class="empty">Loading…</div>
+</div>
+<h2>Plan</h2>
+<div hx-get="/fragments/sessions/{{.Summary.Id}}/plan" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+  <div class="empty">Loading…</div>
+</div>
+<h2>Diff</h2>
+<div hx-get="/fragments/sessions/{{.Summary.Id}}/diff" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+  <div class="empty">Loading…</div>
+</div>
+<h2>Uncommitted diff</h2>
+<div hx-get="/fragments/sessions/{{.Summary.Id}}/uncommitted-diff" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+  <div class="empty">Loading…</div>
+</div>
+{{template "foot" .}}

@@ -1,0 +1,24 @@
+<div hx-get="/fragments/sessions" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Sessions}}
+<table>
+  <thead><tr><th>Agent</th><th>Session</th><th>Last active</th><th>Repo</th><th>Artifacts</th></tr></thead>
+  <tbody>
+  {{range .Sessions}}
+  <tr>
+    <td><span class="badge">{{.Agent}}</span></td>
+    <td><a href="/sessions/{{.Id}}">{{if .Title}}{{.Title}}{{else}}{{.Id}}{{end}}</a></td>
+    <td>{{ts .LastActive}}</td>
+    <td>{{if .CWD}}{{baseName .CWD}}{{if .GitBranch}} @ {{.GitBranch}}{{end}}{{end}}</td>
+    <td>
+      {{if .HasPlan}}<span class="badge badge-ok">plan</span>{{end}}
+      {{if .HasDiff}}<span class="badge badge-ok">diff</span>{{end}}
+      {{if .HasUncommittedDiff}}<span class="badge badge-action">uncommitted</span>{{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty">No sessions yet — start a Claude Code or Codex session.</div>
+{{end}}
+</div>

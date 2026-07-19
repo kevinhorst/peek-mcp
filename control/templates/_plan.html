@@ -1,0 +1,7 @@
+<div hx-get="/fragments/sessions/{{.Id}}/plan" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Empty}}
+<div class="empty">No plan.</div>
+{{else}}
+<div class="md-body">{{.PlanHTML}}</div>
+{{end}}
+</div>

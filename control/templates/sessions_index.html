@@ -1,0 +1,7 @@
+{{template "head" .}}
+{{template "nav" .}}
+<h1>Sessions</h1>
+<div hx-get="/fragments/sessions" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+  <div class="empty">Loading…</div>
+</div>
+{{template "foot" .}}

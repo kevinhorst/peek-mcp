@@ -1,0 +1,38 @@
+{{define "head"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<script src="/assets/htmx.min.js"></script>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div id="error-banner" class="error-banner"></div>
+<script>
+  document.body.addEventListener('htmx:responseError', function (evt) {
+    var banner = document.getElementById('error-banner');
+    banner.textContent = evt.detail.xhr.responseText;
+    banner.style.display = 'block';
+  });
+  document.body.addEventListener('htmx:afterSwap', function () {
+    document.getElementById('error-banner').style.display = 'none';
+  });
+  var source = new EventSource('/api/events');
+  ['session_created', 'turn_added', 'plan_updated', 'diff_updated', 'uncommitted_diff_updated'].forEach(function (type) {
+    source.addEventListener(type, function () { htmx.trigger(document.body, 'peek-refresh'); });
+  });
+</script>
+{{end}}
+
+{{define "nav"}}
+<nav>
+  <a href="/" {{if eq .Page "sessions"}}class="active"{{end}}>Sessions</a>
+</nav>
+{{end}}
+
+{{define "foot"}}
+</body>
+</html>
+{{end}}

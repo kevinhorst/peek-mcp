@@ -1,0 +1,9 @@
+<div hx-get="/fragments/sessions/{{.Id}}/{{.Kind}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Empty}}
+<div class="empty">No diff.</div>
+{{else}}
+{{if .Target}}<span class="label">vs {{.Target}}</span>{{end}}
+{{if .Truncated}}<span class="badge badge-dim">truncated at 256 KB</span>{{end}}
+<pre class="file-view">{{.Diff}}</pre>
+{{end}}
+</div>

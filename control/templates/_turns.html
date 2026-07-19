@@ -1,0 +1,13 @@
+<div hx-get="/fragments/sessions/{{.Id}}/turns" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Turns}}
+{{range .Turns}}
+<div class="card">
+  <span class="badge {{if eq (printf "%s" .Role) "user"}}badge-action{{else}}badge-ok{{end}}">{{.Role}}</span>
+  <span class="label">{{ts .Timestamp}}</span>
+  <pre>{{.Text}}</pre>
+</div>
+{{end}}
+{{else}}
+<div class="empty">No finished turns yet.</div>
+{{end}}
+</div>
