@@ -39,7 +39,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithNumber("n",
-				mcp.Description("Number of turns to return (default 5)"),
+				mcp.Description("Number of turns to return (default 20)"),
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
@@ -54,7 +54,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 	sessionLatest := mcp.NewTool("session_latest",
 		mcp.WithDescription("Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out."),
 		mcp.WithNumber("n",
-			mcp.Description("Number of turns to return (default 5)"),
+			mcp.Description("Number of turns to return (default 20)"),
 		),
 		mcp.WithString("agent",
 			mcp.Required(),
@@ -86,7 +86,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.Description("Agent: \"claude\" or \"codex\". Scopes title matching when provided."),
 		),
 		mcp.WithNumber("n",
-			mcp.Description("Number of turns to return (default 5)"),
+			mcp.Description("Number of turns to return (default 20)"),
 		),
 	)
 	sessionGet.Meta = withMaxResultSize()
