@@ -105,12 +105,12 @@ In addition to turns, peek-mcp passively watches two more sources:
 
 | Capability | Claude Code | Codex |
 |---|---|---|
-| Title | explicit custom titles | not yet (codex_title_search concept) |
+| Title | explicit custom titles | session index thread names |
 | Plan | plan-mode plan file (watched live) | latest `proposed_plan` block |
 | Git metadata | branch per entry | branch, commit hash, repo URL from `session_meta` |
 | Client metadata | CLI version | originator, CLI version, source, fork lineage |
 | Model | per assistant message | per turn context |
-| Token usage | summed per message | not yet (usage_reporting concept) |
+| Token usage | summed per message | cumulative snapshots parsed; accurate totals pending (usage_reporting concept) |
 | Tool calls | filtered out | filtered out |
 | Sub-agent sessions | hidden (sidechains) | hidden (sub-agent rollouts) |
 | Pagination | by client capability | by client capability |
