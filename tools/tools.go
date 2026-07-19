@@ -36,7 +36,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
 			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithNumber("n",
 				mcp.Description("Number of turns to return (default 5)"),
@@ -80,7 +80,10 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.Description("Session ID"),
 		),
 		mcp.WithString("title",
-			mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+			mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
+		),
+		mcp.WithString("agent",
+			mcp.Description("Agent: \"claude\" or \"codex\". Scopes title matching when provided."),
 		),
 		mcp.WithNumber("n",
 			mcp.Description("Number of turns to return (default 5)"),
@@ -96,7 +99,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Session ID (optional, defaults to the most recently active session)"),
 			),
 			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
@@ -112,7 +115,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
 			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
@@ -128,7 +131,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
 			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
@@ -248,12 +251,13 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 		items := make([]sessionListItem, len(sessions))
 		for i, sess := range sessions {
 			items[i] = sessionListItem{
-				Id:         sess.Meta.SessionId,
-				Agent:      sess.Agent,
-				Title:      sess.Title,
-				LastActive: sess.LastActive,
-				HasPlan:    sess.PlanContent != "" || sess.PlanFilePath != "",
-				HasDiff:    sess.DiffOutput != "",
+				Id:          sess.Meta.SessionId,
+				Agent:       sess.Agent,
+				Title:       sess.Title,
+				TitleSource: sess.TitleSource,
+				LastActive:  sess.LastActive,
+				HasPlan:     sess.PlanContent != "" || sess.PlanFilePath != "",
+				HasDiff:     sess.DiffOutput != "",
 			}
 		}
 
@@ -367,14 +371,23 @@ func resolveSession(s *session.Store, request mcp.CallToolRequest) (*session.Ses
 	}
 
 	if title, ok := args["title"].(string); ok && title != "" {
-		sess, found := s.GetByTitle(title)
-		if !found {
-			return nil, fmt.Errorf("no session matching title %q", title)
+		agent, err := resolveAgentFilter(s, request)
+		if err != nil {
+			return nil, err
 		}
-		return sess, nil
+		return s.GetByTitle(title, agent)
 	}
 
 	return nil, errSessionSelectorMissing
+}
+
+func resolveAgentFilter(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
+	raw, _ := request.GetArguments()["agent"].(string)
+	if raw == "" {
+		return "", nil
+	}
+
+	return s.ResolveAgent(session.Agent(raw))
 }
 
 func resolveAgentFromRequest(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
