@@ -1663,3 +1663,4 @@ Not tested (approval requested):
 |---|---|---|
 | — | initial | plan created |
 | 2026-07-19 | Q: mcpb exposure (Q1) | D13 resolved [USER]: expose `control_port` in `user_config`, default 4243; §17 finalized |
+| 2026-07-19 | adjust: unstyled dashboard | §13 templates reworked to the configserver card idiom — the vendored style.css styles no bare `table`/`a`/`pre`; session list uses `.card`+`.label`/`.meta` rows, turns use `.card-column`+`.snippet`, diff header uses `.description` |
