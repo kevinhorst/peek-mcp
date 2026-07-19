@@ -11,11 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
 type DiffWatcher struct {
 	store    *session.Store
+	broker   *events.Broker
 	target   string
 	interval time.Duration
 	window   time.Duration
@@ -24,9 +26,10 @@ type DiffWatcher struct {
 	lastDiff sync.Map // gitDir -> string; last written uncommitted diff, to skip no-op writes
 }
 
-func NewDiffWatcher(store *session.Store, target string, interval, window time.Duration) *DiffWatcher {
+func NewDiffWatcher(store *session.Store, broker *events.Broker, target string, interval, window time.Duration) *DiffWatcher {
 	return &DiffWatcher{
 		store:    store,
+		broker:   broker,
 		target:   target,
 		interval: interval,
 		window:   window,
@@ -39,13 +42,19 @@ func (w *DiffWatcher) Run(ctx context.Context) error {
 	}
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
+	ch, cancel := w.broker.Subscribe()
+	defer cancel()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case id := <-w.store.TurnAdded:
+		case ev := <-ch:
+			if ev.Type != events.TypeTurnAdded {
+				continue
+			}
+			id := session.Id(ev.SessionId)
 			sess, ok := w.store.GetById(id)
 			if !ok || sess.Meta.CWD == "" {
 				continue
