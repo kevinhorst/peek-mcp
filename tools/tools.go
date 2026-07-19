@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -10,6 +11,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
+
+var errSessionSelectorMissing = errors.New("id or title parameter is required")
 
 const (
 	DefaultReturnedTurns = 20
@@ -162,6 +165,9 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 		// First call: resolve session and build pages
 		sess, err := resolveSession(s, request)
 		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			agent, agentErr := resolveAgentFromRequest(s, request)
 			if agentErr != nil {
 				return mcp.NewToolResultError(agentErr.Error()), nil
@@ -281,6 +287,9 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			agent, agentErr := resolveAgentFromRequest(s, request)
 			if agentErr != nil {
 				return mcp.NewToolResultError(agentErr.Error()), nil
@@ -304,6 +313,9 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			agent, agentErr := resolveAgentFromRequest(s, request)
 			if agentErr != nil {
 				return mcp.NewToolResultError(agentErr.Error()), nil
@@ -323,6 +335,9 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			agent, agentErr := resolveAgentFromRequest(s, request)
 			if agentErr != nil {
 				return mcp.NewToolResultError(agentErr.Error()), nil
@@ -359,11 +374,12 @@ func resolveSession(s *session.Store, request mcp.CallToolRequest) (*session.Ses
 		return sess, nil
 	}
 
-	return nil, fmt.Errorf("id or title parameter is required")
+	return nil, errSessionSelectorMissing
 }
 
 func resolveAgentFromRequest(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
 	args := request.GetArguments()
 	raw, _ := args["agent"].(string)
+
 	return s.ResolveAgent(session.Agent(raw))
 }
