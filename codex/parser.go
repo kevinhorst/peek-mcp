@@ -11,6 +11,7 @@ import (
 
 const (
 	SessionDir = "sessions"
+	IndexFile  = "session_index.jsonl"
 
 	codexMessageType    = "message"
 	codexInputTextType  = "input_text"
