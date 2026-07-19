@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -70,7 +70,8 @@ var startCmd = &cobra.Command{
 		if claudeHome != "" {
 			go func() {
 				watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
-				err := watcher.New(session.AgentClaude, watchedDir, claude.NewParser(), store).Run(ctx)
+				newParser := func() watcher.Parser { return claude.NewParser() }
+				err := watcher.New(session.AgentClaude, watchedDir, newParser, store).Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("claude watcher error", "err", err)
 					os.Exit(1)
@@ -90,7 +91,8 @@ var startCmd = &cobra.Command{
 		if codexHome != "" {
 			go func() {
 				watchedDir := filepath.Join(codexHome, codex.SessionDir)
-				err := watcher.New(session.AgentCodex, watchedDir, codex.NewParser(), store).Run(ctx)
+				newParser := func() watcher.Parser { return codex.NewParser() }
+				err := watcher.New(session.AgentCodex, watchedDir, newParser, store).Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("codex watcher error", "err", err)
 					os.Exit(1)
