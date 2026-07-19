@@ -44,7 +44,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `n` | number | no | Number of turns to return (default 5) |
+| `n` | number | no | Number of turns to return (default 20) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `request_id` | string | no | Pagination request ID from a previous response |
 
@@ -52,7 +52,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `n` | number | no | Number of turns to return (default 5) |
+| `n` | number | no | Number of turns to return (default 20) |
 | `agent` | string | yes | Agent: `claude` or `codex` |
 
 **`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, whether a plan or diff is available, and session metadata (cwd, git branch, model, origin).
@@ -68,7 +68,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `id` | string | no | Session ID |
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
-| `n` | number | no | Number of turns to return (default 5) |
+| `n` | number | no | Number of turns to return (default 20) |
 
 **`session_plan`** Returns the current plan for a session. For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block. Returns an empty response if the session has no plan.
 
