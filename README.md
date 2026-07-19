@@ -43,7 +43,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `n` | number | no | Number of turns to return (default 5) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `request_id` | string | no | Pagination request ID from a previous response |
@@ -55,7 +55,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `n` | number | no | Number of turns to return (default 5) |
 | `agent` | string | yes | Agent: `claude` or `codex` |
 
-**`session_list`** Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available.
+**`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, and whether a plan or diff is available.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -66,7 +66,8 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
+| `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
 | `n` | number | no | Number of turns to return (default 5) |
 
 **`session_plan`** Returns the current plan for a session. Returns an empty response if the session has no plan.
@@ -74,7 +75,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 **`session_diff`** Returns the pre-computed git diff for a session, run against the configured target branch (default: `main`) and refreshed automatically on each new turn.
@@ -82,7 +83,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 **`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
@@ -90,7 +91,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 ## Supported agents
