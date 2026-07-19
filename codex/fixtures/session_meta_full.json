@@ -5,8 +5,12 @@
 		"id": "sess-codex-1",
 		"cwd": "/home/user/project",
 		"cli_version": "1.0.0",
+		"originator": "Codex Desktop",
+		"source": "vscode",
+		"forked_from_id": "sess-codex-0",
 		"git": {
 			"commit_hash": "abc123",
+			"branch": "develop",
 			"repository_url": "https://github.com/user/repo"
 		}
 	}

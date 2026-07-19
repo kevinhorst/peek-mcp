@@ -15,7 +15,7 @@ type Turn struct {
 	Usage        *Usage    `json:"usage,omitempty"`      // optional
 	PlanFilePath string    `json:"-"`                    // plan signal only, not serialized
 	PlanContent  string    `json:"-"`                    // inline plan content from attachment
-	CustomTitle      string    `json:"-"`                    // title signal only, not serialized
+	CustomTitle  string    `json:"-"`                    // title signal only, not serialized
 }
 
 func (t *Turn) Validate() error {

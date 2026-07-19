@@ -1,0 +1,23 @@
+{
+	"timestamp": "2026-07-11T20:09:07.000Z",
+	"type": "session_meta",
+	"payload": {
+		"id": "sess-codex-sub",
+		"cwd": "/home/user/project",
+		"cli_version": "1.0.0",
+		"originator": "Codex Desktop",
+		"forked_from_id": "sess-codex-parent",
+		"source": {
+			"subagent": {
+				"thread_spawn": {
+					"parent_thread_id": "sess-codex-parent",
+					"depth": 1,
+					"agent_path": "/root/repo_grounding",
+					"agent_nickname": "Hume",
+					"agent_role": null
+				}
+			}
+		},
+		"git": null
+	}
+}

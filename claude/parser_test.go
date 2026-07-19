@@ -230,6 +230,28 @@ func TestClaude_CustomTitle_Empty(t *testing.T) {
 	assert.Nil(t, turn)
 }
 
+func TestClaude_VersionOrigin(t *testing.T) {
+	p := NewParser()
+
+	// entry without version → no Origin
+	data, err := os.ReadFile("fixtures/user_prompt.json")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+	turn := p.ParseLine(data)
+
+	assert.NotNil(t, turn)
+	assert.Nil(t, turn.Meta.Origin)
+
+	// entry with version → Origin.CliVersion
+	line := []byte(`{"type":"user","promptId":"abc-124","sessionId":"sess-1","timestamp":"2026-04-05T15:31:00.000Z","version":"2.1.0","isSidechain":false,"message":{"role":"user","content":"hello"}}`)
+	turn = p.ParseLine(line)
+
+	assert.NotNil(t, turn)
+	assert.NotNil(t, turn.Meta.Origin)
+	assert.Equal(t, "2.1.0", turn.Meta.Origin.CliVersion)
+}
+
 func TestClaude_InvalidJSON(t *testing.T) {
 	p := NewParser()
 
