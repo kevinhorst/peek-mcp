@@ -1,3 +1,7 @@
 **/dist/**
 **/.claude/worktrees/**
 **/.idea/**
+
+.claude
+.codex
+.serena
