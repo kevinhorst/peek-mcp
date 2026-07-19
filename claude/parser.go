@@ -72,6 +72,7 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
 			GitBranch: entry.GitBranch,
+			Origin:    originFromEntry(entry),
 		},
 	}
 
@@ -117,6 +118,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 			CWD:       entry.CurrentWorkingDir,
 			GitBranch: entry.GitBranch,
 			Model:     message.Model,
+			Origin:    originFromEntry(entry),
 		},
 	}
 
@@ -178,6 +180,15 @@ func (p *Parser) handleCustomTitle(entry *Entry) *session.Turn {
 			SessionId: entry.SessionId,
 		},
 	}
+}
+
+// originFromEntry returns nil when the entry carries no version, so an empty
+// Origin never replaces a populated one via Meta.Update.
+func originFromEntry(entry *Entry) *session.Origin {
+	if entry.Version == "" {
+		return nil
+	}
+	return &session.Origin{CliVersion: entry.Version}
 }
 
 func extractTextBlocks(raw json.RawMessage) string {

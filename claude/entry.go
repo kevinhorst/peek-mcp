@@ -28,6 +28,7 @@ type Entry struct {
 	Timestamp         time.Time       `json:"timestamp"`
 	Type              string          `json:"type"`
 	CustomTitle       string          `json:"customTitle"`
+	Version           string          `json:"version"`
 }
 
 func (e *Entry) Validate() error {
