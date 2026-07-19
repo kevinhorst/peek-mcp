@@ -63,7 +63,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	sessionList :=
 		mcp.NewTool("session_list",
-			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available."),
+			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, whether a plan or diff is available, and session metadata (cwd, git branch, model, origin)."),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Lists all sessions when omitted."),
 			),
@@ -88,7 +88,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	sessionPlan :=
 		mcp.NewTool("session_plan",
-			mcp.WithDescription("Returns the current plan for the given session (or the most recently active session if no ID is provided). Returns an empty response if the session has no plan."),
+			mcp.WithDescription("Returns the current plan for the given session (or the most recently active session if no ID is provided). For Claude sessions this is the plan-mode plan file; for Codex the latest proposed_plan block. Returns an empty response if the session has no plan."),
 			mcp.WithString("id",
 				mcp.Description("Session ID (optional, defaults to the most recently active session)"),
 			),
@@ -248,6 +248,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 				LastActive: sess.LastActive,
 				HasPlan:    sess.PlanContent != "" || sess.PlanFilePath != "",
 				HasDiff:    sess.DiffOutput != "",
+				Meta:       sess.Meta,
 			}
 		}
 
