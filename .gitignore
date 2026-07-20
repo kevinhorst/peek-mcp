@@ -2,6 +2,6 @@
 **/.claude/worktrees/**
 **/.idea/**
 
-.claude
-.codex
-.serena
+.claude/**
+.codex/**
+.serena/**
