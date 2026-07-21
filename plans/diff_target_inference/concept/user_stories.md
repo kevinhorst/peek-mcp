@@ -12,4 +12,4 @@
 
 ## Transparency
 
-**As an agent consuming `session_diff`**, I want the response to state which base branch the diff was computed against, so that I can judge whether the diff means what I think it means.
+**As an agent consuming session diffs**, I want `session_full` and `session_list` to state which base branch the diff was computed against (`diff_target`), so that I can judge whether the diff means what I think it means while `session_diff` stays a pure applyable diff.
