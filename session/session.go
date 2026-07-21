@@ -33,7 +33,7 @@ type Session struct {
 	PlanFilePath    string      `json:"-"`
 	PlanContent     string      `json:"-"`
 	DiffOutput      string      `json:"-"`
-	DiffTarget      string      `json:"-"`
+	DiffTarget      string      `json:"diff_target,omitempty"`
 	UncommittedDiff string      `json:"-"` // git diff HEAD, refreshed by the poller
 	TurnActive      *Turn       `json:"-"`
 	TurnsFinished   *TurnBuffer
