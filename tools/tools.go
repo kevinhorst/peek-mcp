@@ -27,8 +27,11 @@ func withMaxResultSize() *mcp.Meta {
 }
 
 func Register(server *server.MCPServer, store *session.Store) {
-	pageStore := &PageStore{
+	pageStore := &PageStore[*sessionFullResult]{
 		PagesByRequestId: make(map[string]<-chan *sessionFullResult),
+	}
+	eventsPageStore := &PageStore[*sessionEventsResult]{
+		PagesByRequestId: make(map[string]<-chan *sessionEventsResult),
 	}
 
 	sessionFull :=
@@ -162,12 +165,15 @@ func Register(server *server.MCPServer, store *session.Store) {
 		mcp.WithBoolean("revisions",
 			mcp.Description("Include plan revision diffs (default false; they dominate response size)"),
 		),
+		mcp.WithString("request_id",
+			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
+		),
 	)
 	sessionEvents.Meta = withMaxResultSize()
-	server.AddTool(sessionEvents, sessionEventsHandler(store))
+	server.AddTool(sessionEvents, sessionEventsHandler(store, eventsPageStore))
 }
 
-func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandlerFunc {
+func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResult]) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
 
@@ -208,7 +214,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 			sess = found
 		}
 
-		n := intArgFromRequest(request, "n")
+		n := intArgFromRequest("n", request)
 		if n <= 0 {
 			n = DefaultReturnedTurns
 		}
@@ -224,11 +230,17 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 
 		events := marshalEventEntries(sess)
 		memory := ""
-		if boolArgFromRequest(request, "remember") {
+		if boolArgFromRequest("remember", request) {
 			memory = marshalMemoryBlock(sess)
 		}
 
-		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).build(diff, events, memory, plan, turns)
+		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).build(
+			diff,
+			events,
+			memory,
+			plan,
+			turns,
+		)
 		firstPage.DiffTarget = sess.DiffTarget
 
 		resultPage := newSessionFullResultPage(firstPage)
@@ -252,7 +264,7 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		turnNumber := DefaultReturnedTurns
-		n := intArgFromRequest(request, "n")
+		n := intArgFromRequest("n", request)
 		if n > 0 {
 			turnNumber = n
 		}
@@ -312,7 +324,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		turnNumber := DefaultReturnedTurns
-		n := intArgFromRequest(request, "n")
+		n := intArgFromRequest("n", request)
 		if n > 0 {
 			turnNumber = n
 		}
@@ -327,7 +339,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			TotalUsage: currentSession.CurrentUsage(),
 			Turns:      turns,
 		}
-		if boolArgFromRequest(request, "remember") {
+		if boolArgFromRequest("remember", request) {
 			result.Memory = memoryBlock(currentSession)
 		}
 
@@ -413,8 +425,29 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	}
 }
 
-func sessionEventsHandler(s *session.Store) server.ToolHandlerFunc {
+func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsResult]) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := request.GetArguments()
+
+		if reqId, ok := args["request_id"].(string); ok && reqId != "" {
+			next, ok := pageStore.next(reqId)
+			if !ok {
+				return mcp.NewToolResultError(fmt.Sprintf("request_id %q not found or expired", reqId)), nil
+			}
+
+			if !pageStore.hasNext(reqId) {
+				pageStore.remove(reqId)
+				reqId = ""
+			}
+
+			result := &sessionEventsResultPage{
+				sessionEventsResult: next,
+				RequestId:           reqId,
+				HasMore:             pageStore.hasNext(reqId),
+			}
+			return respond(ctx, result)
+		}
+
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
 			if !errors.Is(err, errSessionSelectorMissing) {
@@ -431,15 +464,33 @@ func sessionEventsHandler(s *session.Store) server.ToolHandlerFunc {
 			currentSession = found
 		}
 
-		result := &sessionEventsResult{
-			Counters:      currentSession.Counters,
-			Diff:          diffAvailability(currentSession),
-			Events:        currentSession.Events.All(),
-			PlanRevisions: newPlanRevisionsView(currentSession, boolArgFromRequest(request, "revisions")),
-			Unsupported:   unsupportedSignals(currentSession.Agent),
-			Usage:         currentSession.CurrentUsage(),
+		events := marshalEvents(currentSession)
+		revisions := ""
+		if boolArgFromRequest("revisions", request) {
+			revisions = marshalPlanRevisions(currentSession)
 		}
-		return respond(ctx, result)
+
+		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).buildEvents(
+			events,
+			revisions,
+		)
+		counters := currentSession.Counters
+		firstPage.Counters = &counters
+		firstPage.Diff = diffAvailability(currentSession)
+		firstPage.PlanRevisions = newPlanRevisionsView(currentSession)
+		firstPage.Unsupported = unsupportedSignals(currentSession.Agent)
+		firstPage.Usage = currentSession.CurrentUsage()
+
+		resultPage := newSessionEventsResultPage(firstPage)
+		if len(nextPages) == 0 {
+			return respond(ctx, resultPage)
+		}
+
+		requestId := uuid.NewString()
+		pageStore.add(requestId, nextPages)
+
+		resultPage.WithRequestId(requestId)
+		return respond(ctx, resultPage)
 	}
 }
 
@@ -447,9 +498,11 @@ func diffAvailability(currentSession *session.Session) string {
 	if currentSession.DiffOutput == "" {
 		return "none"
 	}
+
 	if currentSession.DiffSource == session.DiffSourceSnapshot {
 		return "snapshot"
 	}
+
 	return "live"
 }
 
@@ -467,14 +520,14 @@ func memoryBlock(currentSession *session.Session) *memoryBlockResult {
 	}
 
 	block := &memoryBlockResult{
-		Facts:     memory.Facts,
-		Index:     memory.Index,
-		Truncated: memory.Truncated,
+		Facts:       memory.Facts,
+		Index:       memory.Index,
+		IsTruncated: memory.IsTruncated,
 	}
 	return block
 }
 
-func newPlanRevisionsView(currentSession *session.Session, includeDiffs bool) *planRevisionsView {
+func newPlanRevisionsView(currentSession *session.Session) *planRevisionsView {
 	if len(currentSession.PlanRevisions) == 0 {
 		return nil
 	}
@@ -482,9 +535,6 @@ func newPlanRevisionsView(currentSession *session.Session, includeDiffs bool) *p
 	view := &planRevisionsView{Count: len(currentSession.PlanRevisions)}
 	for _, revision := range currentSession.PlanRevisions {
 		view.Timestamps = append(view.Timestamps, revision.Timestamp)
-	}
-	if includeDiffs {
-		view.Revisions = currentSession.PlanRevisions
 	}
 	return view
 }
@@ -494,6 +544,31 @@ func unsupportedSignals(agent session.Agent) []string {
 		return []string{"skills", "memory", "user_answers", "plan_approval", "subagent_results"}
 	}
 	return nil
+}
+
+func marshalEvents(currentSession *session.Session) string {
+	events := currentSession.Events.All()
+	if len(events) == 0 {
+		return ""
+	}
+
+	data, err := json.Marshal(events)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func marshalPlanRevisions(currentSession *session.Session) string {
+	if len(currentSession.PlanRevisions) == 0 {
+		return ""
+	}
+
+	data, err := json.Marshal(currentSession.PlanRevisions)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func marshalEventEntries(currentSession *session.Session) string {

@@ -7,12 +7,12 @@ import (
 )
 
 type sessionFullResult struct {
-	Turns      string `json:"turns,omitempty"`
-	Events     string `json:"events,omitempty"`
-	Plan       string `json:"plan,omitempty"`
 	Diff       string `json:"diff,omitempty"`
 	DiffTarget string `json:"diff_target,omitempty"`
+	Events     string `json:"events,omitempty"`
 	Memory     string `json:"memory,omitempty"`
+	Plan       string `json:"plan,omitempty"`
+	Turns      string `json:"turns,omitempty"`
 }
 
 type sessionFullResultPage struct {

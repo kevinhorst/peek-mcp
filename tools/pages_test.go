@@ -57,3 +57,49 @@ func TestBuild(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildEvents(t *testing.T) {
+	// single-page-all-segments
+	t.Run("single-page-all-segments", func(t *testing.T) {
+		b := NewPageBuilder(1000)
+		first, next := b.buildEvents("e", "r")
+
+		assert.Nil(t, next)
+		assert.Equal(t, "e", first.Events)
+		assert.Equal(t, "r", first.Revisions)
+	})
+
+	// events-before-revisions
+	t.Run("events-before-revisions", func(t *testing.T) {
+		b := NewPageBuilder(5)
+		first, next := b.buildEvents("AAAAA", "BBBBB")
+
+		assert.Equal(t, "AAAAA", first.Events)
+		assert.Empty(t, first.Revisions)
+		require.Len(t, next, 1)
+		assert.Equal(t, "BBBBB", next[0].Revisions)
+	})
+
+	// revisions-fill-remaining-space
+	t.Run("revisions-fill-remaining-space", func(t *testing.T) {
+		b := NewPageBuilder(3)
+		first, next := b.buildEvents("EE", "RRRR")
+
+		assert.Equal(t, "EE", first.Events)
+		assert.Equal(t, "R", first.Revisions)
+		require.Len(t, next, 1)
+		assert.Equal(t, "RRR", next[0].Revisions)
+	})
+
+	// utf8-boundary-respected
+	t.Run("utf8-boundary-respected", func(t *testing.T) {
+		events := strings.Repeat("é", 10) // 20 bytes
+		b := NewPageBuilder(5)
+		first, next := b.buildEvents(events, "")
+
+		assert.True(t, utf8.ValidString(first.Events))
+		for _, page := range next {
+			assert.True(t, utf8.ValidString(page.Events))
+		}
+	})
+}

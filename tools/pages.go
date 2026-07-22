@@ -7,16 +7,16 @@ import (
 	"unicode/utf8"
 )
 
-type PageStore struct {
+type PageStore[T any] struct {
 	mu               sync.Mutex
-	PagesByRequestId map[string]<-chan *sessionFullResult
+	PagesByRequestId map[string]<-chan T
 }
 
-func (s *PageStore) add(requestId string, results []*sessionFullResult) {
+func (s *PageStore[T]) add(requestId string, results []T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	queue := make(chan *sessionFullResult, len(results))
+	queue := make(chan T, len(results))
 	for _, result := range results {
 		queue <- result
 	}
@@ -25,7 +25,7 @@ func (s *PageStore) add(requestId string, results []*sessionFullResult) {
 	s.PagesByRequestId[requestId] = queue
 }
 
-func (s *PageStore) hasNext(requestId string) bool {
+func (s *PageStore[T]) hasNext(requestId string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -37,19 +37,20 @@ func (s *PageStore) hasNext(requestId string) bool {
 	return len(result) > 0
 }
 
-func (s *PageStore) next(requestId string) (*sessionFullResult, bool) {
+func (s *PageStore[T]) next(requestId string) (T, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	result, ok := s.PagesByRequestId[requestId]
 	if !ok {
-		return nil, false
+		var zero T
+		return zero, false
 	}
 
 	return <-result, true
 }
 
-func (s *PageStore) remove(requestId string) {
+func (s *PageStore[T]) remove(requestId string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -64,7 +65,6 @@ func NewPageBuilder(size int) *PageBuilder {
 	return &PageBuilder{Size: size}
 }
 
-// TODO: refactor
 func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *sessionFullResult, next []*sessionFullResult) {
 	// Check if everything fits in a single page
 	contentSize := len(turns) + len(events) + len(plan) + len(diff) + len(memory)
@@ -126,6 +126,41 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *se
 		memoryChunk := utf8SafeSlice(memory, size)
 		page.Memory = memoryChunk
 		memory = memory[len(memoryChunk):]
+	}
+
+	return pages[0], pages[1:]
+}
+
+func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEventsResult, next []*sessionEventsResult) {
+	contentSize := len(events) + len(revisions)
+	if b.Size <= 0 || contentSize <= b.Size {
+		first = &sessionEventsResult{
+			Events:    events,
+			Revisions: revisions,
+		}
+		return first, nil
+	}
+
+	pageCount := math.Ceil(float64(contentSize) / float64(b.Size))
+	pages := make([]*sessionEventsResult, int(pageCount))
+	slog.Info("PageBuilder.buildEvents: building", "pageCount", pageCount, "size", b.Size)
+
+	for pageIndex := 0; pageIndex < int(pageCount); pageIndex++ {
+		page := &sessionEventsResult{}
+		pages[pageIndex] = page
+		size := b.Size
+
+		eventChunk := utf8SafeSlice(events, size)
+		page.Events = eventChunk
+		events = events[len(eventChunk):]
+		if len(eventChunk) == size {
+			continue
+		}
+		size = size - len(eventChunk)
+
+		revisionChunk := utf8SafeSlice(revisions, size)
+		page.Revisions = revisionChunk
+		revisions = revisions[len(revisionChunk):]
 	}
 
 	return pages[0], pages[1:]

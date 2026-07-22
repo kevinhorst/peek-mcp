@@ -7,6 +7,6 @@ import (
 type memoryBlockResult struct {
 	Facts       []*claude.MemoryFact `json:"facts,omitempty"`
 	Index       string               `json:"index,omitempty"`
-	Truncated   bool                 `json:"truncated,omitempty"`
+	IsTruncated bool                 `json:"truncated,omitempty"`
 	Unsupported string               `json:"unsupported,omitempty"`
 }
