@@ -1,15 +1,20 @@
 package codex
 
 import (
+	"encoding/json"
 	"errors"
 
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
 type ResponseItem struct {
-	Type    string         `json:"type"`
-	Role    session.Role   `json:"role"`
-	Content []ContentBlock `json:"content"`
+	Arguments string          `json:"arguments"`
+	CallId    string          `json:"call_id"`
+	Content   []ContentBlock  `json:"content"`
+	Name      string          `json:"name"`
+	Output    json.RawMessage `json:"output"`
+	Role      session.Role    `json:"role"`
+	Type      string          `json:"type"`
 }
 
 func (i *ResponseItem) Validate() error {
