@@ -22,3 +22,11 @@ type sessionLatestResult struct {
 	Events []*eventEntry   `json:"events,omitempty"`
 	Turns  []*session.Turn `json:"turns"`
 }
+
+type sessionPlanResult struct {
+	Plan string `json:"plan"`
+}
+
+type sessionUncommittedDiffResult struct {
+	Diff string `json:"diff"`
+}

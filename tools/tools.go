@@ -55,6 +55,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithBoolean("remember",
 				mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only."),
 			),
+			mcp.WithBoolean("json",
+				mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
+			),
 		)
 	sessionFull.Meta = withMaxResultSize()
 	server.AddTool(sessionFull, sessionFullHandler(store, pageStore))
@@ -67,6 +70,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 		mcp.WithString("agent",
 			mcp.Required(),
 			mcp.Description("Agent: \"claude\" or \"codex\""),
+		),
+		mcp.WithBoolean("json",
+			mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
 		),
 	)
 	sessionLatest.Meta = withMaxResultSize()
@@ -99,6 +105,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 		mcp.WithBoolean("remember",
 			mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only."),
 		),
+		mcp.WithBoolean("json",
+			mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
+		),
 	)
 	sessionGet.Meta = withMaxResultSize()
 	server.AddTool(sessionGet, sessionGetHandler(store))
@@ -114,6 +123,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
+			),
+			mcp.WithBoolean("json",
+				mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
 			),
 		)
 	sessionPlan.Meta = withMaxResultSize()
@@ -131,6 +143,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
 			),
+			mcp.WithBoolean("json",
+				mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
+			),
 		)
 	sessionDiff.Meta = withMaxResultSize()
 	server.AddTool(sessionDiff, sessionDiffHandler(store))
@@ -146,6 +161,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
+			),
+			mcp.WithBoolean("json",
+				mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
 			),
 		)
 	sessionUncommittedDiff.Meta = withMaxResultSize()
@@ -167,6 +185,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 		mcp.WithString("request_id",
 			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
+		),
+		mcp.WithBoolean("json",
+			mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
 		),
 	)
 	sessionEvents.Meta = withMaxResultSize()
@@ -194,7 +215,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResul
 				RequestId:         reqId,
 				HasMore:           pageStore.hasNext(reqId),
 			}
-			return respond(ctx, result)
+			return respond(ctx, request, result)
 		}
 
 		// First call: resolve session and build pages
@@ -245,14 +266,14 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResul
 
 		resultPage := newSessionFullResultPage(firstPage)
 		if len(nextPages) == 0 {
-			return respond(ctx, resultPage)
+			return respond(ctx, request, resultPage)
 		}
 
 		requestId := uuid.NewString()
 		pageStore.add(requestId, nextPages)
 
 		resultPage.WithRequestId(requestId)
-		return respond(ctx, resultPage)
+		return respond(ctx, request, resultPage)
 	}
 }
 
@@ -283,7 +304,7 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 			Events: newEventEntries(lastSession.Events.All()),
 			Turns:  turns,
 		}
-		return respondWithText(result)
+		return respondForRequest(request, result)
 	}
 }
 
@@ -343,7 +364,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			result.Memory = memoryBlock(currentSession)
 		}
 
-		return respondWithText(result)
+		return respondForRequest(request, result)
 	}
 }
 
@@ -369,6 +390,10 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("No plan found for this session"), nil
 		}
 
+		if boolArgFromRequest("json", request) {
+			result := &sessionPlanResult{Plan: currentSession.PlanContent}
+			return respondWithStructured(result)
+		}
 		return respondWithText(currentSession.PlanContent)
 	}
 }
@@ -399,7 +424,7 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 		if currentSession.DiffSource == session.DiffSourceSnapshot {
 			result.CapturedAt = currentSession.DiffCapturedAt.Format(time.RFC3339)
 		}
-		return respondWithText(result)
+		return respondForRequest(request, result)
 	}
 }
 
@@ -421,6 +446,10 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			currentSession = found
 		}
 
+		if boolArgFromRequest("json", request) {
+			result := &sessionUncommittedDiffResult{Diff: currentSession.UncommittedDiff}
+			return respondWithStructured(result)
+		}
 		return respondWithText(currentSession.UncommittedDiff)
 	}
 }
@@ -445,7 +474,7 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 				RequestId:           reqId,
 				HasMore:             pageStore.hasNext(reqId),
 			}
-			return respond(ctx, result)
+			return respond(ctx, request, result)
 		}
 
 		currentSession, err := resolveSession(s, request)
@@ -483,14 +512,14 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 
 		resultPage := newSessionEventsResultPage(firstPage)
 		if len(nextPages) == 0 {
-			return respond(ctx, resultPage)
+			return respond(ctx, request, resultPage)
 		}
 
 		requestId := uuid.NewString()
 		pageStore.add(requestId, nextPages)
 
 		resultPage.WithRequestId(requestId)
-		return respond(ctx, resultPage)
+		return respond(ctx, request, resultPage)
 	}
 }
 
