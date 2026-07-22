@@ -23,20 +23,76 @@ const (
 )
 
 type Session struct {
-	Meta            Meta        `json:"meta"`
-	Agent           Agent       `json:"agent"`
-	Title           string      `json:"title,omitempty"`
-	TitleSource     TitleSource `json:"title_source,omitempty"`
-	LastActive      time.Time   `json:"last_active"`
-	TotalUsage      Usage       `json:"total_usage"`
-	FilePath        string      `json:"-"`
-	PlanFilePath    string      `json:"-"`
-	PlanContent     string      `json:"-"`
-	DiffOutput      string      `json:"-"`
-	DiffTarget      string      `json:"diff_target,omitempty"`
-	UncommittedDiff string      `json:"-"` // git diff HEAD, refreshed by the poller
-	TurnActive      *Turn       `json:"-"`
+	planExitSeen bool
+
+	Meta            Meta            `json:"meta"`
+	Agent           Agent           `json:"agent"`
+	Title           string          `json:"title,omitempty"`
+	TitleSource     TitleSource     `json:"title_source,omitempty"`
+	LastActive      time.Time       `json:"last_active"`
+	TotalUsage      Usage           `json:"total_usage"`
+	Counters        Counters        `json:"-"`
+	DiffBase        string          `json:"-"` // pinned merge-base SHA
+	DiffCapturedAt  time.Time       `json:"-"`
+	DiffSource      DiffSource      `json:"-"`
+	Events          *EventBuffer    `json:"-"`
+	FilePath        string          `json:"-"`
+	PlanFilePath    string          `json:"-"`
+	PlanContent     string          `json:"-"`
+	PlanRevisions   []*PlanRevision `json:"-"`
+	DiffOutput      string          `json:"-"`
+	DiffTarget      string          `json:"diff_target,omitempty"`
+	UncommittedDiff string          `json:"-"` // git diff HEAD, refreshed by the poller
+	TurnActive      *Turn           `json:"-"`
 	TurnsFinished   *TurnBuffer
+}
+
+type DiffSource string
+
+const (
+	DiffSourceLive     DiffSource = "live"
+	DiffSourceSnapshot DiffSource = "snapshot"
+)
+
+const EventBufferCapacity = 500
+
+// PlanAlterations is counted at revision recording (Store.recordPlanRevision),
+// where the drafting-vs-alteration classification is decided — not here.
+func (s *Session) AddEvent(event *Event) {
+	s.Events.Push(event)
+
+	switch event.Kind {
+	case EventKindPermissionDenied:
+		s.Counters.PermissionDenials++
+	case EventKindPlanModeExit:
+		s.planExitSeen = true
+	case EventKindPlanRejected:
+		s.Counters.PlanRejections++
+	case EventKindSkillInvoked:
+		s.Counters.SkillsInvoked++
+	case EventKindSubagentSpawned:
+		s.Counters.SubagentsSpawned++
+	case EventKindPlanApproved, EventKindPlanModeEnter, EventKindPlanModeReenter,
+		EventKindPlanRevised, EventKindSubagentResult, EventKindUserAnswer:
+	}
+}
+
+func (s *Session) CurrentUsage() *Usage {
+	total := s.TotalUsage
+	if s.TurnActive != nil {
+		total.Add(s.TurnActive.Usage)
+	}
+	return &total
+}
+
+// Codex: the initial version's existence means the plan was already presented
+// (first proposed_plan block), so every later change is an alteration.
+// Claude: alterations start once the plan was first presented via ExitPlanMode.
+func (s *Session) isAlterationPhase() bool {
+	if s.Agent == AgentCodex {
+		return len(s.PlanRevisions) >= 1
+	}
+	return s.planExitSeen
 }
 
 func (s *Session) AddTurn(nextTurn *Turn) {
@@ -116,6 +172,10 @@ func (s *Session) Validate() error {
 
 	if s.TurnsFinished == nil {
 		return errors.New("turns must not be nil")
+	}
+
+	if s.Events == nil {
+		return errors.New("events must not be nil")
 	}
 
 	return nil

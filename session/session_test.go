@@ -11,6 +11,7 @@ func provideCompleteSession() *Session {
 	return &Session{
 		Meta:          Meta{SessionId: Id("sess-123")},
 		Agent:         AgentClaude,
+		Events:        NewEventBuffer(EventBufferCapacity),
 		LastActive:    time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
 		TurnsFinished: NewTurnBuffer(20),
 	}
