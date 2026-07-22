@@ -73,7 +73,7 @@ var startCmd = &cobra.Command{
 		if stateDirPath != "" {
 			stateDir = state.NewDir(stateDirPath)
 			store.StateDir = stateDir
-			go runStateGC(ctx, stateDir, stateRetentionDays)
+			go runStateGc(ctx, stateDir, stateRetentionDays)
 		}
 
 		if claudeHome != "" {
@@ -180,13 +180,13 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 }
 
-func runStateGC(ctx context.Context, stateDir *state.Dir, retentionDays int) {
+func runStateGc(ctx context.Context, stateDir *state.Dir, retentionDays int) {
 	if retentionDays <= 0 {
 		return
 	}
 
 	retention := time.Duration(retentionDays) * 24 * time.Hour
-	stateDir.GC(retention)
+	stateDir.Gc(retention)
 
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
@@ -196,7 +196,7 @@ func runStateGC(ctx context.Context, stateDir *state.Dir, retentionDays int) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			stateDir.GC(retention)
+			stateDir.Gc(retention)
 		}
 	}
 }
