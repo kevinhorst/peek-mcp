@@ -2,3 +2,4 @@
 {"type":"user","promptId":"abc-123","sessionId":"sess-1","timestamp":"2026-04-05T15:30:14.588Z","isSidechain":true,"message":{"role":"user","content":"sidechain message"}}
 {"type":"queue-operation","operation":"enqueue","sessionId":"sess-1","timestamp":"2026-04-05T15:30:14.575Z"}
 {"type":"user","sessionId":"sess-1","timestamp":"2026-04-05T15:30:14.588Z","isSidechain":false,"message":{"role":"user","content":"no promptId"}}
+{"type":"queue-operation","operation":"dequeue","content":"queued prompt text","sessionId":"sess-1","timestamp":"2026-04-05T15:30:14.575Z"}

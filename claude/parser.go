@@ -84,6 +84,10 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 }
 
 func (p *Parser) handleUser(entry *Entry) *session.Turn {
+	if len(entry.Message) == 0 {
+		return nil
+	}
+
 	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
 		slog.Debug("handleUser: unmarshal", "err", err)
