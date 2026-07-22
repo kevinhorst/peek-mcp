@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "peek-mcp",
   "display_name": "Peek MCP",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Read Claude Code and Codex CLI sessions from disk and expose them via MCP.",
   "long_description": "peek-mcp watches local Claude Code (~/.claude/projects) and Codex CLI (~/.codex/sessions) JSONL session files and exposes session_latest, session_list, and session_get tools so a second model can review what a primary agent produced without re-summarisation.",
   "author": {
