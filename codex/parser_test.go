@@ -131,6 +131,8 @@ func TestCodex_TokenCountEvent(t *testing.T) {
 
 	assert.NotNil(t, turn)
 	assert.Equal(t, "", turn.Text, "token_count is meta-only")
+	assert.Equal(t, session.RoleAssistant, turn.Role)
+	assert.True(t, turn.UsageCumulative)
 	assert.Equal(t, session.Id("sess-codex-1"), turn.Meta.SessionId)
 	assert.NotNil(t, turn.Usage)
 	assert.Equal(t, 100, turn.Usage.InputTokens)
