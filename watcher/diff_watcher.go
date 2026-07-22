@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/state"
 )
 
 type diffBaseKey struct {
@@ -23,6 +24,7 @@ type DiffWatcher struct {
 	store    *session.Store
 	interval time.Duration
 	window   time.Duration
+	stateDir *state.Dir
 	running  sync.Map // session.Id -> struct{}; one in-flight turn-diff per session
 	polling  sync.Map // cwd -> struct{}; one in-flight poll per repo
 	lastDiff sync.Map // gitDir -> string; last written uncommitted diff, to skip no-op writes
@@ -31,11 +33,12 @@ type DiffWatcher struct {
 	baseByKey map[diffBaseKey]string
 }
 
-func NewDiffWatcher(store *session.Store, interval, window time.Duration) *DiffWatcher {
+func NewDiffWatcher(store *session.Store, interval, window time.Duration, stateDir *state.Dir) *DiffWatcher {
 	return &DiffWatcher{
 		store:     store,
 		interval:  interval,
 		window:    window,
+		stateDir:  stateDir,
 		baseByKey: make(map[diffBaseKey]string),
 	}
 }
@@ -68,23 +71,96 @@ func (w *DiffWatcher) Run(ctx context.Context) error {
 	}
 }
 
-// refresh recomputes the working-tree diff against the target branch for a single
-// session, triggered when that session gets a new turn.
+// refresh recomputes the working-tree diff against the session's pinned base,
+// triggered when that session gets a new turn. Failures flip the served
+// source to the persisted snapshot instead of silently keeping stale state.
 func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
 	defer w.running.Delete(id)
 
-	if !gitReady(ctx, cwd) {
+	sess, ok := w.store.GetById(id)
+	if !ok {
 		return
 	}
 
-	base := w.diffBase(ctx, cwd)
-	output, err := gitDiff(ctx, cwd, "--merge-base", base)
-	if err != nil {
-		logDiffErr(string(id), "git diff", err)
+	if !gitReady(ctx, cwd) {
+		w.store.MarkDiffSnapshot(id)
 		return
 	}
-	w.store.UpdateDiff(id, base, output)
+
+	base := sess.DiffBase
+	target := sess.DiffTarget
+	if base == "" {
+		pinnedBase, pinnedTarget, pinned := w.pinBase(ctx, id, cwd)
+		if !pinned {
+			w.store.MarkDiffSnapshot(id)
+			return
+		}
+		base = pinnedBase
+		target = pinnedTarget
+	}
+
+	output, err := gitDiff(ctx, cwd, base)
+	if err != nil {
+		logDiffErr(string(id), "git diff", err)
+		w.store.MarkDiffSnapshot(id)
+		return
+	}
+
+	previous := sess.DiffOutput
+	w.store.UpdateDiff(id, target, output)
+	w.persistSnapshot(sess, output, previous)
 	slog.Debug("DiffWatcher: refreshed diff", "session", id, "base", base, "bytes", len(output))
+}
+
+// pinBase resolves the target branch once (existing inference) and pins the
+// merge-base as a SHA, so later target-branch advances, merges, and branch
+// deletions cannot move or collapse the session's diff.
+// TODO: explore + impact with everything git can actually do to a branch —
+// the pin assumes benign history and will likely break on funky git states.
+func (w *DiffWatcher) pinBase(ctx context.Context, id session.Id, cwd string) (sha, target string, ok bool) {
+	target = w.diffBase(ctx, cwd)
+	sha, err := gitOutput(ctx, cwd, "merge-base", "HEAD", target)
+	if err != nil {
+		logDiffErr(string(id), "git merge-base", err)
+		return "", "", false
+	}
+
+	w.store.PinDiffBase(id, sha, target)
+	w.persistBase(ctx, id, sha, target)
+	return sha, target, true
+}
+
+func (w *DiffWatcher) persistBase(ctx context.Context, id session.Id, sha, target string) {
+	if w.stateDir == nil {
+		return
+	}
+
+	sess, ok := w.store.GetById(id)
+	if !ok {
+		return
+	}
+
+	base := state.DiffBase{Sha: sha, Target: target}
+	if err := w.stateDir.WriteDiffBase(string(sess.Agent), string(id), base); err != nil {
+		slog.Warn("DiffWatcher.persistBase: Failed to write diff base", "session", id, "err", err)
+	}
+}
+
+// Empty outputs never overwrite the snapshot: an empty live diff is served
+// live, but the last real work is retained for post-cleanup analysis.
+func (w *DiffWatcher) persistSnapshot(sess *session.Session, output, previous string) {
+	if w.stateDir == nil || output == "" {
+		return
+	}
+	if output == previous {
+		return
+	}
+
+	agent := string(sess.Agent)
+	id := string(sess.Meta.SessionId)
+	if err := w.stateDir.WriteDiffSnapshot(agent, id, output); err != nil {
+		slog.Warn("DiffWatcher.persistSnapshot: Failed to write snapshot", "session", id, "err", err)
+	}
 }
 
 func (w *DiffWatcher) diffBase(ctx context.Context, cwd string) string {

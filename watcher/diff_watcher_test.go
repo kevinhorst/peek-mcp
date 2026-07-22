@@ -155,7 +155,7 @@ func TestDiffWatcher_DiffBase(t *testing.T) {
 	gitRun(t, dir, "checkout", "-b", "feature", "develop")
 
 	store := session.NewStore(10, session.AgentClaude)
-	w := NewDiffWatcher(store, time.Second, 0)
+	w := NewDiffWatcher(store, time.Second, 0, nil)
 	ctx := context.Background()
 
 	// cached-after-base-deleted
@@ -193,7 +193,7 @@ func TestDiffWatcher_Refresh(t *testing.T) {
 	}
 	store.AddTurnBySessionId("sess-1", session.AgentClaude, turn)
 
-	w := NewDiffWatcher(store, time.Second, 0)
+	w := NewDiffWatcher(store, time.Second, 0, nil)
 	w.refresh(context.Background(), "sess-1", dir)
 
 	sess, ok := store.GetById("sess-1")
