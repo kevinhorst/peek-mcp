@@ -17,6 +17,7 @@ const (
 )
 
 type Entry struct {
+	AgentId           string          `json:"agentId"`
 	CurrentWorkingDir string          `json:"cwd"`
 	GitBranch         string          `json:"gitBranch"`
 	IsSidechain       bool            `json:"isSidechain"`
