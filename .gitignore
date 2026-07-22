@@ -5,3 +5,6 @@
 .claude/**
 .codex/**
 .serena/**
+
+**/claude/.DS_Store
+.DS_Store
