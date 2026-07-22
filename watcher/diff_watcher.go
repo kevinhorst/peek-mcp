@@ -90,8 +90,8 @@ func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
 	base := sess.DiffBase
 	target := sess.DiffTarget
 	if base == "" {
-		pinnedBase, pinnedTarget, pinned := w.pinBase(ctx, id, cwd)
-		if !pinned {
+		pinnedBase, pinnedTarget, isPinned := w.pinBase(ctx, cwd, id)
+		if !isPinned {
 			w.store.MarkDiffSnapshot(id)
 			return
 		}
@@ -108,29 +108,27 @@ func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
 
 	previous := sess.DiffOutput
 	w.store.UpdateDiff(id, target, output)
-	w.persistSnapshot(sess, output, previous)
+	w.persistSnapshot(output, previous, sess)
 	slog.Debug("DiffWatcher: refreshed diff", "session", id, "base", base, "bytes", len(output))
 }
 
 // pinBase resolves the target branch once (existing inference) and pins the
 // merge-base as a SHA, so later target-branch advances, merges, and branch
 // deletions cannot move or collapse the session's diff.
-// TODO: explore + impact with everything git can actually do to a branch —
-// the pin assumes benign history and will likely break on funky git states.
-func (w *DiffWatcher) pinBase(ctx context.Context, id session.Id, cwd string) (sha, target string, ok bool) {
+func (w *DiffWatcher) pinBase(ctx context.Context, cwd string, id session.Id) (sha, target string, ok bool) {
 	target = w.diffBase(ctx, cwd)
-	sha, err := gitOutput(ctx, cwd, "merge-base", "HEAD", target)
+	sha, err := gitOutput(ctx, cwd, "merge-base", "--end-of-options", "HEAD", target)
 	if err != nil {
 		logDiffErr(string(id), "git merge-base", err)
 		return "", "", false
 	}
 
 	w.store.PinDiffBase(id, sha, target)
-	w.persistBase(ctx, id, sha, target)
+	w.persistBase(id, sha, target)
 	return sha, target, true
 }
 
-func (w *DiffWatcher) persistBase(ctx context.Context, id session.Id, sha, target string) {
+func (w *DiffWatcher) persistBase(id session.Id, sha, target string) {
 	if w.stateDir == nil {
 		return
 	}
@@ -141,14 +139,14 @@ func (w *DiffWatcher) persistBase(ctx context.Context, id session.Id, sha, targe
 	}
 
 	base := state.DiffBase{Sha: sha, Target: target}
-	if err := w.stateDir.WriteDiffBase(string(sess.Agent), string(id), base); err != nil {
+	if err := w.stateDir.WriteDiffBase(string(sess.Agent), base, string(id)); err != nil {
 		slog.Warn("DiffWatcher.persistBase: Failed to write diff base", "session", id, "err", err)
 	}
 }
 
 // Empty outputs never overwrite the snapshot: an empty live diff is served
 // live, but the last real work is retained for post-cleanup analysis.
-func (w *DiffWatcher) persistSnapshot(sess *session.Session, output, previous string) {
+func (w *DiffWatcher) persistSnapshot(output, previous string, sess *session.Session) {
 	if w.stateDir == nil || output == "" {
 		return
 	}
@@ -158,7 +156,7 @@ func (w *DiffWatcher) persistSnapshot(sess *session.Session, output, previous st
 
 	agent := string(sess.Agent)
 	id := string(sess.Meta.SessionId)
-	if err := w.stateDir.WriteDiffSnapshot(agent, id, output); err != nil {
+	if err := w.stateDir.WriteDiffSnapshot(agent, output, id); err != nil {
 		slog.Warn("DiffWatcher.persistSnapshot: Failed to write snapshot", "session", id, "err", err)
 	}
 }
@@ -301,7 +299,7 @@ func baseFromOriginHead(ctx context.Context, cwd string) string {
 		return ""
 	}
 
-	if !gitSucceeds(ctx, cwd, "rev-parse", "--verify", "--quiet", name) {
+	if !gitSucceeds(ctx, cwd, "rev-parse", "--verify", "--quiet", "--end-of-options", name) {
 		return ""
 	}
 	return name
@@ -376,7 +374,7 @@ var excludedPaths = []string{
 }
 
 func gitDiff(ctx context.Context, cwd string, args ...string) (string, error) {
-	cmdArgs := append([]string{"diff"}, args...)
+	cmdArgs := append([]string{"diff", "--no-ext-diff", "--end-of-options"}, args...)
 	cmdArgs = append(cmdArgs, "--")
 	cmdArgs = append(cmdArgs, ".")
 	for _, pattern := range excludedPaths {
