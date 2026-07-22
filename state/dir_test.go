@@ -15,18 +15,29 @@ func TestDirReadWrite(t *testing.T) {
 	// diff-base-roundtrip
 	t.Run("diff-base-roundtrip", func(t *testing.T) {
 		dir := NewDir(t.TempDir())
-		require.NoError(t, dir.WriteDiffBase("claude", "s1", DiffBase{Sha: "abc123", Target: "main"}))
+		base := DiffBase{Sha: "abc1234", Target: "main"}
+		require.NoError(t, dir.WriteDiffBase("claude", base, "s1"))
 
-		base, ok := dir.ReadDiffBase("claude", "s1")
+		read, ok := dir.ReadDiffBase("claude", "s1")
 		require.True(t, ok)
-		assert.Equal(t, "abc123", base.Sha)
-		assert.Equal(t, "main", base.Target)
+		assert.Equal(t, "abc1234", read.Sha)
+		assert.Equal(t, "main", read.Target)
+	})
+
+	// malformed-diff-base-rejected
+	t.Run("malformed-diff-base-rejected", func(t *testing.T) {
+		dir := NewDir(t.TempDir())
+		base := DiffBase{Sha: "--output=/tmp/pwned", Target: "main"}
+		require.NoError(t, dir.WriteDiffBase("claude", base, "s1"))
+
+		_, ok := dir.ReadDiffBase("claude", "s1")
+		assert.False(t, ok, "non-sha diff.base content must not be served")
 	})
 
 	// snapshot-roundtrip-with-mtime
 	t.Run("snapshot-roundtrip-with-mtime", func(t *testing.T) {
 		dir := NewDir(t.TempDir())
-		require.NoError(t, dir.WriteDiffSnapshot("claude", "s1", "diff content"))
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff content", "s1"))
 
 		content, capturedAt, ok := dir.ReadDiffSnapshot("claude", "s1")
 		require.True(t, ok)
@@ -37,9 +48,12 @@ func TestDirReadWrite(t *testing.T) {
 	// plan-versions-roundtrip-draft-vs-alteration
 	t.Run("plan-versions-roundtrip-draft-vs-alteration", func(t *testing.T) {
 		dir := NewDir(t.TempDir())
-		require.NoError(t, dir.WritePlanVersion("claude", "s1", &PlanVersion{Index: 0, Content: "# initial"}))
-		require.NoError(t, dir.WritePlanVersion("claude", "s1", &PlanVersion{Index: 1, Content: "@@ alt @@", IsAlteration: true}))
-		require.NoError(t, dir.WritePlanVersion("claude", "s1", &PlanVersion{Index: 2, Content: "@@ draft @@", IsAlteration: false}))
+		initial := &PlanVersion{Content: "# initial", Index: 0}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", initial))
+		alteration := &PlanVersion{Content: "@@ alt @@", Index: 1, IsAlteration: true}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", alteration))
+		draft := &PlanVersion{Content: "@@ draft @@", Index: 2, IsAlteration: false}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", draft))
 
 		versions := dir.ReadPlanVersions("claude", "s1")
 		require.Len(t, versions, 3)
@@ -55,7 +69,7 @@ func TestDirReadWrite(t *testing.T) {
 	t.Run("snapshot-5mb-truncation", func(t *testing.T) {
 		dir := NewDir(t.TempDir())
 		big := strings.Repeat("z", MaxSnapshotBytes+1024)
-		require.NoError(t, dir.WriteDiffSnapshot("claude", "s1", big))
+		require.NoError(t, dir.WriteDiffSnapshot("claude", big, "s1"))
 
 		content, _, ok := dir.ReadDiffSnapshot("claude", "s1")
 		require.True(t, ok)
@@ -67,11 +81,12 @@ func TestDirReadWrite(t *testing.T) {
 	t.Run("sanitized-path-components", func(t *testing.T) {
 		root := t.TempDir()
 		dir := NewDir(root)
-		require.NoError(t, dir.WriteDiffBase("claude", "../escape/id", DiffBase{Sha: "sha", Target: "t"}))
+		base := DiffBase{Sha: "abc1234", Target: "t"}
+		require.NoError(t, dir.WriteDiffBase("claude", base, "../escape/id"))
 
-		base, ok := dir.ReadDiffBase("claude", "../escape/id")
+		read, ok := dir.ReadDiffBase("claude", "../escape/id")
 		require.True(t, ok)
-		assert.Equal(t, "sha", base.Sha)
+		assert.Equal(t, "abc1234", read.Sha)
 
 		// nothing was written outside the root
 		escaped := filepath.Join(filepath.Dir(root), "escape")
@@ -80,18 +95,18 @@ func TestDirReadWrite(t *testing.T) {
 	})
 }
 
-func TestGC(t *testing.T) {
+func TestGc(t *testing.T) {
 	// old-session-pruned
 	t.Run("old-session-pruned", func(t *testing.T) {
 		root := t.TempDir()
 		dir := NewDir(root)
-		require.NoError(t, dir.WriteDiffSnapshot("claude", "old", "content"))
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "content", "old"))
 
 		old := time.Now().Add(-48 * time.Hour)
 		sessionPath := filepath.Join(root, "claude", "old")
 		require.NoError(t, os.Chtimes(filepath.Join(sessionPath, diffSnapshotFile), old, old))
 
-		dir.GC(24 * time.Hour)
+		dir.Gc(24 * time.Hour)
 		_, err := os.Stat(sessionPath)
 		assert.True(t, os.IsNotExist(err))
 	})
@@ -100,9 +115,9 @@ func TestGC(t *testing.T) {
 	t.Run("fresh-session-kept", func(t *testing.T) {
 		root := t.TempDir()
 		dir := NewDir(root)
-		require.NoError(t, dir.WriteDiffSnapshot("claude", "fresh", "content"))
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "content", "fresh"))
 
-		dir.GC(24 * time.Hour)
+		dir.Gc(24 * time.Hour)
 		_, err := os.Stat(filepath.Join(root, "claude", "fresh"))
 		assert.NoError(t, err)
 	})
@@ -111,12 +126,12 @@ func TestGC(t *testing.T) {
 	t.Run("zero-retention-noop", func(t *testing.T) {
 		root := t.TempDir()
 		dir := NewDir(root)
-		require.NoError(t, dir.WriteDiffSnapshot("claude", "s1", "content"))
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "content", "s1"))
 
 		old := time.Now().Add(-1000 * time.Hour)
 		require.NoError(t, os.Chtimes(filepath.Join(root, "claude", "s1", diffSnapshotFile), old, old))
 
-		dir.GC(0)
+		dir.Gc(0)
 		_, err := os.Stat(filepath.Join(root, "claude", "s1"))
 		assert.NoError(t, err)
 	})

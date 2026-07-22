@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,57 +29,19 @@ const (
 	MaxSnapshotBytes = 5 * 1024 * 1024
 )
 
-type Dir struct {
-	root string
-}
-
-func NewDir(root string) *Dir {
-	return &Dir{root: root}
-}
+var shaPattern = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 
 type DiffBase struct {
 	Sha    string
 	Target string
 }
 
-type PlanVersion struct {
-	Content      string
-	Index        int
-	IsAlteration bool
-	ModTime      time.Time
+type Dir struct {
+	root string
 }
 
-func (d *Dir) sessionDir(agent, sessionId string) string {
-	return filepath.Join(d.root, sanitize(agent), sanitize(sessionId))
-}
-
-func (d *Dir) writeFile(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
-		return errors.Wrap(err, "Dir.writeFile: Failed to create state directory")
-	}
-
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), filePerm); err != nil {
-		return errors.Wrap(err, "Dir.writeFile: Failed to write temp file")
-	}
-
-	return os.Rename(tmp, path)
-}
-
-func (d *Dir) GC(retention time.Duration) {
-	if retention <= 0 {
-		return
-	}
-
-	cutoff := time.Now().Add(-retention)
-	agentDirs, err := os.ReadDir(d.root)
-	if err != nil {
-		return
-	}
-
-	for _, agentDir := range agentDirs {
-		d.pruneAgentDir(filepath.Join(d.root, agentDir.Name()), cutoff)
-	}
+func NewDir(root string) *Dir {
+	return &Dir{root: root}
 }
 
 func (d *Dir) pruneAgentDir(path string, cutoff time.Time) {
@@ -95,18 +58,54 @@ func (d *Dir) pruneAgentDir(path string, cutoff time.Time) {
 	}
 }
 
-func (d *Dir) ReadDiffBase(agent, sessionId string) (DiffBase, bool) {
+func (d *Dir) sessionDir(agent, sessionId string) string {
+	return filepath.Join(d.root, sanitize(agent), sanitize(sessionId))
+}
+
+func (d *Dir) writeFile(path, content string) error {
+	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
+		return errors.Wrap(err, "Dir.writeFile: Failed to create state directory")
+	}
+
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), filePerm); err != nil {
+		return errors.Wrap(err, "Dir.writeFile: Failed to write temp file")
+	}
+
+	if err := os.Rename(tmp, path); err != nil {
+		return errors.Wrap(err, "Dir.writeFile: Failed to rename temp file")
+	}
+	return nil
+}
+
+func (d *Dir) Gc(retention time.Duration) {
+	if retention <= 0 {
+		return
+	}
+
+	cutoff := time.Now().Add(-retention)
+	agentDirs, err := os.ReadDir(d.root)
+	if err != nil {
+		return
+	}
+
+	for _, agentDir := range agentDirs {
+		d.pruneAgentDir(filepath.Join(d.root, agentDir.Name()), cutoff)
+	}
+}
+
+func (d *Dir) ReadDiffBase(agent, sessionId string) (base DiffBase, ok bool) {
 	data, err := os.ReadFile(filepath.Join(d.sessionDir(agent, sessionId), diffBaseFile))
 	if err != nil {
-		return DiffBase{}, false
+		return base, false
 	}
 
 	sha, target, _ := strings.Cut(strings.TrimSpace(string(data)), " ")
-	if sha == "" {
-		return DiffBase{}, false
+	if !shaPattern.MatchString(sha) {
+		return base, false
 	}
 
-	base := DiffBase{Sha: sha, Target: target}
+	base = DiffBase{Sha: sha, Target: target}
 	return base, true
 }
 
@@ -114,12 +113,12 @@ func (d *Dir) ReadDiffSnapshot(agent, sessionId string) (content string, capture
 	path := filepath.Join(d.sessionDir(agent, sessionId), diffSnapshotFile)
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", time.Time{}, false
+		return "", capturedAt, false
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", time.Time{}, false
+		return "", capturedAt, false
 	}
 
 	return string(data), info.ModTime(), true
@@ -152,18 +151,18 @@ func (d *Dir) ReadPlanVersions(agent, sessionId string) []*PlanVersion {
 	return versions
 }
 
-func (d *Dir) WriteDiffBase(agent, sessionId string, base DiffBase) error {
+func (d *Dir) WriteDiffBase(agent string, base DiffBase, sessionId string) error {
 	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), diffBaseFile), base.Sha+" "+base.Target)
 }
 
-func (d *Dir) WriteDiffSnapshot(agent, sessionId, content string) error {
+func (d *Dir) WriteDiffSnapshot(agent, content, sessionId string) error {
 	if len(content) > MaxSnapshotBytes {
 		content = content[:MaxSnapshotBytes] + "\n[peek: snapshot truncated at 5 MB]\n"
 	}
 	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), diffSnapshotFile), content)
 }
 
-func (d *Dir) WritePlanLatest(agent, sessionId, content string) error {
+func (d *Dir) WritePlanLatest(agent, content, sessionId string) error {
 	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), planDir, planLatestFile), content)
 }
 
@@ -179,13 +178,20 @@ func (d *Dir) WritePlanVersion(agent, sessionId string, version *PlanVersion) er
 	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), planDir, name), version.Content)
 }
 
+type PlanVersion struct {
+	Content      string
+	Index        int
+	IsAlteration bool
+	ModTime      time.Time
+}
+
 func newestModTime(root string) time.Time {
 	newest := time.Time{}
 	filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return nil
 		}
-		if info, infoErr := entry.Info(); infoErr == nil && info.ModTime().After(newest) {
+		if info, err := entry.Info(); err == nil && info.ModTime().After(newest) {
 			newest = info.ModTime()
 		}
 		return nil
