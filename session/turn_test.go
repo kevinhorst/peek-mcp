@@ -116,6 +116,31 @@ func TestTurn_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
+	// pass-title-signal-with-source
+	form = &Turn{
+		CustomTitle: "Login simplification",
+		Meta:        &Meta{SessionId: "s1"},
+		TitleSource: TitleSourceCustom,
+	}
+	test = &testCase{
+		_id:         "pass-title-signal-with-source",
+		_shouldPass: true,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	// fail-title-signal-missing-source
+	form = &Turn{
+		CustomTitle: "Login simplification",
+		Meta:        &Meta{SessionId: "s1"},
+	}
+	test = &testCase{
+		_id:         "fail-title-signal-missing-source",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
 			err := test.form.Validate()

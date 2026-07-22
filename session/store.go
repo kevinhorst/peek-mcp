@@ -1,8 +1,6 @@
 package session
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -12,25 +10,31 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
+)
+
+const (
+	derivedTitleMaxRunes = 80
+	maxTitleCandidates   = 5
 )
 
 type Store struct {
 	mu sync.RWMutex
 
-	IdByTitle     map[string]Id // SHA-256 hex of normalized title → session Id
-	TurnAdded     chan Id
-	depth         int
-	enabledAgents []Agent
-	sessions      map[Id]*Session
+	TurnAdded      chan Id
+	depth          int
+	enabledAgents  []Agent
+	plainTitleById map[Id]string
+	sessions       map[Id]*Session
 }
 
 func NewStore(depth int, agents ...Agent) *Store {
 	return &Store{
-		sessions:      make(map[Id]*Session),
-		IdByTitle:     make(map[string]Id),
-		depth:         depth,
-		enabledAgents: agents,
-		TurnAdded:     make(chan Id, 16), // small fixed buffer; dropped notifications are fine — next turn re-triggers
+		sessions:       make(map[Id]*Session),
+		plainTitleById: make(map[Id]string),
+		depth:          depth,
+		enabledAgents:  agents,
+		TurnAdded:      make(chan Id, 16), // small fixed buffer; dropped notifications are fine — next turn re-triggers
 	}
 }
 
@@ -54,16 +58,17 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	defer s.mu.Unlock()
 
 	// update only title
-	if session.HasNewTitle(turn.CustomTitle) {
-		slog.Debug("Updating title", "session", id, "title", turn.CustomTitle)
-
-		old := hashTitle(session.Title)
-		if session.Title != "" {
-			delete(s.IdByTitle, old)
+	if turn.CustomTitle != "" {
+		if session.LastActive.IsZero() && !turn.Timestamp.IsZero() {
+			session.LastActive = turn.Timestamp
 		}
 
-		session.Title = turn.CustomTitle
-		s.IdByTitle[hashTitle(turn.CustomTitle)] = id
+		if !session.HasNewTitle(turn.CustomTitle, turn.TitleSource) {
+			return
+		}
+
+		slog.Debug("Updating title", "session", id, "title", turn.CustomTitle, "source", turn.TitleSource)
+		s.setTitle(session, turn.CustomTitle, turn.TitleSource)
 		return
 	}
 
@@ -71,30 +76,20 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	if turn.PlanFilePath != "" {
 		slog.Debug("Updating plan", "session", id)
 		session.PlanFilePath = turn.PlanFilePath
+		s.updatePlanContent(session, turn)
 
-		if turn.PlanContent != "" {
-			session.PlanContent = turn.PlanContent
+		// Codex plan turns are also chat turns; Claude plan signals carry no text
+		if turn.Text == "" {
 			return
 		}
+	}
 
-		if content, err := os.ReadFile(turn.PlanFilePath); err == nil {
-			session.PlanContent = string(content)
-			return
+	isUntitled := session.Title == ""
+	isUserPrompt := turn.Role == RoleUser && turn.Text != ""
+	if isUntitled && isUserPrompt {
+		if derivedTitle := deriveTitle(turn.Text); derivedTitle != "" {
+			s.setTitle(session, derivedTitle, TitleSourceDerived)
 		}
-
-		// Worktree fallback: Claude Code reports plan path as ~/.claude/plans/<name>
-		// but worktree sessions write to <cwd>/.claude/plans/<name>.
-		if cwd := turn.Meta.CWD; cwd != "" {
-			alt := filepath.Join(cwd, ".claude", "plans", filepath.Base(turn.PlanFilePath))
-			if content, err := os.ReadFile(alt); err == nil {
-				session.PlanFilePath = alt
-				session.PlanContent = string(content)
-				return
-			}
-		}
-
-		slog.Warn("Failed to read plan file", "path", turn.PlanFilePath)
-		return
 	}
 
 	// update user or assistent turn
@@ -149,27 +144,55 @@ func (s *Store) GetById(id Id) (*Session, bool) {
 	return session, ok
 }
 
-func (s *Store) GetByTitle(title string) (*Session, bool) {
+func (s *Store) GetByTitle(title string, agent Agent) (*Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	id, ok := s.IdByTitle[hashTitle(title)]
-	if !ok {
-		return nil, false
-	}
-	sess, ok := s.sessions[id]
-	return sess, ok
-}
+	needle := strings.ToLower(strings.TrimSpace(title))
 
-// hashTitle returns the SHA-256 hex digest of the normalized (lowercase, trimmed) title.
-func hashTitle(title string) string {
-	if title == "" {
-		return ""
+	var exactMatches []*Session
+	var substringMatches []*Session
+	for id, plainTitle := range s.plainTitleById {
+		sess, ok := s.sessions[id]
+		if !ok {
+			continue
+		}
+		if agent != "" && sess.Agent != agent {
+			continue
+		}
+		if plainTitle == needle {
+			exactMatches = append(exactMatches, sess)
+			continue
+		}
+		if strings.Contains(plainTitle, needle) {
+			substringMatches = append(substringMatches, sess)
+		}
 	}
 
-	normalized := strings.ToLower(strings.TrimSpace(title))
-	sum := sha256.Sum256([]byte(normalized))
-	return hex.EncodeToString(sum[:])
+	sortSessionsByLastActiveDesc(exactMatches)
+	if len(exactMatches) > 0 {
+		return exactMatches[0], nil
+	}
+
+	sortSessionsByLastActiveDesc(substringMatches)
+	if len(substringMatches) == 1 {
+		return substringMatches[0], nil
+	}
+	if len(substringMatches) == 0 {
+		return nil, fmt.Errorf("no session matching title %q", title)
+	}
+
+	candidates := substringMatches
+	if len(candidates) > maxTitleCandidates {
+		candidates = candidates[:maxTitleCandidates]
+	}
+
+	lines := make([]string, 0, len(candidates))
+	for _, sess := range candidates {
+		line := fmt.Sprintf("%q (id %s, last active %s)", sess.Title, sess.Meta.SessionId, sess.LastActive.Format(time.RFC3339))
+		lines = append(lines, line)
+	}
+	return nil, fmt.Errorf("multiple sessions match title %q: %s", title, strings.Join(lines, "; "))
 }
 
 func (s *Store) Last(agents ...Agent) (*Session, bool) {
@@ -208,9 +231,39 @@ func (s *Store) getOrCreate(id Id, agent Agent) *Session {
 	return session
 }
 
+func (s *Store) setTitle(session *Session, title string, source TitleSource) {
+	session.Title = title
+	session.TitleSource = source
+	s.plainTitleById[session.Meta.SessionId] = strings.ToLower(strings.TrimSpace(title))
+}
+
+func (s *Store) updatePlanContent(session *Session, turn *Turn) {
+	if turn.PlanContent != "" {
+		session.PlanContent = turn.PlanContent
+		return
+	}
+
+	if content, err := os.ReadFile(turn.PlanFilePath); err == nil {
+		session.PlanContent = string(content)
+		return
+	}
+
+	// Worktree fallback: Claude Code reports plan path as ~/.claude/plans/<name>
+	// but worktree sessions write to <cwd>/.claude/plans/<name>.
+	if cwd := turn.Meta.CWD; cwd != "" {
+		alt := filepath.Join(cwd, ".claude", "plans", filepath.Base(turn.PlanFilePath))
+		if content, err := os.ReadFile(alt); err == nil {
+			session.PlanFilePath = alt
+			session.PlanContent = string(content)
+			return
+		}
+	}
+
+	slog.Warn("Failed to read plan file", "path", turn.PlanFilePath)
+}
+
 func (s *Store) sortByLastActiveDesc(agents ...Agent) []*Session {
 	sessions := slices.Collect(maps.Values(s.sessions))
-	//TODO: Filter by agent
 	if len(agents) > 0 {
 		agent := agents[0]
 		sessions = slices.DeleteFunc(sessions, func(sess *Session) bool {
@@ -218,9 +271,25 @@ func (s *Store) sortByLastActiveDesc(agents ...Agent) []*Session {
 		})
 	}
 
+	sortSessionsByLastActiveDesc(sessions)
+	return sessions
+}
+
+func deriveTitle(text string) string {
+	firstLine := strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
+	if strings.HasPrefix(firstLine, "<") || strings.HasPrefix(firstLine, "# AGENTS.md") {
+		return ""
+	}
+
+	runes := []rune(firstLine)
+	if len(runes) > derivedTitleMaxRunes {
+		return string(runes[:derivedTitleMaxRunes])
+	}
+	return firstLine
+}
+
+func sortSessionsByLastActiveDesc(sessions []*Session) {
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[j].LastActive.Before(sessions[i].LastActive)
 	})
-
-	return sessions
 }

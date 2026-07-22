@@ -7,15 +7,16 @@ import (
 )
 
 type Turn struct {
-	Role         Role      `json:"role"`
-	Text         string    `json:"text"` // may be empty
-	Timestamp    time.Time `json:"timestamp"`
-	Meta         *Meta     `json:"meta"`
-	RequestId    string    `json:"request_id,omitempty"` // optional
-	Usage        *Usage    `json:"usage,omitempty"`      // optional
-	PlanFilePath string    `json:"-"`                    // plan signal only, not serialized
-	PlanContent  string    `json:"-"`                    // inline plan content from attachment
-	CustomTitle      string    `json:"-"`                    // title signal only, not serialized
+	Role         Role        `json:"role"`
+	Text         string      `json:"text"` // may be empty
+	Timestamp    time.Time   `json:"timestamp"`
+	Meta         *Meta       `json:"meta"`
+	RequestId    string      `json:"request_id,omitempty"` // optional
+	Usage        *Usage      `json:"usage,omitempty"`      // optional
+	PlanFilePath string      `json:"-"`                    // plan signal only, not serialized
+	PlanContent  string      `json:"-"`                    // inline plan content from attachment
+	CustomTitle  string      `json:"-"`                    // title signal only, not serialized
+	TitleSource  TitleSource `json:"-"`
 }
 
 func (t *Turn) Validate() error {
@@ -39,6 +40,9 @@ func (t *Turn) Validate() error {
 	if t.CustomTitle != "" {
 		if t.Meta.SessionId == "" {
 			return errors.New("Turn.Validate: title signal turn requires session ID")
+		}
+		if t.TitleSource == "" {
+			return errors.New("Turn.Validate: title signal turn requires title source")
 		}
 		return nil
 	}

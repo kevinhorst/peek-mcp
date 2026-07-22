@@ -22,23 +22,24 @@ const (
 
 type watchedFile struct {
 	offset int64
+	parser Parser
 }
 type Watcher struct {
-	agent    session.Agent
-	agentDir string
-	files    map[string]*watchedFile
-	mu       sync.Mutex
-	parser   parser
-	store    *session.Store
+	agent     session.Agent
+	agentDir  string
+	files     map[string]*watchedFile
+	mu        sync.Mutex
+	newParser func() Parser
+	store     *session.Store
 }
 
-func New(agent session.Agent, agentDir string, parser parser, store *session.Store) *Watcher {
+func New(agent session.Agent, agentDir string, newParser func() Parser, store *session.Store) *Watcher {
 	return &Watcher{
-		agent:    agent,
-		agentDir: agentDir,
-		parser:   parser,
-		store:    store,
-		files:    make(map[string]*watchedFile),
+		agent:     agent,
+		agentDir:  agentDir,
+		newParser: newParser,
+		store:     store,
+		files:     make(map[string]*watchedFile),
 	}
 }
 
@@ -140,7 +141,7 @@ func (w *Watcher) readNewLines(path string) error {
 
 	watched, ok := w.files[path]
 	if !ok {
-		watched = &watchedFile{}
+		watched = &watchedFile{parser: w.newParser()}
 	}
 
 	if watched.offset > 0 {
@@ -170,7 +171,7 @@ func (w *Watcher) readNewLines(path string) error {
 		line := bytes.TrimSuffix(part, []byte{'\n'})
 		line = bytes.TrimSuffix(line, []byte{'\r'})
 		if len(line) > 0 {
-			turn := w.parser.ParseLine(line)
+			turn := watched.parser.ParseLine(line)
 			err = turn.Validate()
 			if err != nil {
 				continue

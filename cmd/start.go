@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -39,7 +39,6 @@ var startCmd = &cobra.Command{
 		depth, _ := flags.GetInt("depth")
 		claudeHome, _ := flags.GetString("claude-home")
 		codexHome, _ := flags.GetString("codex-home")
-		diffTarget, _ := flags.GetString("diff-target")
 		pollInterval, _ := flags.GetDuration("poll-interval")
 		pollWindow, _ := flags.GetDuration("poll-window")
 
@@ -70,7 +69,8 @@ var startCmd = &cobra.Command{
 		if claudeHome != "" {
 			go func() {
 				watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
-				err := watcher.New(session.AgentClaude, watchedDir, claude.NewParser(), store).Run(ctx)
+				newParser := func() watcher.Parser { return claude.NewParser() }
+				err := watcher.New(session.AgentClaude, watchedDir, newParser, store).Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("claude watcher error", "err", err)
 					os.Exit(1)
@@ -90,16 +90,25 @@ var startCmd = &cobra.Command{
 		if codexHome != "" {
 			go func() {
 				watchedDir := filepath.Join(codexHome, codex.SessionDir)
-				err := watcher.New(session.AgentCodex, watchedDir, codex.NewParser(), store).Run(ctx)
+				newParser := func() watcher.Parser { return codex.NewParser() }
+				err := watcher.New(session.AgentCodex, watchedDir, newParser, store).Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("codex watcher error", "err", err)
+					os.Exit(1)
+				}
+			}()
+
+			go func() {
+				err := watcher.NewCodexIndexWatcher(codexHome, store).Run(ctx)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					slog.Error("codex index watcher error", "err", err)
 					os.Exit(1)
 				}
 			}()
 		}
 
 		go func() {
-			err := watcher.NewDiffWatcher(store, diffTarget, pollInterval, pollWindow).Run(ctx)
+			err := watcher.NewDiffWatcher(store, pollInterval, pollWindow).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("diff watcher error", "err", err)
 				os.Exit(1)
@@ -152,7 +161,6 @@ func init() {
 	flags.Int("depth", 20, "Ring buffer size per session (max turns kept)")
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
-	flags.String("diff-target", "main", "Branch to diff against for session_diff")
 	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
@@ -189,7 +197,6 @@ var envFallbacks = map[string]string{
 	"depth":         "PEEK_DEPTH",
 	"claude-home":   "PEEK_CLAUDE_HOME",
 	"codex-home":    "PEEK_CODEX_HOME",
-	"diff-target":   "PEEK_DIFF_TARGET",
 	"poll-interval": "PEEK_POLL_INTERVAL",
 	"poll-window":   "PEEK_POLL_WINDOW",
 	"log-level":     "PEEK_LOG_LEVEL",

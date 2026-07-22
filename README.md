@@ -34,7 +34,7 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
 In addition to turns, peek-mcp passively watches two more sources:
 
 - **Plans** — Claude Code writes a plan file to `~/.claude/plans/` at the start of each task. peek-mcp reads and stores it alongside the session so `session_plan` and `session_full` can surface it without any extra prompting.
-- **Git diffs** — After each new turn, peek-mcp runs `git diff <target-branch>` in the session's working directory and caches the result. `session_diff` and `session_full` expose this so a reviewer model can see exactly what changed without reading source files.
+- **Git diffs** — After each new turn, peek-mcp infers the session branch's base (reflog creation point, falling back to `origin/HEAD`, then local `main`/`master`, then `HEAD`) and runs `git diff --merge-base <base>` in the session's working directory. `session_diff` and `session_full` expose the result — no configuration needed; the resolved base is reported as `diff_target`.
 
 ## MCP Tools
 
@@ -43,8 +43,8 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
-| `n` | number | no | Number of turns to return (default 5) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
+| `n` | number | no | Number of turns to return (default 20) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `request_id` | string | no | Pagination request ID from a previous response |
 
@@ -52,10 +52,10 @@ In addition to turns, peek-mcp passively watches two more sources:
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `n` | number | no | Number of turns to return (default 5) |
+| `n` | number | no | Number of turns to return (default 20) |
 | `agent` | string | yes | Agent: `claude` or `codex` |
 
-**`session_list`** Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available.
+**`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, whether a plan or diff is available, the inferred diff base (`diff_target`), and session metadata (cwd, git branch, model, origin).
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -66,23 +66,24 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
-| `n` | number | no | Number of turns to return (default 5) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
+| `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
+| `n` | number | no | Number of turns to return (default 20) |
 
-**`session_plan`** Returns the current plan for a session. Returns an empty response if the session has no plan.
+**`session_plan`** Returns the current plan for a session. For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block. Returns an empty response if the session has no plan.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
-**`session_diff`** Returns the pre-computed git diff for a session, run against the configured target branch (default: `main`) and refreshed automatically on each new turn.
+**`session_diff`** Returns the pre-computed git diff for a session, run with merge-base semantics against the automatically inferred base branch and refreshed on each new turn.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 **`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
@@ -90,7 +91,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 ## Supported agents
@@ -99,6 +100,20 @@ In addition to turns, peek-mcp passively watches two more sources:
 |-------|-------------|
 | Claude Code | `~/.claude/projects/<encoded-cwd>/*.jsonl` |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
+
+### Agent parity
+
+| Capability | Claude Code | Codex |
+|---|---|---|
+| Title | explicit custom titles | session index thread names |
+| Plan | plan-mode plan file (watched live) | latest `proposed_plan` block |
+| Git metadata | branch per entry | branch, commit hash, repo URL from `session_meta` |
+| Client metadata | CLI version | originator, CLI version, source, fork lineage |
+| Model | per assistant message | per turn context |
+| Token usage | summed per message | cumulative snapshots parsed; accurate totals pending (usage_reporting concept) |
+| Tool calls | filtered out | filtered out |
+| Sub-agent sessions | hidden (sidechains) | hidden (sub-agent rollouts) |
+| Pagination | by client capability | by client capability |
 
 ## Installation
 
@@ -143,7 +158,6 @@ peek-mcp start --port 4242 --depth 20
 | `--depth` | `20` | Ring buffer depth per session (max turns kept) |
 | `--claude-home` | `~/.claude` | Override Claude Code session root |
 | `--codex-home` | `~/.codex` | Override Codex session root |
-| `--diff-target` | `main` | Branch to diff against for `session_diff` |
 | `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
 | `--poll-window` | `1h` | Only poll repos whose session was active within this window |
@@ -159,7 +173,6 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_DEPTH` | `--depth` |
 | `PEEK_CLAUDE_HOME` | `--claude-home` |
 | `PEEK_CODEX_HOME` | `--codex-home` |
-| `PEEK_DIFF_TARGET` | `--diff-target` |
 | `PEEK_POLL_INTERVAL` | `--poll-interval` |
 | `PEEK_POLL_WINDOW` | `--poll-window` |
 | `PEEK_LOG_LEVEL` | `--log-level` |
@@ -192,7 +205,7 @@ Add to `~/codex/config.toml`:
 ```toml
 [mcp_servers.peek-mcp]
 command = "/Users/kevinpersonal/GolandProjects/peek-mcp/dist/peek-mcp"
-args = ["start", "--transport=stdio", "--depth=100", "--claude-home=/Users/kevinpersonal/.claude", "--codex-home=/Users/kevinpersonal/.codex", "--diff-target=main"]
+args = ["start", "--transport=stdio", "--depth=100", "--claude-home=/Users/kevinpersonal/.claude", "--codex-home=/Users/kevinpersonal/.codex"]
 ```
 
 ## Hot reload (live diff)
@@ -245,7 +258,7 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/
 
 ## Limitations
 
-- `session_diff` requires a local `git` binary in `PATH` and runs in the session's working directory. It will produce no output if the directory is not a git repository or the target branch does not exist.
+- `session_diff` requires a local `git` binary (≥ 2.30, for `git diff --merge-base`) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository.
 - Codex CLI sessions do not currently expose token usage metadata.
 - The stdio transport is intended for Claude Desktop use via `.mcpb`. Running it manually requires the client to manage the process lifecycle.
 

@@ -33,7 +33,7 @@ func (w *PlanWatcher) Run(ctx context.Context) error {
 	}
 	defer watcher.Close()
 
-	if err := w.waitForDir(ctx, watcher); err != nil {
+	if err := waitForDir(ctx, watcher, w.plansDir); err != nil {
 		return err
 	}
 
@@ -61,12 +61,12 @@ func (w *PlanWatcher) Run(ctx context.Context) error {
 	}
 }
 
-func (w *PlanWatcher) waitForDir(ctx context.Context, fsWatcher *fsnotify.Watcher) error {
-	if err := fsWatcher.Add(w.plansDir); err == nil {
+func waitForDir(ctx context.Context, fsWatcher *fsnotify.Watcher, dir string) error {
+	if err := fsWatcher.Add(dir); err == nil {
 		return nil
 	}
 
-	slog.Info("PlanWatcher: plans dir not found, waiting for creation", "dir", w.plansDir)
+	slog.Info("waitForDir: Dir not found, waiting for creation", "dir", dir)
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -75,8 +75,8 @@ func (w *PlanWatcher) waitForDir(ctx context.Context, fsWatcher *fsnotify.Watche
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := fsWatcher.Add(w.plansDir); err == nil {
-				slog.Info("PlanWatcher: plans dir found, watching", "dir", w.plansDir)
+			if err := fsWatcher.Add(dir); err == nil {
+				slog.Info("waitForDir: Dir found, watching", "dir", dir)
 				return nil
 			}
 		}

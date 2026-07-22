@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +20,8 @@ func provideCompleteStore() *Store {
 
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		CustomTitle: "Login simplification",
-		Meta:    &Meta{SessionId: "s1"},
+		Meta:        &Meta{SessionId: "s1"},
+		TitleSource: TitleSourceCustom,
 	})
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		Role:      RoleUser,
@@ -30,7 +32,8 @@ func provideCompleteStore() *Store {
 
 	s.AddTurnBySessionId("s2", AgentCodex, &Turn{
 		CustomTitle: "Auth refactor",
-		Meta:    &Meta{SessionId: "s2"},
+		Meta:        &Meta{SessionId: "s2"},
+		TitleSource: TitleSourceCustom,
 	})
 	s.AddTurnBySessionId("s2", AgentCodex, &Turn{
 		Role:      RoleUser,
@@ -57,6 +60,43 @@ func TestGetOrCreate_Existing(t *testing.T) {
 	s2 := s.getOrCreate("s1", AgentClaude)
 
 	assert.Same(t, s1, s2)
+}
+
+func TestAddTurnBySessionId_PlanSentinel(t *testing.T) {
+	s := NewStore(10)
+	now := time.Now()
+
+	// sentinel path + PlanContent: content stored, path never read as a file
+	s.AddTurnBySessionId("s3", AgentCodex, &Turn{
+		Role:         RoleAssistant,
+		Text:         "reasoning\n<proposed_plan>\n# Plan\n</proposed_plan>",
+		Timestamp:    now,
+		PlanFilePath: "codex:proposed_plan",
+		PlanContent:  "# Plan",
+		Meta:         &Meta{SessionId: "s3"},
+	})
+
+	sess, ok := s.GetById("s3")
+	assert.True(t, ok)
+	assert.Equal(t, "# Plan", sess.PlanContent)
+	assert.Equal(t, "codex:proposed_plan", sess.PlanFilePath)
+
+	// plan turn with text also lands as a chat turn
+	turns := sess.Turns(10)
+	assert.Len(t, turns, 1)
+	assert.Contains(t, turns[0].Text, "# Plan")
+
+	// plan turn without text (Claude shape) is not a chat turn
+	s.AddTurnBySessionId("s4", AgentClaude, &Turn{
+		PlanFilePath: "codex:proposed_plan",
+		PlanContent:  "# Other plan",
+		Meta:         &Meta{SessionId: "s4"},
+	})
+
+	sess, ok = s.GetById("s4")
+	assert.True(t, ok)
+	assert.Equal(t, "# Other plan", sess.PlanContent)
+	assert.Empty(t, sess.Turns(10))
 }
 
 func TestGetById(t *testing.T) {
@@ -233,11 +273,12 @@ func TestAddTurn_PlanWorktreeFallback(t *testing.T) {
 
 func TestAddTurn_CustomTitle(t *testing.T) {
 	type testCase struct {
-		_id         string
-		_shouldPass bool
+		_expectedTitle       string
+		_expectedTitleSource TitleSource
+		_expectedTurnCount   int
+		_id                  string
 
-		store     *Store
-		wantTitle string
+		store *Store
 	}
 
 	tests := make([]*testCase, 0)
@@ -246,15 +287,16 @@ func TestAddTurn_CustomTitle(t *testing.T) {
 	setTitleStore := NewStore(10)
 	setTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		CustomTitle: "Login simplification",
-		Meta:    &Meta{SessionId: "s1"},
+		Meta:        &Meta{SessionId: "s1"},
+		TitleSource: TitleSourceCustom,
 	})
 
 	test := &testCase{
-		_id:         "pass-set-title",
-		_shouldPass: true,
+		_id:                  "pass-set-title",
+		_expectedTitle:       "Login simplification",
+		_expectedTitleSource: TitleSourceCustom,
 
-		store:     setTitleStore,
-		wantTitle: "Login simplification",
+		store: setTitleStore,
 	}
 	tests = append(tests, test)
 
@@ -262,125 +304,501 @@ func TestAddTurn_CustomTitle(t *testing.T) {
 	updateTitleStore := NewStore(10)
 	updateTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		CustomTitle: "Old title",
-		Meta:    &Meta{SessionId: "s1"},
+		Meta:        &Meta{SessionId: "s1"},
+		TitleSource: TitleSourceCustom,
 	})
 	updateTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		CustomTitle: "New title",
-		Meta:    &Meta{SessionId: "s1"},
+		Meta:        &Meta{SessionId: "s1"},
+		TitleSource: TitleSourceCustom,
 	})
 
 	test = &testCase{
-		_id:         "pass-update-title",
-		_shouldPass: true,
+		_id:                  "pass-update-title",
+		_expectedTitle:       "New title",
+		_expectedTitleSource: TitleSourceCustom,
 
-		store:     updateTitleStore,
-		wantTitle: "New title",
+		store: updateTitleStore,
 	}
 	tests = append(tests, test)
 
+	// pass-index-source-set
+	indexTitleStore := NewStore(10)
+	indexTitleStore.AddTurnBySessionId("s1", AgentCodex, &Turn{
+		CustomTitle: "Propagate Supabase schema",
+		Meta:        &Meta{SessionId: "s1"},
+		TitleSource: TitleSourceIndex,
+	})
+
+	test = &testCase{
+		_id:                  "pass-index-source-set",
+		_expectedTitle:       "Propagate Supabase schema",
+		_expectedTitleSource: TitleSourceIndex,
+
+		store: indexTitleStore,
+	}
+	tests = append(tests, test)
+
+	// pass-repeated-title-does-not-add-turn
+	repeatedTitleStore := NewStore(10)
+	repeatedTitleStore.AddTurnBySessionId("s1", AgentCodex, &Turn{
+		CustomTitle: "Propagate Supabase schema",
+		Meta:        &Meta{SessionId: "s1"},
+		TitleSource: TitleSourceIndex,
+	})
+	repeatedTitleStore.AddTurnBySessionId("s1", AgentCodex, &Turn{
+		CustomTitle: "Propagate Supabase schema",
+		Meta:        &Meta{SessionId: "s1"},
+		TitleSource: TitleSourceIndex,
+	})
+
+	test = &testCase{
+		_id:                  "pass-repeated-title-does-not-add-turn",
+		_expectedTitle:       "Propagate Supabase schema",
+		_expectedTitleSource: TitleSourceIndex,
+		_expectedTurnCount:   0,
+
+		store: repeatedTitleStore,
+	}
+	tests = append(tests, test)
+
+	// Run tests
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
 			sess, ok := test.store.GetById("s1")
-			assert.Equalf(t, test._shouldPass, ok, "session should exist")
-			assert.Equal(t, test.wantTitle, sess.Title)
+			assert.True(t, ok, "session should exist")
+			assert.Equal(t, test._expectedTitle, sess.Title)
+			assert.Equal(t, test._expectedTitleSource, sess.TitleSource)
+			assert.Len(t, sess.Turns(10), test._expectedTurnCount)
 		})
 	}
 }
 
+func provideTitledSession(s *Store, id Id, agent Agent, title string, lastActive time.Time) {
+	s.AddTurnBySessionId(id, agent, &Turn{
+		CustomTitle: title,
+		Meta:        &Meta{SessionId: id},
+		TitleSource: TitleSourceIndex,
+		Timestamp:   lastActive,
+	})
+}
+
 func TestGetByTitle(t *testing.T) {
 	type testCase struct {
-		_id                string
-		_shouldPass        bool
-		_expectedSessionId Id
+		_expectedErrContains string
+		_expectedSessionId   Id
+		_id                  string
+		_shouldPass          bool
 
-		store *Store
+		agent Agent
 		query string
+		store *Store
 	}
 
+	now := time.Now()
 	tests := make([]*testCase, 0)
 
 	// pass-exact-match
 	test := &testCase{
-		_id:         "pass-exact-match",
-		_shouldPass: true,
-
-		store:              provideCompleteStore(),
-		query:              "Login simplification",
+		_id:                "pass-exact-match",
+		_shouldPass:        true,
 		_expectedSessionId: "s1",
+
+		query: "Login simplification",
+		store: provideCompleteStore(),
 	}
 	tests = append(tests, test)
 
 	// pass-case-insensitive
 	test = &testCase{
-		_id:         "pass-case-insensitive",
-		_shouldPass: true,
-
-		store:              provideCompleteStore(),
-		query:              "login simplification",
+		_id:                "pass-case-insensitive",
+		_shouldPass:        true,
 		_expectedSessionId: "s1",
+
+		query: "login simplification",
+		store: provideCompleteStore(),
+	}
+	tests = append(tests, test)
+
+	// pass-substring-match
+	test = &testCase{
+		_id:                "pass-substring-match",
+		_shouldPass:        true,
+		_expectedSessionId: "s1",
+
+		query: "Login",
+		store: provideCompleteStore(),
 	}
 	tests = append(tests, test)
 
 	// fail-not-found
 	test = &testCase{
-		_id:         "fail-not-found",
-		_shouldPass: false,
+		_id:                  "fail-not-found",
+		_shouldPass:          false,
+		_expectedErrContains: "no session matching title",
 
-		store: provideCompleteStore(),
 		query: "nonexistent",
+		store: provideCompleteStore(),
 	}
 	tests = append(tests, test)
 
-	// fail-substring-does-not-match
-	test = &testCase{
-		_id:         "fail-substring-does-not-match",
-		_shouldPass: false,
+	// fail-substring-ambiguous-lists-candidates
+	ambiguousStore := NewStore(10)
+	provideTitledSession(ambiguousStore, "a1", AgentCodex, "Propagate Supabase schema", now.Add(-1*time.Hour))
+	provideTitledSession(ambiguousStore, "a2", AgentCodex, "Trim schema from supabase types", now)
 
+	test = &testCase{
+		_id:                  "fail-substring-ambiguous-lists-candidates",
+		_shouldPass:          false,
+		_expectedErrContains: "multiple sessions match title",
+
+		query: "supabase",
+		store: ambiguousStore,
+	}
+	tests = append(tests, test)
+
+	// pass-exact-duplicate-most-recent-wins
+	duplicateStore := NewStore(10)
+	provideTitledSession(duplicateStore, "d1", AgentCodex, "Propagate Supabase schema", now.Add(-1*time.Hour))
+	provideTitledSession(duplicateStore, "d2", AgentCodex, "Propagate Supabase schema", now)
+
+	test = &testCase{
+		_id:                "pass-exact-duplicate-most-recent-wins",
+		_shouldPass:        true,
+		_expectedSessionId: "d2",
+
+		query: "Propagate Supabase schema",
+		store: duplicateStore,
+	}
+	tests = append(tests, test)
+
+	// pass-agent-filtered
+	crossAgentStore := NewStore(10)
+	provideTitledSession(crossAgentStore, "c1", AgentClaude, "Auth refactor", now)
+	provideTitledSession(crossAgentStore, "c2", AgentCodex, "Auth refactor", now.Add(-1*time.Hour))
+
+	test = &testCase{
+		_id:                "pass-agent-filtered",
+		_shouldPass:        true,
+		_expectedSessionId: "c2",
+
+		agent: AgentCodex,
+		query: "Auth refactor",
+		store: crossAgentStore,
+	}
+	tests = append(tests, test)
+
+	// fail-agent-mismatch
+	test = &testCase{
+		_id:                  "fail-agent-mismatch",
+		_shouldPass:          false,
+		_expectedErrContains: "no session matching title",
+
+		agent: AgentClaude,
+		query: "Auth refactor",
 		store: provideCompleteStore(),
-		query: "Login",
+	}
+	tests = append(tests, test)
+
+	// fail-invalid-agent-matches-nothing
+	test = &testCase{
+		_id:                  "fail-invalid-agent-matches-nothing",
+		_shouldPass:          false,
+		_expectedErrContains: "no session matching title",
+
+		agent: "bogus",
+		query: "Login simplification",
+		store: provideCompleteStore(),
 	}
 	tests = append(tests, test)
 
 	// fail-title-update-removes-old-index
 	storeWithUpdate := NewStore(10)
-	storeWithUpdate.AddTurnBySessionId("s1", AgentClaude, &Turn{
-		CustomTitle: "Old title",
-		Meta:    &Meta{SessionId: "s1"},
-	})
-	storeWithUpdate.AddTurnBySessionId("s1", AgentClaude, &Turn{
-		CustomTitle: "New title",
-		Meta:    &Meta{SessionId: "s1"},
-	})
+	provideTitledSession(storeWithUpdate, "s1", AgentClaude, "Old title", now.Add(-1*time.Hour))
+	provideTitledSession(storeWithUpdate, "s1", AgentClaude, "New title", now)
 
 	test = &testCase{
-		_id:         "fail-title-update-removes-old-index",
-		_shouldPass: false,
+		_id:                  "fail-title-update-removes-old-index",
+		_shouldPass:          false,
+		_expectedErrContains: "no session matching title",
 
-		store: storeWithUpdate,
 		query: "Old title",
+		store: storeWithUpdate,
 	}
 	tests = append(tests, test)
 
 	// pass-title-update-new-title-resolves
 	test = &testCase{
-		_id:         "pass-title-update-new-title-resolves",
-		_shouldPass: true,
-
-		store:              storeWithUpdate,
-		query:              "New title",
+		_id:                "pass-title-update-new-title-resolves",
+		_shouldPass:        true,
 		_expectedSessionId: "s1",
+
+		query: "New title",
+		store: storeWithUpdate,
 	}
 	tests = append(tests, test)
 
+	// Run tests
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
-			sess, ok := test.store.GetByTitle(test.query)
-			assert.Equalf(t, test._shouldPass, ok, "GetByTitle(%q)", test.query)
+			sess, err := test.store.GetByTitle(test.query, test.agent)
+			assert.Equalf(t, test._shouldPass, err == nil, "err = %v", err)
 			if test._shouldPass {
 				assert.Equal(t, test._expectedSessionId, sess.Meta.SessionId)
+				return
 			}
+			assert.ErrorContains(t, err, test._expectedErrContains)
 		})
 	}
+}
+
+func TestGetByTitle_AmbiguityCandidates(t *testing.T) {
+	now := time.Now()
+	s := NewStore(10)
+	for i := range 7 {
+		id := Id("m" + string(rune('0'+i)))
+		provideTitledSession(s, id, AgentCodex, "Propagate Supabase schema "+string(rune('0'+i)), now.Add(-time.Duration(i)*time.Hour))
+	}
+
+	_, err := s.GetByTitle("supabase", AgentCodex)
+	assert.ErrorContains(t, err, "multiple sessions match title")
+	assert.ErrorContains(t, err, "m0")
+	assert.ErrorContains(t, err, "m4")
+	assert.NotContains(t, err.Error(), "m5")
+	assert.NotContains(t, err.Error(), "m6")
+}
+
+func TestAddTurn_TitlePrecedence(t *testing.T) {
+	type testCase struct {
+		_expectedTitle       string
+		_expectedTitleSource TitleSource
+		_id                  string
+
+		store *Store
+	}
+
+	now := time.Now()
+
+	provideUserTurn := func(text string) *Turn {
+		return &Turn{
+			Role:      RoleUser,
+			Text:      text,
+			Timestamp: now,
+			Meta:      &Meta{SessionId: "s1"},
+		}
+	}
+	provideTitleTurn := func(title string, source TitleSource) *Turn {
+		return &Turn{
+			CustomTitle: title,
+			Meta:        &Meta{SessionId: "s1"},
+			TitleSource: source,
+		}
+	}
+
+	tests := make([]*testCase, 0)
+
+	// derived-then-index-overwrites
+	derivedThenIndex := NewStore(10)
+	derivedThenIndex.AddTurnBySessionId("s1", AgentCodex, provideUserTurn("Fix the login flow"))
+	derivedThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
+
+	test := &testCase{
+		_id:                  "derived-then-index-overwrites",
+		_expectedTitle:       "Login fix",
+		_expectedTitleSource: TitleSourceIndex,
+
+		store: derivedThenIndex,
+	}
+	tests = append(tests, test)
+
+	// index-then-derived-ignored
+	indexThenDerived := NewStore(10)
+	indexThenDerived.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
+	indexThenDerived.AddTurnBySessionId("s1", AgentCodex, provideUserTurn("Fix the login flow"))
+
+	test = &testCase{
+		_id:                  "index-then-derived-ignored",
+		_expectedTitle:       "Login fix",
+		_expectedTitleSource: TitleSourceIndex,
+
+		store: indexThenDerived,
+	}
+	tests = append(tests, test)
+
+	// index-then-custom-overwrites
+	indexThenCustom := NewStore(10)
+	indexThenCustom.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
+	indexThenCustom.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("My login fix", TitleSourceCustom))
+
+	test = &testCase{
+		_id:                  "index-then-custom-overwrites",
+		_expectedTitle:       "My login fix",
+		_expectedTitleSource: TitleSourceCustom,
+
+		store: indexThenCustom,
+	}
+	tests = append(tests, test)
+
+	// custom-then-index-ignored
+	customThenIndex := NewStore(10)
+	customThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("My login fix", TitleSourceCustom))
+	customThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
+
+	test = &testCase{
+		_id:                  "custom-then-index-ignored",
+		_expectedTitle:       "My login fix",
+		_expectedTitleSource: TitleSourceCustom,
+
+		store: customThenIndex,
+	}
+	tests = append(tests, test)
+
+	// index-rename-same-rank-overwrites
+	indexRename := NewStore(10)
+	indexRename.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
+	indexRename.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login rework", TitleSourceIndex))
+
+	test = &testCase{
+		_id:                  "index-rename-same-rank-overwrites",
+		_expectedTitle:       "Login rework",
+		_expectedTitleSource: TitleSourceIndex,
+
+		store: indexRename,
+	}
+	tests = append(tests, test)
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			sess, ok := test.store.GetById("s1")
+			assert.True(t, ok, "session should exist")
+			assert.Equal(t, test._expectedTitle, sess.Title)
+			assert.Equal(t, test._expectedTitleSource, sess.TitleSource)
+		})
+	}
+}
+
+func TestAddTurn_DerivedTitle(t *testing.T) {
+	type testCase struct {
+		_expectedTitle       string
+		_expectedTitleSource TitleSource
+		_id                  string
+
+		texts []string
+	}
+
+	tests := make([]*testCase, 0)
+
+	// derives-first-line
+	test := &testCase{
+		_id:                  "derives-first-line",
+		_expectedTitle:       "Fix the login flow",
+		_expectedTitleSource: TitleSourceDerived,
+
+		texts: []string{"Fix the login flow\nIt breaks on empty passwords."},
+	}
+	tests = append(tests, test)
+
+	// truncates-80-runes
+	test = &testCase{
+		_id:                  "truncates-80-runes",
+		_expectedTitle:       strings.Repeat("ü", 80),
+		_expectedTitleSource: TitleSourceDerived,
+
+		texts: []string{strings.Repeat("ü", 100)},
+	}
+	tests = append(tests, test)
+
+	// skips-wrapper-prefixes
+	test = &testCase{
+		_id:            "skips-wrapper-prefixes",
+		_expectedTitle: "",
+
+		texts: []string{"<environment_context>\n<current_date>2026-07-19</current_date>"},
+	}
+	tests = append(tests, test)
+
+	// skips-agents-md-wrapper
+	test = &testCase{
+		_id:            "skips-agents-md-wrapper",
+		_expectedTitle: "",
+
+		texts: []string{"# AGENTS.md instructions\n\n<INSTRUCTIONS>never praise</INSTRUCTIONS>"},
+	}
+	tests = append(tests, test)
+
+	// derives-from-next-user-turn-after-wrapper
+	test = &testCase{
+		_id:                  "derives-from-next-user-turn-after-wrapper",
+		_expectedTitle:       "Fix the login flow",
+		_expectedTitleSource: TitleSourceDerived,
+
+		texts: []string{"<recommended_plugins>plugin list</recommended_plugins>", "Fix the login flow"},
+	}
+	tests = append(tests, test)
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			s := NewStore(10)
+			for i, text := range test.texts {
+				s.AddTurnBySessionId("s1", AgentCodex, &Turn{
+					Role:      RoleUser,
+					Text:      text,
+					Timestamp: time.Now().Add(time.Duration(i) * time.Minute),
+					Meta:      &Meta{SessionId: "s1"},
+				})
+			}
+
+			sess, ok := s.GetById("s1")
+			assert.True(t, ok, "session should exist")
+			assert.Equal(t, test._expectedTitle, sess.Title)
+			assert.Equal(t, test._expectedTitleSource, sess.TitleSource)
+		})
+	}
+}
+
+func TestAddTurn_AssistantTurnDoesNotDerive(t *testing.T) {
+	s := NewStore(10)
+	s.AddTurnBySessionId("s1", AgentCodex, &Turn{
+		Role:      RoleAssistant,
+		Text:      "I will fix the login flow.",
+		Timestamp: time.Now(),
+		Meta:      &Meta{SessionId: "s1"},
+	})
+
+	sess, _ := s.GetById("s1")
+	assert.Equal(t, "", sess.Title)
+	assert.Equal(t, TitleSource(""), sess.TitleSource)
+}
+
+func TestAddTurn_TitleOnlySession(t *testing.T) {
+	indexTime := time.Date(2026, 4, 19, 14, 10, 36, 0, time.UTC)
+	s := NewStore(10)
+	s.AddTurnBySessionId("s1", AgentCodex, &Turn{
+		CustomTitle: "Propagate Supabase schema",
+		Meta:        &Meta{SessionId: "s1"},
+		Timestamp:   indexTime,
+		TitleSource: TitleSourceIndex,
+	})
+
+	// seeds-last-active-from-timestamp
+	sess, ok := s.GetById("s1")
+	assert.True(t, ok)
+	assert.Equal(t, indexTime, sess.LastActive)
+
+	// listed-in-session-list
+	assert.Len(t, s.List(AgentCodex), 1)
+
+	// turn-timestamp-takes-over
+	turnTime := indexTime.Add(time.Hour)
+	s.AddTurnBySessionId("s1", AgentCodex, &Turn{
+		Role:      RoleUser,
+		Text:      "Continue the migration",
+		Timestamp: turnTime,
+		Meta:      &Meta{SessionId: "s1"},
+	})
+	assert.Equal(t, turnTime, sess.LastActive)
 }
 
 func TestConcurrentAccess(t *testing.T) {

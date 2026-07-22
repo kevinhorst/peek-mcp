@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -10,6 +11,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
+
+var errSessionSelectorMissing = errors.New("id or title parameter is required")
 
 const (
 	DefaultReturnedTurns = 20
@@ -33,10 +36,10 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
 			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithNumber("n",
-				mcp.Description("Number of turns to return (default 5)"),
+				mcp.Description("Number of turns to return (default 20)"),
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
@@ -51,7 +54,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 	sessionLatest := mcp.NewTool("session_latest",
 		mcp.WithDescription("Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out."),
 		mcp.WithNumber("n",
-			mcp.Description("Number of turns to return (default 5)"),
+			mcp.Description("Number of turns to return (default 20)"),
 		),
 		mcp.WithString("agent",
 			mcp.Required(),
@@ -63,7 +66,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	sessionList :=
 		mcp.NewTool("session_list",
-			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available."),
+			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, whether a plan or diff is available, the inferred diff base branch (diff_target), and session metadata (cwd, git branch, model, origin)."),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Lists all sessions when omitted."),
 			),
@@ -77,10 +80,13 @@ func Register(server *server.MCPServer, store *session.Store) {
 			mcp.Description("Session ID"),
 		),
 		mcp.WithString("title",
-			mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+			mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
+		),
+		mcp.WithString("agent",
+			mcp.Description("Agent: \"claude\" or \"codex\". Scopes title matching when provided."),
 		),
 		mcp.WithNumber("n",
-			mcp.Description("Number of turns to return (default 5)"),
+			mcp.Description("Number of turns to return (default 20)"),
 		),
 	)
 	sessionGet.Meta = withMaxResultSize()
@@ -88,12 +94,12 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	sessionPlan :=
 		mcp.NewTool("session_plan",
-			mcp.WithDescription("Returns the current plan for the given session (or the most recently active session if no ID is provided). Returns an empty response if the session has no plan."),
+			mcp.WithDescription("Returns the current plan for the given session (or the most recently active session if no ID is provided). For Claude sessions this is the plan-mode plan file; for Codex the latest proposed_plan block. Returns an empty response if the session has no plan."),
 			mcp.WithString("id",
 				mcp.Description("Session ID (optional, defaults to the most recently active session)"),
 			),
 			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
@@ -104,12 +110,12 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	sessionDiff :=
 		mcp.NewTool("session_diff",
-			mcp.WithDescription("Returns the pre-computed git diff for a session. The diff is run against the configured target branch (default: main) in the session's working directory, and refreshed automatically on each new turn. If id is omitted, uses the most recent session."),
+			mcp.WithDescription("Returns the pre-computed git diff for a session. The base branch is inferred from the session's live checkout (branch creation point from the reflog, falling back to origin/HEAD, then local main/master, then HEAD) and the diff uses merge-base semantics, refreshed automatically on each new turn. The resolved base is exposed as diff_target in session_full and session_list. If id is omitted, uses the most recent session."),
 			mcp.WithString("id",
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
 			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
@@ -125,7 +131,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
 			mcp.WithString("title",
-				mcp.Description("Exact session title (matched by normalized hash, case-insensitive)"),
+				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 			),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
@@ -162,6 +168,9 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 		// First call: resolve session and build pages
 		sess, err := resolveSession(s, request)
 		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			agent, agentErr := resolveAgentFromRequest(s, request)
 			if agentErr != nil {
 				return mcp.NewToolResultError(agentErr.Error()), nil
@@ -188,6 +197,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 		plan := sess.PlanContent
 
 		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).build(turns, plan, diff)
+		firstPage.DiffTarget = sess.DiffTarget
 
 		resultPage := newSessionFullResultPage(firstPage)
 		if len(nextPages) == 0 {
@@ -242,12 +252,15 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 		items := make([]sessionListItem, len(sessions))
 		for i, sess := range sessions {
 			items[i] = sessionListItem{
-				Id:         sess.Meta.SessionId,
-				Agent:      sess.Agent,
-				Title:      sess.Title,
-				LastActive: sess.LastActive,
-				HasPlan:    sess.PlanContent != "" || sess.PlanFilePath != "",
-				HasDiff:    sess.DiffOutput != "",
+				Id:          sess.Meta.SessionId,
+				Agent:       sess.Agent,
+				Title:       sess.Title,
+				TitleSource: sess.TitleSource,
+				LastActive:  sess.LastActive,
+				HasPlan:     sess.PlanContent != "" || sess.PlanFilePath != "",
+				HasDiff:     sess.DiffOutput != "",
+				DiffTarget:  sess.DiffTarget,
+				Meta:        sess.Meta,
 			}
 		}
 
@@ -281,6 +294,9 @@ func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			agent, agentErr := resolveAgentFromRequest(s, request)
 			if agentErr != nil {
 				return mcp.NewToolResultError(agentErr.Error()), nil
@@ -304,6 +320,9 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			agent, agentErr := resolveAgentFromRequest(s, request)
 			if agentErr != nil {
 				return mcp.NewToolResultError(agentErr.Error()), nil
@@ -323,6 +342,9 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		currentSession, err := resolveSession(s, request)
 		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			agent, agentErr := resolveAgentFromRequest(s, request)
 			if agentErr != nil {
 				return mcp.NewToolResultError(agentErr.Error()), nil
@@ -352,18 +374,28 @@ func resolveSession(s *session.Store, request mcp.CallToolRequest) (*session.Ses
 	}
 
 	if title, ok := args["title"].(string); ok && title != "" {
-		sess, found := s.GetByTitle(title)
-		if !found {
-			return nil, fmt.Errorf("no session matching title %q", title)
+		agent, err := resolveAgentFilter(s, request)
+		if err != nil {
+			return nil, err
 		}
-		return sess, nil
+		return s.GetByTitle(title, agent)
 	}
 
-	return nil, fmt.Errorf("id or title parameter is required")
+	return nil, errSessionSelectorMissing
+}
+
+func resolveAgentFilter(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
+	raw, _ := request.GetArguments()["agent"].(string)
+	if raw == "" {
+		return "", nil
+	}
+
+	return s.ResolveAgent(session.Agent(raw))
 }
 
 func resolveAgentFromRequest(s *session.Store, request mcp.CallToolRequest) (session.Agent, error) {
 	args := request.GetArguments()
 	raw, _ := args["agent"].(string)
+
 	return s.ResolveAgent(session.Agent(raw))
 }
