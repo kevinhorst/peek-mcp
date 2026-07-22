@@ -35,17 +35,6 @@ const (
 	sandboxRequireEscalated = "require_escalated"
 )
 
-type Parser struct {
-	model            string
-	pendingEscalated map[string]*escalatedCall
-	sessionId        session.Id
-	subagentActor    string
-}
-
-func NewParser() *Parser {
-	return &Parser{pendingEscalated: make(map[string]*escalatedCall)}
-}
-
 type escalatedCall struct {
 	cmd           string
 	justification string
@@ -55,6 +44,17 @@ type execCommandArgs struct {
 	Cmd                string `json:"cmd"`
 	Justification      string `json:"justification"`
 	SandboxPermissions string `json:"sandbox_permissions"`
+}
+
+type Parser struct {
+	model            string
+	pendingEscalated map[string]*escalatedCall
+	sessionId        session.Id
+	subagentActor    string
+}
+
+func NewParser() *Parser {
+	return &Parser{pendingEscalated: make(map[string]*escalatedCall)}
 }
 
 func (p *Parser) ParseLine(line []byte) *session.Turn {
@@ -128,9 +128,6 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *sessi
 	}
 }
 
-// Sub-agent rollouts stay out of session_list: no session is created for
-// them — their signal events attach to the parent via parent_thread_id, and
-// the store drops them when the parent is unknown (subagent no-create rule).
 func (p *Parser) handleSubagentMeta(meta *SessionMeta, ts time.Time) *session.Turn {
 	if meta.Source.ParentThreadId == "" {
 		slog.Debug("handleSubagentMeta: Dropping sub-agent rollout without parent", "id", meta.Id)
@@ -220,8 +217,6 @@ func (p *Parser) handleFunctionItem(item *ResponseItem, ts time.Time) *session.T
 	return nil
 }
 
-// Sandbox blocks without escalation (approval policy "never") are ordinary
-// failed execs, not user denials — only require_escalated calls are tracked.
 func (p *Parser) rememberEscalatedCall(item *ResponseItem) {
 	if item.Name != execCommandTool || item.CallId == "" {
 		return
@@ -242,13 +237,12 @@ func (p *Parser) rememberEscalatedCall(item *ResponseItem) {
 	p.pendingEscalated[item.CallId] = &escalatedCall{cmd: args.Cmd, justification: args.Justification}
 }
 
-// Grants stay implicit (a normal output follows) — parity with the Claude
-// side, where only denials are evented.
 func (p *Parser) handleFunctionCallOutput(item *ResponseItem, ts time.Time) *session.Turn {
 	pending, ok := p.pendingEscalated[item.CallId]
 	if !ok {
 		return nil
 	}
+
 	delete(p.pendingEscalated, item.CallId)
 
 	var output string
