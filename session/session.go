@@ -37,6 +37,7 @@ type Session struct {
 	UncommittedDiff string      `json:"-"` // git diff HEAD, refreshed by the poller
 	TurnActive      *Turn       `json:"-"`
 	TurnsFinished   *TurnBuffer
+	usageRequestIds map[string]struct{}
 }
 
 func (s *Session) AddTurn(nextTurn *Turn) {
@@ -45,6 +46,21 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 
 	if !nextTurn.Timestamp.IsZero() {
 		s.LastActive = nextTurn.Timestamp
+	}
+
+	if nextTurn.Usage != nil && nextTurn.UsageCumulative {
+		s.TotalUsage = *nextTurn.Usage
+		return
+	}
+
+	if nextTurn.Usage != nil && nextTurn.RequestId != "" {
+		if s.usageRequestIds == nil {
+			s.usageRequestIds = make(map[string]struct{})
+		}
+		if _, counted := s.usageRequestIds[nextTurn.RequestId]; !counted {
+			s.usageRequestIds[nextTurn.RequestId] = struct{}{}
+			s.TotalUsage.Add(nextTurn.Usage)
+		}
 	}
 
 	// first turn
@@ -59,11 +75,6 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 		merged.Text = s.TurnActive.Text + nextTurn.Text
 		s.TurnActive = &merged
 		return
-	}
-
-	// new turn, update usage and push old turn
-	if s.TurnActive.Usage != nil {
-		s.TotalUsage.Add(s.TurnActive.Usage)
 	}
 
 	if s.TurnActive.Text != "" {
