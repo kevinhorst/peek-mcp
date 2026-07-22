@@ -17,11 +17,12 @@ func NewTurnBuffer(capacity int) *TurnBuffer {
 
 func (b *TurnBuffer) Validate() error {
 	if b == nil {
-		return errors.New("turn buffer is nil")
+		return errors.New("TurnBuffer.Validate: Called on nil")
 	}
 
+	// capacity
 	if b.capacity <= 0 {
-		return errors.New("turn buffer capacity must be positive")
+		return errors.New("TurnBuffer.Validate: Capacity must be positive")
 	}
 
 	return nil

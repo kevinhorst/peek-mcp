@@ -62,22 +62,25 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 	t.Run("subagent-result-resolves-agent-id", func(t *testing.T) {
 		s := NewStore(10)
 		// Parent session exists via a chat turn
-		s.AddTurnBySessionId("p", AgentClaude, &Turn{
+		chatTurn := &Turn{
 			Role:      RoleUser,
 			Text:      "start",
 			Timestamp: now,
 			Meta:      &Meta{SessionId: "p"},
-		})
+		}
+		s.AddTurnBySessionId("p", AgentClaude, chatTurn)
 		// Spawned event (subagent signal, actor set)
-		s.AddTurnBySessionId("p", AgentClaude, &Turn{
+		spawnedTurn := &Turn{
 			Events: []*Event{{Actor: "sub-9", Kind: EventKindSubagentSpawned, Subagent: &SubagentPayload{AgentId: "sub-9", ToolUseId: "tu"}}},
 			Meta:   &Meta{SessionId: "p"},
-		})
+		}
+		s.AddTurnBySessionId("p", AgentClaude, spawnedTurn)
 		// Result event on the parent, agent id unknown at parse time
-		s.AddTurnBySessionId("p", AgentClaude, &Turn{
+		resultTurn := &Turn{
 			Events: []*Event{{Kind: EventKindSubagentResult, Subagent: &SubagentPayload{ToolUseId: "tu"}}},
 			Meta:   &Meta{SessionId: "p"},
-		})
+		}
+		s.AddTurnBySessionId("p", AgentClaude, resultTurn)
 
 		sess, ok := s.GetById("p")
 		require.True(t, ok)
@@ -90,14 +93,16 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 	// usage-signal-keep-last
 	t.Run("usage-signal-keep-last", func(t *testing.T) {
 		s := NewStore(10)
-		s.AddTurnBySessionId("c", AgentCodex, &Turn{
+		firstSnapshot := &Turn{
 			Usage: &Usage{InputTokens: 100, TotalTokens: 100},
 			Meta:  &Meta{SessionId: "c"},
-		})
-		s.AddTurnBySessionId("c", AgentCodex, &Turn{
+		}
+		s.AddTurnBySessionId("c", AgentCodex, firstSnapshot)
+		secondSnapshot := &Turn{
 			Usage: &Usage{InputTokens: 250, TotalTokens: 250},
 			Meta:  &Meta{SessionId: "c"},
-		})
+		}
+		s.AddTurnBySessionId("c", AgentCodex, secondSnapshot)
 
 		sess, ok := s.GetById("c")
 		require.True(t, ok)
@@ -110,7 +115,7 @@ func TestPlanRevisions(t *testing.T) {
 	t.Run("initial-version-recorded", func(t *testing.T) {
 		s := NewStore(10)
 		sess := s.getOrCreate("s1", AgentClaude)
-		s.setPlanContent(sess, "# Plan v1")
+		s.setPlanContent("# Plan v1", sess, time.Time{})
 
 		require.Len(t, sess.PlanRevisions, 1)
 		assert.Equal(t, "# Plan v1", sess.PlanRevisions[0].Content)
@@ -122,8 +127,8 @@ func TestPlanRevisions(t *testing.T) {
 		s := NewStore(10)
 		sess := s.getOrCreate("s1", AgentClaude)
 		sess.planExitSeen = true
-		s.setPlanContent(sess, "# Plan v1\n")
-		s.setPlanContent(sess, "# Plan v2\n")
+		s.setPlanContent("# Plan v1\n", sess, time.Time{})
+		s.setPlanContent("# Plan v2\n", sess, time.Time{})
 
 		require.Len(t, sess.PlanRevisions, 2)
 		assert.NotEmpty(t, sess.PlanRevisions[1].Diff)
@@ -133,12 +138,23 @@ func TestPlanRevisions(t *testing.T) {
 		assert.Equal(t, EventKindPlanRevised, events[0].Kind)
 	})
 
+	// revision-timestamp-from-transcript-entry
+	t.Run("revision-timestamp-from-transcript-entry", func(t *testing.T) {
+		s := NewStore(10)
+		sess := s.getOrCreate("s1", AgentClaude)
+		entryTime := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+		s.setPlanContent("# Plan v1", sess, entryTime)
+
+		require.Len(t, sess.PlanRevisions, 1)
+		assert.Equal(t, entryTime, sess.PlanRevisions[0].Timestamp)
+	})
+
 	// identical-content-no-revision
 	t.Run("identical-content-no-revision", func(t *testing.T) {
 		s := NewStore(10)
 		sess := s.getOrCreate("s1", AgentClaude)
-		s.setPlanContent(sess, "# Plan")
-		s.setPlanContent(sess, "# Plan")
+		s.setPlanContent("# Plan", sess, time.Time{})
+		s.setPlanContent("# Plan", sess, time.Time{})
 
 		assert.Len(t, sess.PlanRevisions, 1)
 	})
@@ -147,8 +163,8 @@ func TestPlanRevisions(t *testing.T) {
 	t.Run("codex-second-block-is-alteration", func(t *testing.T) {
 		s := NewStore(10)
 		sess := s.getOrCreate("s1", AgentCodex)
-		s.setPlanContent(sess, "# Plan v1\n")
-		s.setPlanContent(sess, "# Plan v2\n")
+		s.setPlanContent("# Plan v1\n", sess, time.Time{})
+		s.setPlanContent("# Plan v2\n", sess, time.Time{})
 
 		require.Len(t, sess.PlanRevisions, 2)
 		assert.True(t, sess.PlanRevisions[1].IsAlteration)
@@ -158,8 +174,8 @@ func TestPlanRevisions(t *testing.T) {
 	t.Run("claude-pre-exit-is-draft", func(t *testing.T) {
 		s := NewStore(10)
 		sess := s.getOrCreate("s1", AgentClaude)
-		s.setPlanContent(sess, "# Plan v1\n")
-		s.setPlanContent(sess, "# Plan v2\n")
+		s.setPlanContent("# Plan v1\n", sess, time.Time{})
+		s.setPlanContent("# Plan v2\n", sess, time.Time{})
 
 		require.Len(t, sess.PlanRevisions, 2)
 		assert.False(t, sess.PlanRevisions[1].IsAlteration)
@@ -170,8 +186,9 @@ func TestPlanRevisions(t *testing.T) {
 	t.Run("cap-50-keeps-counting", func(t *testing.T) {
 		s := NewStore(10)
 		sess := s.getOrCreate("s1", AgentCodex)
-		for i := 0; i < 60; i++ {
-			s.setPlanContent(sess, "# Plan v"+string(rune('A'+i%26))+string(rune('a'+i%23))+"\n")
+		for index := 0; index < 60; index++ {
+			content := "# Plan v" + string(rune('A'+index%26)) + string(rune('a'+index%23)) + "\n"
+			s.setPlanContent(content, sess, time.Time{})
 		}
 
 		assert.LessOrEqual(t, len(sess.PlanRevisions), maxPlanRevisions)
@@ -183,14 +200,15 @@ func TestHydrateFromState(t *testing.T) {
 	// pin-and-snapshot-restored
 	t.Run("pin-and-snapshot-restored", func(t *testing.T) {
 		dir := state.NewDir(t.TempDir())
-		require.NoError(t, dir.WriteDiffBase("claude", "s1", state.DiffBase{Sha: "abc123", Target: "main"}))
-		require.NoError(t, dir.WriteDiffSnapshot("claude", "s1", "diff body"))
+		base := state.DiffBase{Sha: "abc1234", Target: "main"}
+		require.NoError(t, dir.WriteDiffBase("claude", base, "s1"))
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff body", "s1"))
 
 		s := NewStore(10)
 		s.StateDir = dir
 		sess := s.getOrCreate("s1", AgentClaude)
 
-		assert.Equal(t, "abc123", sess.DiffBase)
+		assert.Equal(t, "abc1234", sess.DiffBase)
 		assert.Equal(t, "main", sess.DiffTarget)
 		assert.Equal(t, "diff body", sess.DiffOutput)
 		assert.Equal(t, DiffSourceSnapshot, sess.DiffSource)
@@ -200,10 +218,13 @@ func TestHydrateFromState(t *testing.T) {
 	// plan-revisions-restored-with-alteration-count
 	t.Run("plan-revisions-restored-with-alteration-count", func(t *testing.T) {
 		dir := state.NewDir(t.TempDir())
-		require.NoError(t, dir.WritePlanVersion("claude", "s1", &state.PlanVersion{Index: 0, Content: "# initial"}))
-		require.NoError(t, dir.WritePlanVersion("claude", "s1", &state.PlanVersion{Index: 1, Content: "@@ diff @@", IsAlteration: true}))
-		require.NoError(t, dir.WritePlanVersion("claude", "s1", &state.PlanVersion{Index: 2, Content: "@@ draft @@", IsAlteration: false}))
-		require.NoError(t, dir.WritePlanLatest("claude", "s1", "# latest"))
+		initial := &state.PlanVersion{Content: "# initial", Index: 0}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", initial))
+		alteration := &state.PlanVersion{Content: "@@ diff @@", Index: 1, IsAlteration: true}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", alteration))
+		draft := &state.PlanVersion{Content: "@@ draft @@", Index: 2, IsAlteration: false}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", draft))
+		require.NoError(t, dir.WritePlanLatest("claude", "# latest", "s1"))
 
 		s := NewStore(10)
 		s.StateDir = dir
@@ -221,13 +242,14 @@ func TestHydrateFromState(t *testing.T) {
 	// replayed-equal-content-no-phantom-revision
 	t.Run("replayed-equal-content-no-phantom-revision", func(t *testing.T) {
 		dir := state.NewDir(t.TempDir())
-		require.NoError(t, dir.WritePlanVersion("claude", "s1", &state.PlanVersion{Index: 0, Content: "# X"}))
-		require.NoError(t, dir.WritePlanLatest("claude", "s1", "# X"))
+		version := &state.PlanVersion{Content: "# X", Index: 0}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", version))
+		require.NoError(t, dir.WritePlanLatest("claude", "# X", "s1"))
 
 		s := NewStore(10)
 		s.StateDir = dir
 		sess := s.getOrCreate("s1", AgentClaude)
-		s.setPlanContent(sess, "# X")
+		s.setPlanContent("# X", sess, time.Time{})
 
 		assert.Len(t, sess.PlanRevisions, 1, "replayed identical content produces no phantom revision")
 	})

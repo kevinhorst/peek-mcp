@@ -48,7 +48,7 @@ type Event struct {
 
 func (e *Event) Validate() error {
 	if e == nil {
-		return errors.New("Event.Validate: called on nil")
+		return errors.New("Event.Validate: Called on nil")
 	}
 
 	// Kind

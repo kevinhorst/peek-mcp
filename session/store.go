@@ -103,7 +103,6 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 		}
 	}
 
-	// Codex token_count snapshots are cumulative: keep-last, never summed
 	if turn.IsUsageSignal() {
 		session.TotalUsage = *turn.Usage
 		return
@@ -130,8 +129,6 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	}
 }
 
-// Subagent events never create sessions: a subagent whose parent is unknown
-// is not analysis-relevant (walk order guarantees parent-first, see plan D10).
 func (s *Store) addSubagentEvents(id Id, turn *Turn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -148,33 +145,37 @@ func (s *Store) addSubagentEvents(id Id, turn *Turn) {
 }
 
 func (s *Store) appendEvent(session *Session, event *Event) {
-	resolveSubagentActor(session, event)
+	resolveSubagentActor(event, session)
 	session.AddEvent(event)
 }
 
-func (s *Store) setPlanContent(session *Session, content string) {
+func (s *Store) setPlanContent(content string, session *Session, timestamp time.Time) {
 	if content == "" || content == session.PlanContent {
 		return
 	}
 
 	previous := session.PlanContent
 	session.PlanContent = content
-	s.recordPlanRevision(session, previous, content)
+	s.recordPlanRevision(content, previous, session, timestamp)
 }
 
-func (s *Store) recordPlanRevision(session *Session, previous, current string) {
+func (s *Store) recordPlanRevision(current, previous string, session *Session, timestamp time.Time) {
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+
 	if previous == "" {
-		initial := &PlanRevision{Content: current, Timestamp: time.Now()}
+		initial := &PlanRevision{Content: current, Timestamp: timestamp}
 		session.PlanRevisions = append(session.PlanRevisions, initial)
-		s.persistPlanVersion(session, initial, current)
+		s.persistPlanVersion(current, initial, session)
 		return
 	}
 
 	revision := &PlanRevision{
-		Diff:         unifiedDiff(previous, current),
+		Diff:         unifiedDiff(current, previous),
 		Index:        len(session.PlanRevisions),
 		IsAlteration: session.isAlterationPhase(),
-		Timestamp:    time.Now(),
+		Timestamp:    timestamp,
 	}
 	if revision.IsAlteration {
 		session.Counters.PlanAlterations++
@@ -182,7 +183,7 @@ func (s *Store) recordPlanRevision(session *Session, previous, current string) {
 
 	if len(session.PlanRevisions) < maxPlanRevisions {
 		session.PlanRevisions = append(session.PlanRevisions, revision)
-		s.persistPlanVersion(session, revision, current)
+		s.persistPlanVersion(current, revision, session)
 	}
 
 	planPayload := &PlanPayload{Revision: revision.Index}
@@ -190,9 +191,7 @@ func (s *Store) recordPlanRevision(session *Session, previous, current string) {
 	s.appendEvent(session, event)
 }
 
-// Overwritten Claude plan-file versions are the one plan artifact disk
-// forgets; Codex revisions re-derive from the rollout and are not persisted.
-func (s *Store) persistPlanVersion(session *Session, revision *PlanRevision, latest string) {
+func (s *Store) persistPlanVersion(latest string, revision *PlanRevision, session *Session) {
 	if s.StateDir == nil || session.Agent != AgentClaude {
 		return
 	}
@@ -211,7 +210,7 @@ func (s *Store) persistPlanVersion(session *Session, revision *PlanRevision, lat
 	if err := s.StateDir.WritePlanVersion(agent, id, record); err != nil {
 		slog.Warn("Store.persistPlanVersion: Failed to write plan version", "session", id, "err", err)
 	}
-	if err := s.StateDir.WritePlanLatest(agent, id, latest); err != nil {
+	if err := s.StateDir.WritePlanLatest(agent, latest, id); err != nil {
 		slog.Warn("Store.persistPlanVersion: Failed to write plan latest", "session", id, "err", err)
 	}
 }
@@ -229,8 +228,6 @@ func (s *Store) UpdateDiff(id Id, target, output string) {
 	}
 }
 
-// MarkDiffSnapshot keeps DiffCapturedAt: it still names the time of the last
-// successful compute, which is exactly what the snapshot content is from.
 func (s *Store) MarkDiffSnapshot(id Id) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -271,7 +268,7 @@ func (s *Store) UpdatePlanForPath(filePath, content string) {
 
 	for _, session := range s.sessions {
 		if session.PlanFilePath == filePath {
-			s.setPlanContent(session, content)
+			s.setPlanContent(content, session, time.Now())
 		}
 	}
 }
@@ -396,13 +393,10 @@ func (s *Store) hydrateFromState(session *Session) {
 		session.DiffCapturedAt = capturedAt
 	}
 
-	s.hydratePlanState(session, agent, id)
+	s.hydratePlanState(agent, id, session)
 }
 
-// Restores the revision history and the latest full content so that replayed
-// plan attachments (which re-read the current file) compare equal and do not
-// produce phantom revisions after a restart.
-func (s *Store) hydratePlanState(session *Session, agent, id string) {
+func (s *Store) hydratePlanState(agent, id string, session *Session) {
 	versions := s.StateDir.ReadPlanVersions(agent, id)
 	if len(versions) == 0 {
 		return
@@ -439,12 +433,12 @@ func (s *Store) setTitle(session *Session, title string, source TitleSource) {
 
 func (s *Store) updatePlanContent(session *Session, turn *Turn) {
 	if turn.PlanContent != "" {
-		s.setPlanContent(session, turn.PlanContent)
+		s.setPlanContent(turn.PlanContent, session, turn.Timestamp)
 		return
 	}
 
 	if content, err := os.ReadFile(turn.PlanFilePath); err == nil {
-		s.setPlanContent(session, string(content))
+		s.setPlanContent(string(content), session, turn.Timestamp)
 		return
 	}
 
@@ -454,7 +448,7 @@ func (s *Store) updatePlanContent(session *Session, turn *Turn) {
 		alt := filepath.Join(cwd, ".claude", "plans", filepath.Base(turn.PlanFilePath))
 		if content, err := os.ReadFile(alt); err == nil {
 			session.PlanFilePath = alt
-			s.setPlanContent(session, string(content))
+			s.setPlanContent(string(content), session, turn.Timestamp)
 			return
 		}
 	}
@@ -475,9 +469,7 @@ func (s *Store) sortByLastActiveDesc(agents ...Agent) []*Session {
 	return sessions
 }
 
-// A subagent result arrives on the parent transcript knowing only its
-// toolUseId; the agent id lives in the matching spawned event's payload.
-func resolveSubagentActor(session *Session, event *Event) {
+func resolveSubagentActor(event *Event, session *Session) {
 	if event.Kind != EventKindSubagentResult {
 		return
 	}
@@ -501,7 +493,7 @@ func resolveSubagentActor(session *Session, event *Event) {
 	}
 }
 
-func unifiedDiff(previous, current string) string {
+func unifiedDiff(current, previous string) string {
 	diff := difflib.UnifiedDiff{
 		A:        difflib.SplitLines(previous),
 		B:        difflib.SplitLines(current),

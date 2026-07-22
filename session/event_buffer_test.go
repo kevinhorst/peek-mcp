@@ -65,6 +65,7 @@ func TestEventBuffer_Validate(t *testing.T) {
 		form:        &EventBuffer{},
 	})
 
+	// Run tests
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
 			err := test.form.Validate()

@@ -2,7 +2,6 @@ package session
 
 import "errors"
 
-// EventBuffer behaves like a circular buffer if full
 type EventBuffer struct {
 	capacity int
 	items    []*Event
@@ -17,11 +16,12 @@ func NewEventBuffer(capacity int) *EventBuffer {
 
 func (b *EventBuffer) Validate() error {
 	if b == nil {
-		return errors.New("event buffer is nil")
+		return errors.New("EventBuffer.Validate: Called on nil")
 	}
 
+	// capacity
 	if b.capacity <= 0 {
-		return errors.New("event buffer capacity must be positive")
+		return errors.New("EventBuffer.Validate: Capacity must be positive")
 	}
 
 	return nil

@@ -10,28 +10,32 @@ func TestSession_AddEventCounters(t *testing.T) {
 	// denial-increments
 	t.Run("denial-increments", func(t *testing.T) {
 		s := provideCompleteSession()
-		s.AddEvent(&Event{Kind: EventKindPermissionDenied})
+		event := &Event{Kind: EventKindPermissionDenied}
+		s.AddEvent(event)
 		assert.Equal(t, 1, s.Counters.PermissionDenials)
 	})
 
 	// rejection-increments
 	t.Run("rejection-increments", func(t *testing.T) {
 		s := provideCompleteSession()
-		s.AddEvent(&Event{Kind: EventKindPlanRejected})
+		event := &Event{Kind: EventKindPlanRejected}
+		s.AddEvent(event)
 		assert.Equal(t, 1, s.Counters.PlanRejections)
 	})
 
 	// skill-increments
 	t.Run("skill-increments", func(t *testing.T) {
 		s := provideCompleteSession()
-		s.AddEvent(&Event{Kind: EventKindSkillInvoked})
+		event := &Event{Kind: EventKindSkillInvoked}
+		s.AddEvent(event)
 		assert.Equal(t, 1, s.Counters.SkillsInvoked)
 	})
 
 	// spawn-increments
 	t.Run("spawn-increments", func(t *testing.T) {
 		s := provideCompleteSession()
-		s.AddEvent(&Event{Kind: EventKindSubagentSpawned})
+		event := &Event{Kind: EventKindSubagentSpawned}
+		s.AddEvent(event)
 		assert.Equal(t, 1, s.Counters.SubagentsSpawned)
 	})
 
@@ -39,7 +43,8 @@ func TestSession_AddEventCounters(t *testing.T) {
 	t.Run("mode-exit-sets-phase", func(t *testing.T) {
 		s := provideCompleteSession()
 		assert.False(t, s.isAlterationPhase())
-		s.AddEvent(&Event{Kind: EventKindPlanModeExit})
+		event := &Event{Kind: EventKindPlanModeExit}
+		s.AddEvent(event)
 		assert.True(t, s.isAlterationPhase())
 	})
 }
