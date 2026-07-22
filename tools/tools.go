@@ -66,7 +66,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	sessionList :=
 		mcp.NewTool("session_list",
-			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, whether a plan or diff is available, and session metadata (cwd, git branch, model, origin)."),
+			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, whether a plan or diff is available, the inferred diff base branch (diff_target), and session metadata (cwd, git branch, model, origin)."),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Lists all sessions when omitted."),
 			),
@@ -110,7 +110,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 
 	sessionDiff :=
 		mcp.NewTool("session_diff",
-			mcp.WithDescription("Returns the pre-computed git diff for a session. The diff is run against the configured target branch (default: main) in the session's working directory, and refreshed automatically on each new turn. If id is omitted, uses the most recent session."),
+			mcp.WithDescription("Returns the pre-computed git diff for a session. The base branch is inferred from the session's live checkout (branch creation point from the reflog, falling back to origin/HEAD, then local main/master, then HEAD) and the diff uses merge-base semantics, refreshed automatically on each new turn. The resolved base is exposed as diff_target in session_full and session_list. If id is omitted, uses the most recent session."),
 			mcp.WithString("id",
 				mcp.Description("Session ID (omit for most recent session)"),
 			),
@@ -197,6 +197,7 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 		plan := sess.PlanContent
 
 		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).build(turns, plan, diff)
+		firstPage.DiffTarget = sess.DiffTarget
 
 		resultPage := newSessionFullResultPage(firstPage)
 		if len(nextPages) == 0 {
@@ -258,6 +259,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 				LastActive:  sess.LastActive,
 				HasPlan:     sess.PlanContent != "" || sess.PlanFilePath != "",
 				HasDiff:     sess.DiffOutput != "",
+				DiffTarget:  sess.DiffTarget,
 				Meta:        sess.Meta,
 			}
 		}

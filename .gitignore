@@ -2,6 +2,9 @@
 **/.claude/worktrees/**
 **/.idea/**
 
-.claude
-.codex
-.serena
+.claude/**
+.codex/**
+.serena/**
+
+**/claude/.DS_Store
+.DS_Store

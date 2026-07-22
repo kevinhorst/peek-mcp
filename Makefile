@@ -2,7 +2,7 @@ DIST    := dist
 STAGE   := $(DIST)/bundle
 LDFLAGS := -s -w
 GOENV := GOOS=darwin CGO_ENABLED=0
-VERSION = 1.0.5
+VERSION = 1.0.6
 
 build-darwin-universal:
 	@mkdir -p $(DIST)
@@ -43,6 +43,9 @@ clean-dist:
 
 
 git-release:
+	sed -i '' 's/^VERSION = .*/VERSION = $(VERSION)/' Makefile
+	sed -i '' 's/^var version = ".*"/var version = "$(VERSION)"/' cmd/version.go
+	sed -i '' 's/^  "version": ".*",/  "version": "$(VERSION)",/' mcpb/manifest.json
 	git commit -am "cmd: release v$(VERSION)"
 	git tag v$(VERSION)
 

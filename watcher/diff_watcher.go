@@ -14,22 +14,29 @@ import (
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
+type diffBaseKey struct {
+	branch string
+	cwd    string
+}
+
 type DiffWatcher struct {
 	store    *session.Store
-	target   string
 	interval time.Duration
 	window   time.Duration
 	running  sync.Map // session.Id -> struct{}; one in-flight turn-diff per session
 	polling  sync.Map // cwd -> struct{}; one in-flight poll per repo
 	lastDiff sync.Map // gitDir -> string; last written uncommitted diff, to skip no-op writes
+
+	baseMu    sync.Mutex
+	baseByKey map[diffBaseKey]string
 }
 
-func NewDiffWatcher(store *session.Store, target string, interval, window time.Duration) *DiffWatcher {
+func NewDiffWatcher(store *session.Store, interval, window time.Duration) *DiffWatcher {
 	return &DiffWatcher{
-		store:    store,
-		target:   target,
-		interval: interval,
-		window:   window,
+		store:     store,
+		interval:  interval,
+		window:    window,
+		baseByKey: make(map[diffBaseKey]string),
 	}
 }
 
@@ -70,13 +77,35 @@ func (w *DiffWatcher) refresh(ctx context.Context, id session.Id, cwd string) {
 		return
 	}
 
-	output, err := gitDiff(ctx, cwd, w.target)
+	base := w.diffBase(ctx, cwd)
+	output, err := gitDiff(ctx, cwd, "--merge-base", base)
 	if err != nil {
 		logDiffErr(string(id), "git diff", err)
 		return
 	}
-	w.store.UpdateDiff(id, w.target, output)
-	slog.Debug("DiffWatcher: refreshed diff", "session", id, "target", w.target, "bytes", len(output))
+	w.store.UpdateDiff(id, base, output)
+	slog.Debug("DiffWatcher: refreshed diff", "session", id, "base", base, "bytes", len(output))
+}
+
+func (w *DiffWatcher) diffBase(ctx context.Context, cwd string) string {
+	branch, err := gitOutput(ctx, cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err != nil {
+		branch = "HEAD"
+	}
+
+	key := diffBaseKey{branch: branch, cwd: cwd}
+	w.baseMu.Lock()
+	base, isCached := w.baseByKey[key]
+	w.baseMu.Unlock()
+	if isCached {
+		return base
+	}
+
+	base = inferDiffBase(ctx, branch, cwd)
+	w.baseMu.Lock()
+	w.baseByKey[key] = base
+	w.baseMu.Unlock()
+	return base
 }
 
 // pollAll recomputes the live uncommitted diff (git diff HEAD) once per distinct
@@ -114,7 +143,7 @@ func (w *DiffWatcher) pollRepo(ctx context.Context, cwd string) {
 		return
 	}
 
-	gitDir, err := gitAbsoluteDir(ctx, cwd)
+	gitDir, err := gitOutput(ctx, cwd, "rev-parse", "--absolute-git-dir")
 	if err != nil {
 		return
 	}
@@ -140,19 +169,91 @@ func gitReady(ctx context.Context, cwd string) bool {
 	if _, err := os.Stat(cwd); err != nil {
 		return false
 	}
-	check := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
-	check.Dir = cwd
-	return check.Run() == nil
+	return gitSucceeds(ctx, cwd, "rev-parse", "--git-dir")
 }
 
-func gitAbsoluteDir(ctx context.Context, cwd string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--absolute-git-dir")
+func inferDiffBase(ctx context.Context, branch, cwd string) string {
+	if base := baseFromReflog(ctx, branch, cwd); base != "" {
+		return base
+	}
+	if base := baseFromOriginHead(ctx, cwd); base != "" {
+		return base
+	}
+	if base := baseFromLocalDefault(ctx, cwd); base != "" {
+		return base
+	}
+	return "HEAD"
+}
+
+func baseFromReflog(ctx context.Context, branch, cwd string) string {
+	if branch == "HEAD" {
+		return ""
+	}
+
+	output, err := gitOutput(ctx, cwd, "reflog", "show", "--format=%gs", branch)
+	if err != nil || output == "" {
+		return ""
+	}
+
+	lines := strings.Split(output, "\n")
+	oldest := lines[len(lines)-1]
+	created, isCreationEntry := strings.CutPrefix(oldest, "branch: Created from ")
+	if !isCreationEntry {
+		return ""
+	}
+
+	base := strings.TrimPrefix(created, "refs/remotes/")
+	base = strings.TrimPrefix(base, "refs/heads/")
+	if base == "" || base == "HEAD" {
+		return ""
+	}
+	if strings.HasPrefix(base, "claude/") {
+		return ""
+	}
+
+	for _, ref := range []string{"refs/heads/" + base, "refs/remotes/" + base} {
+		if gitSucceeds(ctx, cwd, "show-ref", "--verify", "--quiet", ref) {
+			return base
+		}
+	}
+	return ""
+}
+
+func baseFromOriginHead(ctx context.Context, cwd string) string {
+	name, err := gitOutput(ctx, cwd, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+	if err != nil {
+		return ""
+	}
+
+	if !gitSucceeds(ctx, cwd, "rev-parse", "--verify", "--quiet", name) {
+		return ""
+	}
+	return name
+}
+
+func baseFromLocalDefault(ctx context.Context, cwd string) string {
+	for _, name := range []string{"main", "master"} {
+		if gitSucceeds(ctx, cwd, "rev-parse", "--verify", "--quiet", "refs/heads/"+name) {
+			return name
+		}
+	}
+	return ""
+}
+
+func gitOutput(ctx context.Context, cwd string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func gitSucceeds(ctx context.Context, cwd string, args ...string) bool {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = cwd
+	return cmd.Run() == nil
 }
 
 // excludedPaths lists dependency/generated directories and files excluded from diffs.

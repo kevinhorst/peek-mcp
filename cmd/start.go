@@ -39,7 +39,6 @@ var startCmd = &cobra.Command{
 		depth, _ := flags.GetInt("depth")
 		claudeHome, _ := flags.GetString("claude-home")
 		codexHome, _ := flags.GetString("codex-home")
-		diffTarget, _ := flags.GetString("diff-target")
 		pollInterval, _ := flags.GetDuration("poll-interval")
 		pollWindow, _ := flags.GetDuration("poll-window")
 
@@ -109,7 +108,7 @@ var startCmd = &cobra.Command{
 		}
 
 		go func() {
-			err := watcher.NewDiffWatcher(store, diffTarget, pollInterval, pollWindow).Run(ctx)
+			err := watcher.NewDiffWatcher(store, pollInterval, pollWindow).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("diff watcher error", "err", err)
 				os.Exit(1)
@@ -162,7 +161,6 @@ func init() {
 	flags.Int("depth", 20, "Ring buffer size per session (max turns kept)")
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
-	flags.String("diff-target", "main", "Branch to diff against for session_diff")
 	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
@@ -199,7 +197,6 @@ var envFallbacks = map[string]string{
 	"depth":         "PEEK_DEPTH",
 	"claude-home":   "PEEK_CLAUDE_HOME",
 	"codex-home":    "PEEK_CODEX_HOME",
-	"diff-target":   "PEEK_DIFF_TARGET",
 	"poll-interval": "PEEK_POLL_INTERVAL",
 	"poll-window":   "PEEK_POLL_WINDOW",
 	"log-level":     "PEEK_LOG_LEVEL",
