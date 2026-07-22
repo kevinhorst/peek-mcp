@@ -48,6 +48,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `request_id` | string | no | Pagination request ID from a previous response |
 | `remember` | boolean | no | Include the project's auto-memory (`MEMORY.md` + fact files). Claude sessions only |
+| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
 Compact one-line event entries are included by default (interleave them with turns by timestamp); the full typed event stream and counters live in `session_events`.
 
@@ -57,6 +58,7 @@ Compact one-line event entries are included by default (interleave them with tur
 |-------|------|----------|-------------|
 | `n` | number | no | Number of turns to return (default 20) |
 | `agent` | string | yes | Agent: `claude` or `codex` |
+| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
 **`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, whether a plan or diff is available, the inferred diff base (`diff_target`), and session metadata (cwd, git branch, model, origin).
 
@@ -73,6 +75,7 @@ Compact one-line event entries are included by default (interleave them with tur
 | `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
 | `n` | number | no | Number of turns to return (default 20) |
 | `remember` | boolean | no | Include the project's auto-memory (`MEMORY.md` + fact files). Claude sessions only |
+| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
 The response is an envelope `{turns, events, total_usage, memory?}`: `events` are compact one-line entries, `total_usage` is the running token total (including the in-flight turn), and `memory` is present only when `remember` is set.
 
@@ -83,6 +86,7 @@ The response is an envelope `{turns, events, total_usage, memory?}`: `events` ar
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
+| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
 **`session_diff`** Returns the pre-computed git diff for a session. On the first successful compute the merge-base is pinned as a SHA, so the diff survives the target branch advancing, merges, cherry-picks, and worktree/branch cleanup. The response is an envelope `{diff, diff_target, source, captured_at?}`: `source` is `live` (freshly computed) or `snapshot` (the last successful diff, served after the live compute failed — e.g. the working directory was removed), and `captured_at` (RFC 3339) is present only for snapshots and names when that diff was captured.
 
@@ -91,6 +95,7 @@ The response is an envelope `{turns, events, total_usage, memory?}`: `events` ar
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
+| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
 **`session_events`** Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, plan revision history, and diff availability (`live` | `snapshot` | `none`). Turns are not included — use `session_full` for those. The `unsupported` array lists signals not detectable for the session's agent (Codex omits skills, memory, user answers, plan approval and subagent results).
 
@@ -100,6 +105,7 @@ The response is an envelope `{turns, events, total_usage, memory?}`: `events` ar
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `revisions` | boolean | no | Include plan revision diffs (default false; they dominate response size) |
+| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
 **`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
 
@@ -108,6 +114,7 @@ The response is an envelope `{turns, events, total_usage, memory?}`: `events` ar
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
+| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
 ## Supported agents
 
