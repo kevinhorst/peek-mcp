@@ -44,6 +44,21 @@ func TestParseLine_PermissionEvents(t *testing.T) {
 	assert.Nil(t, p.ParseLine([]byte(`{"timestamp":"2026-03-29T23:45:23.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c2","arguments":"{\"cmd\":\"ls\",\"sandbox_permissions\":\"read-only\"}"}}`)))
 	turn = p.ParseLine([]byte(`{"timestamp":"2026-03-29T23:45:24.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c2","output":"exec failed: Rejected(\"rejected by user\")"}}`))
 	assert.Nil(t, turn, "non-escalated calls are not tracked")
+
+	// object-arguments-not-tracked
+	p = seededParser(t)
+	assert.Nil(t, p.ParseLine([]byte(`{"timestamp":"2026-03-29T23:45:23.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c3","arguments":{"cmd":"ls","sandbox_permissions":"require_escalated"}}}`)))
+	turn = p.ParseLine([]byte(`{"timestamp":"2026-03-29T23:45:24.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c3","output":"exec failed: Rejected(\"rejected by user\")"}}`))
+	assert.Nil(t, turn, "object-form arguments are not the exec_command escalation shape")
+
+	// object-arguments-do-not-break-the-parser
+	p = seededParser(t)
+	assert.Nil(t, p.ParseLine([]byte(`{"timestamp":"2026-03-29T23:45:23.000Z","type":"response_item","payload":{"type":"tool_search_call","call_id":"c4","arguments":{"query":"select:Read"}}}`)))
+	assert.Nil(t, p.ParseLine([]byte(escalatedCallLine)))
+	turn = p.ParseLine([]byte(`{"timestamp":"2026-03-29T23:45:24.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"exec failed: Rejected(\"rejected by user\")"}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
 }
 
 func TestParseLine_SubagentRollout(t *testing.T) {

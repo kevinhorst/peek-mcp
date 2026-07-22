@@ -8,7 +8,7 @@ import (
 )
 
 type ResponseItem struct {
-	Arguments string          `json:"arguments"`
+	Arguments json.RawMessage `json:"arguments"`
 	CallId    string          `json:"call_id"`
 	Content   []ContentBlock  `json:"content"`
 	Name      string          `json:"name"`

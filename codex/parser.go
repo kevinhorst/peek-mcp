@@ -222,9 +222,15 @@ func (p *Parser) rememberEscalatedCall(item *ResponseItem) {
 		return
 	}
 
+	var encoded string
+	if err := json.Unmarshal(item.Arguments, &encoded); err != nil {
+		slog.Debug("rememberEscalatedCall: Arguments is not a JSON-encoded string", "err", err)
+		return
+	}
+
 	var args execCommandArgs
-	if err := json.Unmarshal([]byte(item.Arguments), &args); err != nil {
-		slog.Debug("rememberEscalatedCall: unmarshal", "err", err)
+	if err := json.Unmarshal([]byte(encoded), &args); err != nil {
+		slog.Debug("rememberEscalatedCall: Failed to parse exec command arguments", "err", err)
 		return
 	}
 	if args.SandboxPermissions != sandboxRequireEscalated {
