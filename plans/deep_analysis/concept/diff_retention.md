@@ -48,7 +48,8 @@
 
 - Snapshot size: 5 MB per session (beyond that: truncate with marker — analysis of megadiff sessions doesn't need byte fidelity).
 - Uncommitted diff stays live-only (decision): it has no meaning once the worktree is gone; the committed-work snapshot is the analysis artifact.
-- Retention/GC of old sessions' state: Open Question 2 in [concept.md](concept.md).
+- State dir: `~/.peek/state/<agent>/<session-id>/`, overridable via `--state-dir` / `PEEK_STATE_DIR` — home-relative so both install modes (`go install` binary and `.mcpb` bundle) and concurrent instances share it; never inside the mcpb bundle dir, which Claude Desktop replaces on update ([concept.md](concept.md) decision).
+- Retention: configurable, default 90 days (`--state-retention-days` / `PEEK_STATE_RETENTION_DAYS`). GC removes a session's state dir when its newest artifact exceeds retention; runs at startup and periodically.
 
 ---
 

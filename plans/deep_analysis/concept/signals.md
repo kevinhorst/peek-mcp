@@ -40,9 +40,12 @@
 
 ### Permission events (Codex)
 
-1. Codex emits approval requests as `event_msg` payloads; shape unverified — no rollout on disk contains one (concept Open Question 1).
+1. Codex does not emit approval `event_msg` payloads (verified against a purpose-recorded rollout containing one grant and one denial). The permission signal lives in `response_item` function-call pairs: the request is a `function_call` with `name: "exec_command"` whose arguments contain `"sandbox_permissions": "require_escalated"`, a `justification` string, and the `cmd`; the verdict is the `call_id`-matched `function_call_output` — a failure containing `Rejected("rejected by user")` is a user denial, a normal success is a grant.
 2. Backend
-   1. Once verified: map approval request + verdict to `PermissionEvent` with the same fields; until then Codex sessions report zero permission events, flagged as `unsupported` rather than `0` in `session_events` output.
+   1. Parser tracks pending `function_call`s with `require_escalated` by `call_id` (same pending-id mechanism as the Claude `ExitPlanMode` / `Agent` tracking).
+   2. Matching output containing `Rejected("rejected by user")` → `PermissionEvent{tool: exec_command, kind: denied, payload: cmd + justification}`; increments `permission_denials`.
+   3. Grants stay implicit (a normal output follows) and are not evented — parity with the Claude side.
+   4. Failed execs without `require_escalated` (sandbox blocks under approval policy `never`, e.g. "operation not permitted") are ordinary tool failures, never permission denials. `approval_policy` is available from `thread_settings_applied` / `turn_context` entries when context is needed.
 
 ---
 
@@ -93,7 +96,4 @@
 - Fixtures from the verified real transcript: Skill invocation, ExitPlanMode approval (with persisted-output pointer) and rejection, permission denial, AskUserQuestion answer.
 - Plan revision fixture: three plan-file versions → initial + two diffs, `plan_alterations` counts only post-exit revisions.
 - Codex fixture: multi-`proposed_plan` rollout → one `revised` event per later block, latest content still wins for `session_plan`.
-
-### Verification
-
-- Codex approval `event_msg` shape (Open Question 1) — capture a real approval rollout before designing the Codex mapping.
+- Codex permission fixture from the verified rollout (`rollout-2026-07-22T18-14-40-019f8a9b-*.jsonl`): escalated grant → no event; escalated denial → `PermissionEvent{denied}` with cmd + justification; non-escalated sandbox failure → no event.

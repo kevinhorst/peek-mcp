@@ -1,6 +1,6 @@
 # Concept: Deep Analysis
 
-> **Status:** Draft
+> **Status:** In Review
 > **Author:** Kevin Horst
 > **Date:** 2026-07-19
 
@@ -28,7 +28,7 @@ Verified against raw transcripts (`~/.claude/projects/...-control-server-feature
 | Plan lifecycle | `plan_mode` / `plan_mode_exit` / `plan_mode_reentry` attachments + `ExitPlanMode` tool_use with result | Plan-mode `<proposed_plan>` blocks | Attachments partially parsed today → MVP extends |
 | Plan approval / rejection | `ExitPlanMode` tool_result: approval = "User has approved your plan" (+ approved plan, possibly behind a `<persisted-output>` pointer); rejection = `is_error: true` | No approval event — a follow-up user message after a `<proposed_plan>` is the implicit verdict | New → MVP for Claude; Codex approvals not detectable (documented gap) |
 | Plan revisions | Plan file overwrites (PlanWatcher sees each version live) | `<proposed_plan>` block sequence (today last-wins) | New → MVP ([signals.md](signals.md)) |
-| Permission denial | tool_result `is_error` + "The user doesn't want to proceed with this tool use." on any tool_use | Approval `event_msg` payloads exist; no local sample — verify (Open Question 1) | New → MVP |
+| Permission denial | tool_result `is_error` + "The user doesn't want to proceed with this tool use." on any tool_use | No approval `event_msg` exists; signal lives in `exec_command` `function_call` (`sandbox_permissions: require_escalated` + `justification`) and its matched `function_call_output` (`Rejected("rejected by user")` = denied, success = granted) | New → MVP |
 | Explicit user answers | `AskUserQuestion` tool_use + result (chosen options, notes) | No equivalent observed | New → MVP, Claude-only |
 | Subagent content | `<project>/<sessionId>/subagents/agent-<id>.jsonl` + `agent-<id>.meta.json`; result = tool_result of the spawning `Agent` tool_use in the parent | Separate rollouts, `session_meta.source.subagent.thread_spawn` with `parent_thread_id` (today dropped entirely) | New → MVP ([subagents.md](subagents.md)) |
 | Memory files | `~/.claude/projects/<encoded-cwd>/memory/` (MEMORY.md + fact files) | No memory concept | New → MVP ([surface.md](surface.md)), Claude-only |
@@ -145,7 +145,10 @@ Verified against raw transcripts (`~/.claude/projects/...-control-server-feature
 - Signal extraction is allowlist-based: the parsers recognize specific signal tools (`Skill`, `ExitPlanMode`, `Agent`, `AskUserQuestion`) and the generic denial pattern — they do not become a general tool-call mirror. General tool_use/tool_result surfacing stays intentionally out (parity concept decision unchanged).
 - Events live in memory only; the peek state dir persists exactly two artifact kinds: diff pins+snapshots and plan revision diffs.
 - Codex plan approval is not detectable (no approval event exists around `<proposed_plan>`); Codex rejection/alteration counting is approximated by counting successive `<proposed_plan>` blocks as alterations. Documented as an intentional parity gap in the signal matrix.
+- Codex permission mapping is function-call based — the earlier assumption of approval `event_msg` payloads was wrong. Verified against a purpose-recorded rollout (`~/.codex/sessions/2026/07/22/rollout-2026-07-22T18-14-40-019f8a9b-9612-7fd0-b2a7-fbdbcc6f24b4.jsonl`, one grant + one denial): no approval `event_msg` exists; the request is an `exec_command` `function_call` with `sandbox_permissions: require_escalated` and a `justification`, the verdict is the `call_id`-matched `function_call_output` — `Rejected("rejected by user")` = denied, normal success = granted. Sandbox blocks without escalation (approval policy `never`, "operation not permitted") are ordinary failed execs, not user denials. Grants stay implicit, matching the Claude side where only denials are evented. Mapping details in [signals.md](signals.md).
+- State dir is `~/.peek/state/<agent>/<session-id>/`, overridable via `--state-dir` / `PEEK_STATE_DIR` (existing flag↔env pattern). Rationale: home-relative resolves identically for both install modes — `go install` binary and the `.mcpb` bundle — and for concurrent instances (HTTP daemon + Claude Desktop stdio), which the atomic temp+rename writes make safe; state must never live under the mcpb bundle dir, which Claude Desktop replaces on every update; a flat home dotdir matches `~/.claude` / `~/.codex`, while XDG is unidiomatic on macOS, peek's primary platform.
+- [USER] State retention is configurable, default 90 days (`--state-retention-days` / `PEEK_STATE_RETENTION_DAYS`). GC prunes a session's state dir when its newest artifact is older than retention; runs at startup and periodically.
 
 **Open Questions:**
-1. Codex approval/permission `event_msg` payload shapes — verify against a rollout that actually contains approval requests (none on disk at drafting time), then finalize the Codex PermissionEvent mapping in [signals.md](signals.md).
-2. State dir location (`~/.peek/state/...` vs XDG state dir) and snapshot retention/GC policy (per-session size cap exists; when do old sessions' snapshots get pruned?).
+
+None.

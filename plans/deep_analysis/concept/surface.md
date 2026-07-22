@@ -68,7 +68,7 @@ Typed event stream + counters + usage for one session.
 - usage: token totals (object)
 - plan_revisions: count + timestamps, diffs when requested (object)
 - diff: source availability — live | snapshot | none (string)
-- unsupported: signals not available for this agent, e.g. Codex permissions until verified (array)
+- unsupported: signals not available for this agent, e.g. Codex skills/memory/user-answers (array)
 
 ### session_full / session_latest / session_get (extended)
 
