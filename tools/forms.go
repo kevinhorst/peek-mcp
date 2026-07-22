@@ -9,6 +9,14 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+func boolArgFromRequest(request mcp.CallToolRequest, name string) bool {
+	value, ok := request.GetArguments()[name].(bool)
+	if !ok {
+		return false
+	}
+	return value
+}
+
 func intArgFromRequest(request mcp.CallToolRequest, name string) int {
 	args := request.GetArguments()
 	value, ok := args[name]

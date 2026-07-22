@@ -64,15 +64,18 @@ func NewPageBuilder(size int) *PageBuilder {
 	return &PageBuilder{Size: size}
 }
 
-func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult, next []*sessionFullResult) {
+// TODO: refactor
+func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *sessionFullResult, next []*sessionFullResult) {
 	// Check if everything fits in a single page
-	contentSize := len(turns) + len(plan) + len(diff)
+	contentSize := len(turns) + len(events) + len(plan) + len(diff) + len(memory)
 	if b.Size <= 0 || contentSize <= b.Size {
 		slog.Info("PageBuilder.build: fits in a single page", "size", contentSize, "page_size", b.Size)
 		first = &sessionFullResult{
-			Turns: turns,
-			Plan:  plan,
-			Diff:  diff,
+			Diff:   diff,
+			Events: events,
+			Memory: memory,
+			Plan:   plan,
+			Turns:  turns,
 		}
 		return first, nil
 	}
@@ -82,21 +85,30 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 	pages := make([]*sessionFullResult, int(pageCount))
 	slog.Info("PageBuilder.build: building", "pageCount", pageCount, "size", b.Size)
 
-	for i := 0; i < int(pageCount); i++ {
-		pages[i] = &sessionFullResult{}
+	for pageIndex := 0; pageIndex < int(pageCount); pageIndex++ {
+		page := &sessionFullResult{}
+		pages[pageIndex] = page
 		size := b.Size
 
-		// drain turns, plan and diff into pages by priority
+		// drain turns, events, plan, diff, and memory into pages by priority
 		turnChunk := utf8SafeSlice(turns, size)
-		pages[i].Turns = turnChunk
+		page.Turns = turnChunk
 		turns = turns[len(turnChunk):]
 		if len(turnChunk) == size {
 			continue
 		}
 		size = size - len(turnChunk)
 
+		eventChunk := utf8SafeSlice(events, size)
+		page.Events = eventChunk
+		events = events[len(eventChunk):]
+		if len(eventChunk) == size {
+			continue
+		}
+		size = size - len(eventChunk)
+
 		planChunk := utf8SafeSlice(plan, size)
-		pages[i].Plan = planChunk
+		page.Plan = planChunk
 		plan = plan[len(planChunk):]
 		if len(planChunk) == size {
 			continue
@@ -104,8 +116,16 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 		size = size - len(planChunk)
 
 		diffChunk := utf8SafeSlice(diff, size)
-		pages[i].Diff = diffChunk
+		page.Diff = diffChunk
 		diff = diff[len(diffChunk):]
+		if len(diffChunk) == size {
+			continue
+		}
+		size = size - len(diffChunk)
+
+		memoryChunk := utf8SafeSlice(memory, size)
+		page.Memory = memoryChunk
+		memory = memory[len(memoryChunk):]
 	}
 
 	return pages[0], pages[1:]

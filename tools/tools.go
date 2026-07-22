@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -46,6 +48,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 			mcp.WithString("request_id",
 				mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
+			),
+			mcp.WithBoolean("remember",
+				mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only."),
 			),
 		)
 	sessionFull.Meta = withMaxResultSize()
@@ -87,6 +92,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 		mcp.WithNumber("n",
 			mcp.Description("Number of turns to return (default 20)"),
+		),
+		mcp.WithBoolean("remember",
+			mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only."),
 		),
 	)
 	sessionGet.Meta = withMaxResultSize()
@@ -139,6 +147,24 @@ func Register(server *server.MCPServer, store *session.Store) {
 		)
 	sessionUncommittedDiff.Meta = withMaxResultSize()
 	server.AddTool(sessionUncommittedDiff, sessionUncommittedDiffHandler(store))
+
+	sessionEvents := mcp.NewTool("session_events",
+		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_full for those."),
+		mcp.WithString("id",
+			mcp.Description("Session ID (omit for most recent session)"),
+		),
+		mcp.WithString("title",
+			mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
+		),
+		mcp.WithString("agent",
+			mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
+		),
+		mcp.WithBoolean("revisions",
+			mcp.Description("Include plan revision diffs (default false; they dominate response size)"),
+		),
+	)
+	sessionEvents.Meta = withMaxResultSize()
+	server.AddTool(sessionEvents, sessionEventsHandler(store))
 }
 
 func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandlerFunc {
@@ -196,7 +222,13 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore) server.ToolHandl
 		diff := sess.DiffOutput
 		plan := sess.PlanContent
 
-		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).build(turns, plan, diff)
+		events := marshalEventEntries(sess)
+		memory := ""
+		if boolArgFromRequest(request, "remember") {
+			memory = marshalMemoryBlock(sess)
+		}
+
+		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).build(diff, events, memory, plan, turns)
 		firstPage.DiffTarget = sess.DiffTarget
 
 		resultPage := newSessionFullResultPage(firstPage)
@@ -235,7 +267,11 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultText("No turns found"), nil
 		}
 
-		return respondWithText(turns)
+		result := &sessionLatestResult{
+			Events: newEventEntries(lastSession.Events.All()),
+			Turns:  turns,
+		}
+		return respondWithText(result)
 	}
 }
 
@@ -286,7 +322,16 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("No turns found"), nil
 		}
 
-		return respondWithText(turns)
+		result := &sessionGetResult{
+			Events:     newEventEntries(currentSession.Events.All()),
+			TotalUsage: currentSession.CurrentUsage(),
+			Turns:      turns,
+		}
+		if boolArgFromRequest(request, "remember") {
+			result.Memory = memoryBlock(currentSession)
+		}
+
+		return respondWithText(result)
 	}
 }
 
@@ -334,7 +379,15 @@ func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
 			currentSession = found
 		}
 
-		return respondWithText(currentSession.DiffOutput)
+		result := &sessionDiffResult{
+			Diff:       currentSession.DiffOutput,
+			DiffTarget: currentSession.DiffTarget,
+			Source:     diffAvailability(currentSession),
+		}
+		if currentSession.DiffSource == session.DiffSourceSnapshot {
+			result.CapturedAt = currentSession.DiffCapturedAt.Format(time.RFC3339)
+		}
+		return respondWithText(result)
 	}
 }
 
@@ -358,6 +411,110 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 
 		return respondWithText(currentSession.UncommittedDiff)
 	}
+}
+
+func sessionEventsHandler(s *session.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		currentSession, err := resolveSession(s, request)
+		if err != nil {
+			if !errors.Is(err, errSessionSelectorMissing) {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			agent, agentErr := resolveAgentFromRequest(s, request)
+			if agentErr != nil {
+				return mcp.NewToolResultError(agentErr.Error()), nil
+			}
+			found, ok := s.Last(agent)
+			if !ok {
+				return respondWithText("No sessions found.")
+			}
+			currentSession = found
+		}
+
+		result := &sessionEventsResult{
+			Counters:      currentSession.Counters,
+			Diff:          diffAvailability(currentSession),
+			Events:        currentSession.Events.All(),
+			PlanRevisions: newPlanRevisionsView(currentSession, boolArgFromRequest(request, "revisions")),
+			Unsupported:   unsupportedSignals(currentSession.Agent),
+			Usage:         currentSession.CurrentUsage(),
+		}
+		return respond(ctx, result)
+	}
+}
+
+func diffAvailability(currentSession *session.Session) string {
+	if currentSession.DiffOutput == "" {
+		return "none"
+	}
+	if currentSession.DiffSource == session.DiffSourceSnapshot {
+		return "snapshot"
+	}
+	return "live"
+}
+
+func memoryBlock(currentSession *session.Session) *memoryBlockResult {
+	if currentSession.Agent != session.AgentClaude {
+		return &memoryBlockResult{Unsupported: "memory is not available for codex sessions"}
+	}
+	if currentSession.FilePath == "" {
+		return &memoryBlockResult{Unsupported: "transcript path unknown"}
+	}
+
+	memory, err := claude.ReadMemory(currentSession.FilePath)
+	if err != nil {
+		return &memoryBlockResult{Unsupported: err.Error()}
+	}
+
+	block := &memoryBlockResult{
+		Facts:     memory.Facts,
+		Index:     memory.Index,
+		Truncated: memory.Truncated,
+	}
+	return block
+}
+
+func newPlanRevisionsView(currentSession *session.Session, includeDiffs bool) *planRevisionsView {
+	if len(currentSession.PlanRevisions) == 0 {
+		return nil
+	}
+
+	view := &planRevisionsView{Count: len(currentSession.PlanRevisions)}
+	for _, revision := range currentSession.PlanRevisions {
+		view.Timestamps = append(view.Timestamps, revision.Timestamp)
+	}
+	if includeDiffs {
+		view.Revisions = currentSession.PlanRevisions
+	}
+	return view
+}
+
+func unsupportedSignals(agent session.Agent) []string {
+	if agent == session.AgentCodex {
+		return []string{"skills", "memory", "user_answers", "plan_approval", "subagent_results"}
+	}
+	return nil
+}
+
+func marshalEventEntries(currentSession *session.Session) string {
+	entries := newEventEntries(currentSession.Events.All())
+	if len(entries) == 0 {
+		return ""
+	}
+
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func marshalMemoryBlock(currentSession *session.Session) string {
+	data, err := json.Marshal(memoryBlock(currentSession))
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // resolveSession looks up a session by id or title from request args.
