@@ -235,7 +235,7 @@ func TestResolvePersistedOutput(t *testing.T) {
 		t.Run(test._id, func(t *testing.T) {
 			dir := t.TempDir()
 			text, sessionId, toolUseId := test.build(dir)
-			got := resolvePersistedOutput(text, sessionId, toolUseId)
+			got := resolvePersistedOutput(sessionId, text, toolUseId)
 			if test._expected != "" {
 				assert.Equal(t, test._expected, got)
 				return

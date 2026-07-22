@@ -64,6 +64,6 @@ func TestReadMemory(t *testing.T) {
 
 		memory, err := ReadMemory(filepath.Join(projectDir, "transcript.jsonl"))
 		require.NoError(t, err)
-		assert.True(t, memory.Truncated)
+		assert.True(t, memory.IsTruncated)
 	})
 }

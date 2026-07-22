@@ -21,58 +21,15 @@ const (
 )
 
 type Memory struct {
-	Facts     []*MemoryFact `json:"facts,omitempty"`
-	Index     string        `json:"index,omitempty"`
-	Truncated bool          `json:"truncated,omitempty"`
+	Facts       []*MemoryFact `json:"facts,omitempty"`
+	Index       string        `json:"index,omitempty"`
+	IsTruncated bool          `json:"truncated,omitempty"`
 }
 
 type MemoryFact struct {
 	Body string `json:"body"`
 	Name string `json:"name"`
 	Type string `json:"type,omitempty"`
-}
-
-// ReadMemory resolves the project's auto-memory from the transcript's own
-// location: newer worktree sessions keep memory in the base project dir,
-// older ones in the worktree-encoded dir — both layouts exist on disk.
-func ReadMemory(transcriptPath string) (*Memory, error) {
-	memoryDir := resolveMemoryDir(filepath.Dir(transcriptPath))
-	if memoryDir == "" {
-		return nil, errors.New("ReadMemory: No memory directory found")
-	}
-
-	memory := &Memory{}
-	budget := maxMemoryBytes
-
-	if index, err := os.ReadFile(filepath.Join(memoryDir, memoryIndexFile)); err == nil {
-		memory.Index = string(index)
-		budget -= len(memory.Index)
-	}
-
-	entries, err := os.ReadDir(memoryDir)
-	if err != nil {
-		return nil, errors.Wrap(err, "ReadMemory: Failed to read memory directory")
-	}
-
-	for _, entry := range entries {
-		if !isFactFile(entry) {
-			continue
-		}
-		if budget <= 0 {
-			memory.Truncated = true
-			break
-		}
-
-		fact := readFact(memoryDir, entry.Name())
-		if fact == nil {
-			continue
-		}
-
-		budget -= len(fact.Body)
-		memory.Facts = append(memory.Facts, fact)
-	}
-
-	return memory, nil
 }
 
 func factType(body string) string {
@@ -94,6 +51,7 @@ func isDir(path string) bool {
 	if err != nil {
 		return false
 	}
+
 	return info.IsDir()
 }
 
@@ -101,9 +59,11 @@ func isFactFile(entry os.DirEntry) bool {
 	if entry.IsDir() {
 		return false
 	}
+
 	if entry.Name() == memoryIndexFile {
 		return false
 	}
+
 	return strings.HasSuffix(entry.Name(), markdownSuffix)
 }
 
@@ -139,4 +99,45 @@ func resolveMemoryDir(projectDir string) string {
 		return fallback
 	}
 	return ""
+}
+
+func ReadMemory(transcriptPath string) (*Memory, error) {
+	memoryDir := resolveMemoryDir(filepath.Dir(transcriptPath))
+	if memoryDir == "" {
+		return nil, errors.New("ReadMemory: No memory directory found")
+	}
+
+	memory := &Memory{}
+	budget := maxMemoryBytes
+
+	if index, err := os.ReadFile(filepath.Join(memoryDir, memoryIndexFile)); err == nil {
+		memory.Index = string(index)
+		budget -= len(memory.Index)
+	}
+
+	entries, err := os.ReadDir(memoryDir)
+	if err != nil {
+		return nil, errors.Wrap(err, "ReadMemory: Failed to read memory directory")
+	}
+
+	for _, entry := range entries {
+		if !isFactFile(entry) {
+			continue
+		}
+
+		if budget <= 0 {
+			memory.IsTruncated = true
+			break
+		}
+
+		fact := readFact(memoryDir, entry.Name())
+		if fact == nil {
+			continue
+		}
+
+		budget -= len(fact.Body)
+		memory.Facts = append(memory.Facts, fact)
+	}
+
+	return memory, nil
 }

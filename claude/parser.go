@@ -38,19 +38,6 @@ const (
 	maxSubagentResultBytes = 32 * 1024
 )
 
-type Parser struct {
-	pendingTools map[string]*pendingToolUse
-}
-
-func NewParser() *Parser {
-	return &Parser{pendingTools: make(map[string]*pendingToolUse)}
-}
-
-type pendingToolUse struct {
-	input json.RawMessage
-	name  string
-}
-
 type askUserQuestion struct {
 	Question string `json:"question"`
 }
@@ -59,9 +46,12 @@ type askUserQuestionInput struct {
 	Questions []askUserQuestion `json:"questions"`
 }
 
-type skillInput struct {
-	Args  string `json:"args"`
-	Skill string `json:"skill"`
+type Parser struct {
+	pendingTools map[string]*pendingToolUse
+}
+
+func NewParser() *Parser {
+	return &Parser{pendingTools: make(map[string]*pendingToolUse)}
 }
 
 func (p *Parser) ParseLine(line []byte) *session.Turn {
@@ -201,7 +191,7 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 		return nil
 	}
 
-	events := planModeEvents(entry, attachment.Type)
+	events := planModeEvents(attachment.Type, entry)
 
 	if attachment.PlanFilePath == "" {
 		return eventTurn(entry, events)
@@ -211,6 +201,7 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 		Events:       events,
 		PlanFilePath: attachment.PlanFilePath,
 		PlanContent:  attachment.PlanContent,
+		Timestamp:    entry.Timestamp,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
@@ -219,6 +210,10 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 }
 
 func (p *Parser) handleSidechain(entry *Entry) *session.Turn {
+	if entry.AgentId == "" {
+		return nil
+	}
+
 	var message Message
 	if err := json.Unmarshal(entry.Message, &message); err != nil {
 		return nil
@@ -248,13 +243,14 @@ func (p *Parser) eventsFromAssistantContent(entry *Entry, message *Message) []*s
 		p.rememberToolUse(block)
 
 		if block.Name == toolNameSkill {
-			events = append(events, skillEvent(entry, block))
+			events = append(events, skillEvent(block, entry))
 		}
 	}
 
 	if len(events) == 0 {
 		return nil
 	}
+
 	return events
 }
 
@@ -272,9 +268,10 @@ func (p *Parser) eventsFromUserContent(entry *Entry, message *Message) []*sessio
 		if !ok {
 			continue
 		}
+
 		delete(p.pendingTools, block.ToolUseId)
 
-		event := toolResultEvent(entry, block, pending)
+		event := toolResultEvent(block, entry, pending)
 		if event != nil {
 			events = append(events, event)
 		}
@@ -283,6 +280,7 @@ func (p *Parser) eventsFromUserContent(entry *Entry, message *Message) []*sessio
 	if len(events) == 0 {
 		return nil
 	}
+
 	return events
 }
 
@@ -311,6 +309,16 @@ func (p *Parser) handleCustomTitle(entry *Entry) *session.Turn {
 	}
 }
 
+type pendingToolUse struct {
+	input json.RawMessage
+	name  string
+}
+
+type skillInput struct {
+	Args  string `json:"args"`
+	Skill string `json:"skill"`
+}
+
 func contentBlocks(raw json.RawMessage) []ContentBlock {
 	var blocks []ContentBlock
 	if err := json.Unmarshal(raw, &blocks); err != nil {
@@ -334,102 +342,61 @@ func eventTurn(entry *Entry, events []*session.Event) *session.Turn {
 	return turn
 }
 
-// The ExitPlanMode rejection reuses the generic denial text, so the pending
-// tool name — not the message — decides rejected-vs-denied (plan D12).
-func toolResultEvent(entry *Entry, block *ContentBlock, pending *pendingToolUse) *session.Event {
-	var text string
-	if err := json.Unmarshal(block.Content, &text); err != nil {
-		text = extractTextBlocks(block.Content)
-	}
+func extractTextBlocks(raw json.RawMessage) string {
+	var blocks []ContentBlock
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var builder strings.Builder
+		for _, block := range blocks {
+			if block.Type != "text" || block.Text == "" {
+				continue
+			}
 
-	isDenied := block.IsError && strings.HasPrefix(text, denialPrefix)
-
-	switch pending.name {
-	case toolNameExitPlanMode:
-		return planVerdictEvent(entry, block, text)
-	case toolNameAgent:
-		return subagentResultEvent(entry, block, text, isDenied)
-	case toolNameAskUserQuestion:
-		return userAnswerEvent(entry, block, pending, text, isDenied)
-	default:
-		if !isDenied {
-			return nil
+			builder.WriteString(block.Text + "\n")
 		}
-		return permissionDeniedEvent(entry, pending.name)
+		return builder.String()
 	}
+
+	// user messages may carry content as a plain string rather than a block array
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	return s
 }
 
-func planVerdictEvent(entry *Entry, block *ContentBlock, text string) *session.Event {
-	if block.IsError {
-		return &session.Event{
-			Actor:     entry.AgentId,
-			Kind:      session.EventKindPlanRejected,
-			Timestamp: entry.Timestamp,
-		}
+func isPlanAttachment(t string) bool {
+	switch t {
+	case AttachmentTypePlanMode, AttachmentTypePlanFileReference,
+		AttachmentTypePlanModeExit, AttachmentTypePlanModeReentry:
+		return true
+	}
+	return false
+}
+
+func isSessionToolResultPath(path string, sessionId session.Id, toolUseId string) bool {
+	if path == "" || sessionId == "" {
+		return false
 	}
 
-	content := resolvePersistedOutput(text, entry.SessionId, block.ToolUseId)
-	if !strings.Contains(content, approvalPrefix) {
+	if filepath.Base(path) != toolUseId+".txt" {
+		return false
+	}
+
+	parent := filepath.Dir(path)
+	if filepath.Base(parent) != toolResultsDir {
+		return false
+	}
+
+	return filepath.Base(filepath.Dir(parent)) == string(sessionId)
+}
+
+// originFromEntry returns nil when the entry carries no version, so an empty
+// Origin never replaces a populated one via Meta.Update.
+func originFromEntry(entry *Entry) *session.Origin {
+	if entry.Version == "" {
 		return nil
 	}
-
-	if len(content) > maxApprovedPlanBytes {
-		content = content[:maxApprovedPlanBytes] + "\n[peek: approved plan truncated at 64 KB]\n"
-	}
-	payload := &session.PlanPayload{Content: content}
-	return &session.Event{
-		Actor:     entry.AgentId,
-		Kind:      session.EventKindPlanApproved,
-		Plan:      payload,
-		Timestamp: entry.Timestamp,
-	}
-}
-
-func subagentResultEvent(entry *Entry, block *ContentBlock, text string, isDenied bool) *session.Event {
-	if isDenied {
-		return permissionDeniedEvent(entry, toolNameAgent)
-	}
-
-	content := resolvePersistedOutput(text, entry.SessionId, block.ToolUseId)
-	if len(content) > maxSubagentResultBytes {
-		content = content[:maxSubagentResultBytes] + "\n[peek: subagent result truncated at 32 KB]\n"
-	}
-
-	payload := &session.SubagentPayload{
-		Content:   content,
-		IsError:   block.IsError,
-		ToolUseId: block.ToolUseId,
-	}
-	return &session.Event{
-		Actor:     entry.AgentId,
-		Kind:      session.EventKindSubagentResult,
-		Subagent:  payload,
-		Timestamp: entry.Timestamp,
-	}
-}
-
-func userAnswerEvent(entry *Entry, block *ContentBlock, pending *pendingToolUse, text string, isDenied bool) *session.Event {
-	if isDenied {
-		return permissionDeniedEvent(entry, toolNameAskUserQuestion)
-	}
-
-	var input askUserQuestionInput
-	if err := json.Unmarshal(pending.input, &input); err != nil {
-		slog.Debug("userAnswerEvent: unmarshal", "err", err)
-	}
-
-	questions := make([]string, 0, len(input.Questions))
-	for _, question := range input.Questions {
-		questions = append(questions, question.Question)
-	}
-
-	payload := &session.UserAnswerPayload{Answers: text, Questions: questions}
-	return &session.Event{
-		Actor:      entry.AgentId,
-		Kind:       session.EventKindUserAnswer,
-		Timestamp:  entry.Timestamp,
-		UserAnswer: payload,
-	}
+	return &session.Origin{CliVersion: entry.Version}
 }
 
 func permissionDeniedEvent(entry *Entry, tool string) *session.Event {
@@ -442,47 +409,17 @@ func permissionDeniedEvent(entry *Entry, tool string) *session.Event {
 	}
 }
 
-func skillEvent(entry *Entry, block *ContentBlock) *session.Event {
-	var input skillInput
-	if err := json.Unmarshal(block.Input, &input); err != nil {
-		slog.Debug("skillEvent: unmarshal", "err", err)
+func persistedOutputPath(text string) string {
+	_, after, found := strings.Cut(text, "Full output saved to: ")
+	if !found {
+		return ""
 	}
 
-	payload := &session.SkillPayload{
-		Args:   input.Args,
-		Skill:  input.Skill,
-		Source: session.SkillSourceTool,
-	}
-	return &session.Event{
-		Actor:     entry.AgentId,
-		Kind:      session.EventKindSkillInvoked,
-		Skill:     payload,
-		Timestamp: entry.Timestamp,
-	}
+	path, _, _ := strings.Cut(after, "\n")
+	return strings.TrimSpace(path)
 }
 
-func slashCommandEvent(entry *Entry, text string) *session.Event {
-	name := textBetween(text, commandNameOpenTag, commandNameCloseTag)
-	name = strings.TrimPrefix(strings.TrimSpace(name), "/")
-	if name == "" {
-		return nil
-	}
-
-	args := strings.TrimSpace(textBetween(text, commandArgsOpenTag, commandArgsCloseTag))
-	payload := &session.SkillPayload{
-		Args:   args,
-		Skill:  name,
-		Source: session.SkillSourceSlash,
-	}
-	return &session.Event{
-		Actor:     entry.AgentId,
-		Kind:      session.EventKindSkillInvoked,
-		Skill:     payload,
-		Timestamp: entry.Timestamp,
-	}
-}
-
-func planModeEvents(entry *Entry, attachmentType string) []*session.Event {
+func planModeEvents(attachmentType string, entry *Entry) []*session.Event {
 	var kind session.EventKind
 	switch attachmentType {
 	case AttachmentTypePlanMode:
@@ -505,10 +442,33 @@ func planModeEvents(entry *Entry, attachmentType string) []*session.Event {
 	return []*session.Event{event}
 }
 
-// resolvePersistedOutput follows a <persisted-output> pointer, but only into
-// the session's own tool-results directory — the pointer text is
-// attacker-influenceable content from a tool result.
-func resolvePersistedOutput(text string, sessionId session.Id, toolUseId string) string {
+func planVerdictEvent(block *ContentBlock, entry *Entry, text string) *session.Event {
+	if block.IsError {
+		return &session.Event{
+			Actor:     entry.AgentId,
+			Kind:      session.EventKindPlanRejected,
+			Timestamp: entry.Timestamp,
+		}
+	}
+
+	content := resolvePersistedOutput(entry.SessionId, text, block.ToolUseId)
+	if !strings.Contains(content, approvalPrefix) {
+		return nil
+	}
+
+	if len(content) > maxApprovedPlanBytes {
+		content = content[:maxApprovedPlanBytes] + "\n[peek: approved plan truncated at 64 KB]\n"
+	}
+	payload := &session.PlanPayload{Content: content}
+	return &session.Event{
+		Actor:     entry.AgentId,
+		Kind:      session.EventKindPlanApproved,
+		Plan:      payload,
+		Timestamp: entry.Timestamp,
+	}
+}
+
+func resolvePersistedOutput(sessionId session.Id, text, toolUseId string) string {
 	if !strings.HasPrefix(text, persistedOutputMarker) {
 		return text
 	}
@@ -520,46 +480,83 @@ func resolvePersistedOutput(text string, sessionId session.Id, toolUseId string)
 
 	file, err := os.Open(path)
 	if err != nil {
-		slog.Debug("resolvePersistedOutput: open", "err", err)
+		slog.Debug("resolvePersistedOutput: Failed to open persisted output", "err", err)
 		return text
 	}
 	defer file.Close()
 
 	data, err := io.ReadAll(io.LimitReader(file, maxPersistedReadBytes))
 	if err != nil {
-		slog.Debug("resolvePersistedOutput: read", "err", err)
+		slog.Debug("resolvePersistedOutput: Failed to read persisted output", "err", err)
 		return text
 	}
 	return string(data)
 }
 
-func persistedOutputPath(text string) string {
-	_, after, found := strings.Cut(text, "Full output saved to: ")
-	if !found {
-		return ""
+func skillEvent(block *ContentBlock, entry *Entry) *session.Event {
+	var input skillInput
+	if err := json.Unmarshal(block.Input, &input); err != nil {
+		slog.Debug("skillEvent: Failed to unmarshal skill input", "err", err)
 	}
 
-	path, _, _ := strings.Cut(after, "\n")
-	return strings.TrimSpace(path)
+	payload := &session.SkillPayload{
+		Args:   input.Args,
+		Skill:  input.Skill,
+		Source: session.SkillSourceTool,
+	}
+	return &session.Event{
+		Actor:     entry.AgentId,
+		Kind:      session.EventKindSkillInvoked,
+		Skill:     payload,
+		Timestamp: entry.Timestamp,
+	}
 }
 
-func isSessionToolResultPath(path string, sessionId session.Id, toolUseId string) bool {
-	if path == "" || sessionId == "" {
-		return false
-	}
-	if filepath.Base(path) != toolUseId+".txt" {
-		return false
-	}
-
-	parent := filepath.Dir(path)
-	if filepath.Base(parent) != toolResultsDir {
-		return false
+func slashCommandEvent(entry *Entry, text string) *session.Event {
+	name := textBetween(commandNameCloseTag, commandNameOpenTag, text)
+	name = strings.TrimPrefix(strings.TrimSpace(name), "/")
+	if name == "" {
+		return nil
 	}
 
-	return filepath.Base(filepath.Dir(parent)) == string(sessionId)
+	args := strings.TrimSpace(textBetween(commandArgsCloseTag, commandArgsOpenTag, text))
+	payload := &session.SkillPayload{
+		Args:   args,
+		Skill:  name,
+		Source: session.SkillSourceSlash,
+	}
+	return &session.Event{
+		Actor:     entry.AgentId,
+		Kind:      session.EventKindSkillInvoked,
+		Skill:     payload,
+		Timestamp: entry.Timestamp,
+	}
 }
 
-func textBetween(text, openTag, closeTag string) string {
+func subagentResultEvent(block *ContentBlock, entry *Entry, isDenied bool, text string) *session.Event {
+	if isDenied {
+		return permissionDeniedEvent(entry, toolNameAgent)
+	}
+
+	content := resolvePersistedOutput(entry.SessionId, text, block.ToolUseId)
+	if len(content) > maxSubagentResultBytes {
+		content = content[:maxSubagentResultBytes] + "\n[peek: subagent result truncated at 32 KB]\n"
+	}
+
+	payload := &session.SubagentPayload{
+		Content:   content,
+		IsError:   block.IsError,
+		ToolUseId: block.ToolUseId,
+	}
+	return &session.Event{
+		Actor:     entry.AgentId,
+		Kind:      session.EventKindSubagentResult,
+		Subagent:  payload,
+		Timestamp: entry.Timestamp,
+	}
+}
+
+func textBetween(closeTag, openTag, text string) string {
 	_, after, found := strings.Cut(text, openTag)
 	if !found {
 		return ""
@@ -572,41 +569,49 @@ func textBetween(text, openTag, closeTag string) string {
 	return inner
 }
 
-func isPlanAttachment(t string) bool {
-	switch t {
-	case AttachmentTypePlanMode, AttachmentTypePlanFileReference,
-		AttachmentTypePlanModeExit, AttachmentTypePlanModeReentry:
-		return true
+func toolResultEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse) *session.Event {
+	var text string
+	if err := json.Unmarshal(block.Content, &text); err != nil {
+		text = extractTextBlocks(block.Content)
 	}
-	return false
-}
 
-// originFromEntry returns nil when the entry carries no version, so an empty
-// Origin never replaces a populated one via Meta.Update.
-func originFromEntry(entry *Entry) *session.Origin {
-	if entry.Version == "" {
-		return nil
-	}
-	return &session.Origin{CliVersion: entry.Version}
-}
+	isDenied := block.IsError && strings.HasPrefix(text, denialPrefix)
 
-func extractTextBlocks(raw json.RawMessage) string {
-	var blocks []ContentBlock
-	if err := json.Unmarshal(raw, &blocks); err == nil {
-		var builder strings.Builder
-		for _, block := range blocks {
-			if block.Type != "text" || block.Text == "" {
-				continue
-			}
-			builder.WriteString(block.Text + "\n")
+	switch pending.name {
+	case toolNameExitPlanMode:
+		return planVerdictEvent(block, entry, text)
+	case toolNameAgent:
+		return subagentResultEvent(block, entry, isDenied, text)
+	case toolNameAskUserQuestion:
+		return userAnswerEvent(entry, isDenied, pending, text)
+	default:
+		if !isDenied {
+			return nil
 		}
-		return builder.String()
+		return permissionDeniedEvent(entry, pending.name)
+	}
+}
+
+func userAnswerEvent(entry *Entry, isDenied bool, pending *pendingToolUse, text string) *session.Event {
+	if isDenied {
+		return permissionDeniedEvent(entry, toolNameAskUserQuestion)
 	}
 
-	// user messages may carry content as a plain string rather than a block array
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return ""
+	var input askUserQuestionInput
+	if err := json.Unmarshal(pending.input, &input); err != nil {
+		slog.Debug("userAnswerEvent: Failed to unmarshal question input", "err", err)
 	}
-	return s
+
+	questions := make([]string, 0, len(input.Questions))
+	for _, question := range input.Questions {
+		questions = append(questions, question.Question)
+	}
+
+	payload := &session.UserAnswerPayload{Answers: text, Questions: questions}
+	return &session.Event{
+		Actor:      entry.AgentId,
+		Kind:       session.EventKindUserAnswer,
+		Timestamp:  entry.Timestamp,
+		UserAnswer: payload,
+	}
 }
