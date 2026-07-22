@@ -43,6 +43,9 @@ clean-dist:
 
 
 git-release:
+	sed -i '' 's/^VERSION = .*/VERSION = $(VERSION)/' Makefile
+	sed -i '' 's/^var version = ".*"/var version = "$(VERSION)"/' cmd/version.go
+	sed -i '' 's/^  "version": ".*",/  "version": "$(VERSION)",/' mcpb/manifest.json
 	git commit -am "cmd: release v$(VERSION)"
 	git tag v$(VERSION)
 

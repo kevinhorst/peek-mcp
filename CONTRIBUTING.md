@@ -116,7 +116,7 @@ Releases are tagged from `main`. To cut a release:
 make git-release VERSION=x.y.z
 ```
 
-This updates the version string in `cmd/version.go` and `mcpb/manifest.json`, commits with the message `cmd: release vx.y.z`, and creates the tag. Push both the commit and the tag:
+This updates the version string in the Makefile, `cmd/version.go`, and `mcpb/manifest.json`, commits with the message `cmd: release vx.y.z`, and creates the tag. Push both the commit and the tag:
 
 ```bash
 git push origin main --tags

@@ -7,9 +7,10 @@ import (
 )
 
 type sessionFullResult struct {
-	Turns string `json:"turns,omitempty"`
-	Plan  string `json:"plan,omitempty"`
-	Diff  string `json:"diff,omitempty"`
+	Turns      string `json:"turns,omitempty"`
+	Plan       string `json:"plan,omitempty"`
+	Diff       string `json:"diff,omitempty"`
+	DiffTarget string `json:"diff_target,omitempty"`
 }
 
 type sessionFullResultPage struct {
@@ -37,5 +38,6 @@ type sessionListItem struct {
 	LastActive  time.Time           `json:"last_active"`
 	HasPlan     bool                `json:"has_plan"`
 	HasDiff     bool                `json:"has_diff"`
+	DiffTarget  string              `json:"diff_target,omitempty"`
 	Meta        session.Meta        `json:"meta"`
 }
