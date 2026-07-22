@@ -34,7 +34,7 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
 In addition to turns, peek-mcp passively watches two more sources:
 
 - **Plans** — Claude Code writes a plan file to `~/.claude/plans/` at the start of each task. peek-mcp reads and stores it alongside the session so `session_plan` and `session_full` can surface it without any extra prompting.
-- **Git diffs** — After each new turn, peek-mcp infers the session branch's base (reflog creation point, falling back to `origin/HEAD`, then local `main`/`master`, then `HEAD`) and runs `git diff --merge-base <base>` in the session's working directory. `session_diff` and `session_full` expose the result — no configuration needed; the resolved base is reported as `diff_target`.
+- **Git diffs** — After each new turn, peek-mcp infers the session branch's base (reflog creation point, falling back to `origin/HEAD`, then local `main`/`master`, then `HEAD`), pins the merge-base as a SHA on first compute, and runs `git diff <sha>` in the session's working directory. `session_diff` and `session_full` expose the result — no configuration needed; the resolved base is reported as `diff_target`. The pin and the last non-empty diff are persisted, so the diff survives merges, cherry-picks, and worktree cleanup (served as a `snapshot`).
 
 ## MCP Tools
 
@@ -47,6 +47,9 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `n` | number | no | Number of turns to return (default 20) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `request_id` | string | no | Pagination request ID from a previous response |
+| `remember` | boolean | no | Include the project's auto-memory (`MEMORY.md` + fact files). Claude sessions only |
+
+Compact one-line event entries are included by default (interleave them with turns by timestamp); the full typed event stream and counters live in `session_events`.
 
 **`session_latest`** Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out.
 
@@ -69,6 +72,9 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
 | `n` | number | no | Number of turns to return (default 20) |
+| `remember` | boolean | no | Include the project's auto-memory (`MEMORY.md` + fact files). Claude sessions only |
+
+The response is an envelope `{turns, events, total_usage, memory?}`: `events` are compact one-line entries, `total_usage` is the running token total (including the in-flight turn), and `memory` is present only when `remember` is set.
 
 **`session_plan`** Returns the current plan for a session. For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block. Returns an empty response if the session has no plan.
 
@@ -78,13 +84,22 @@ In addition to turns, peek-mcp passively watches two more sources:
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
-**`session_diff`** Returns the pre-computed git diff for a session, run with merge-base semantics against the automatically inferred base branch and refreshed on each new turn.
+**`session_diff`** Returns the pre-computed git diff for a session. On the first successful compute the merge-base is pinned as a SHA, so the diff survives the target branch advancing, merges, cherry-picks, and worktree/branch cleanup. The response is an envelope `{diff, diff_target, source, captured_at?}`: `source` is `live` (freshly computed) or `snapshot` (the last successful diff, served after the live compute failed — e.g. the working directory was removed), and `captured_at` (RFC 3339) is present only for snapshots and names when that diff was captured.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
+
+**`session_events`** Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, plan revision history, and diff availability (`live` | `snapshot` | `none`). Turns are not included — use `session_full` for those. The `unsupported` array lists signals not detectable for the session's agent (Codex omits skills, memory, user answers, plan approval and subagent results).
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | no | Session ID (omit for most recent session) |
+| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
+| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
+| `revisions` | boolean | no | Include plan revision diffs (default false; they dominate response size) |
 
 **`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
 
@@ -110,9 +125,12 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Git metadata | branch per entry | branch, commit hash, repo URL from `session_meta` |
 | Client metadata | CLI version | originator, CLI version, source, fork lineage |
 | Model | per assistant message | per turn context |
-| Token usage | summed per message | cumulative snapshots parsed; accurate totals pending (usage_reporting concept) |
+| Token usage | summed per message | cumulative snapshots, kept-last; accurate totals (incl. in-flight turn) |
 | Tool calls | filtered out | filtered out |
-| Sub-agent sessions | hidden (sidechains) | hidden (sub-agent rollouts) |
+| Events | full: skills, plan lifecycle, permission denials, subagent spawn/result, user answers | permission denials (escalated exec), subagent spawns, plan revisions |
+| Plan revisions | recorded + persisted (initial + unified diff per change) | recorded (re-derived from the rollout) |
+| Memory | project auto-memory via `remember` | not available |
+| Sub-agent sessions | kept out of `session_list`; spawn/result events attach to the parent | kept out of `session_list`; spawn + escalated-denial events attach to the parent |
 | Pagination | by client capability | by client capability |
 
 ## Installation
@@ -161,6 +179,8 @@ peek-mcp start --port 4242 --depth 20
 | `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
 | `--poll-window` | `1h` | Only poll repos whose session was active within this window |
+| `--state-dir` | `~/.peek/state` | State directory for diff pins/snapshots and plan revisions (empty disables persistence) |
+| `--state-retention-days` | `90` | Days to keep per-session state before GC removes it (0 disables GC) |
 
 ### Environment variables
 
@@ -175,6 +195,8 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_CODEX_HOME` | `--codex-home` |
 | `PEEK_POLL_INTERVAL` | `--poll-interval` |
 | `PEEK_POLL_WINDOW` | `--poll-window` |
+| `PEEK_STATE_DIR` | `--state-dir` |
+| `PEEK_STATE_RETENTION_DAYS` | `--state-retention-days` |
 | `PEEK_LOG_LEVEL` | `--log-level` |
 
 ## Connecting to Claude Chat
@@ -258,8 +280,9 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/
 
 ## Limitations
 
-- `session_diff` requires a local `git` binary (≥ 2.30, for `git diff --merge-base`) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository.
-- Codex CLI sessions do not currently expose token usage metadata.
+- `session_diff` requires a local `git` binary (≥ 2.30) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository. The pinned SHA assumes benign history; force-pushes, rebases, and history rewrites of the base can make the pin unresolvable — the tool then serves the last snapshot with `source: snapshot`.
+- Diff snapshots and Claude plan revisions persist under `--state-dir` (default `~/.peek/state`, `0700` dirs). Events, counters, subagent data and token usage are re-derived from transcripts in memory and are not persisted. Set `--state-dir ""` to disable all on-disk state.
+- Codex parity gaps: no plan-approval detection (Codex approves plans silently), and skills, project memory and user answers are not represented in Codex transcripts — `session_events` lists these in its `unsupported` array. Codex token usage is now reported (kept-last cumulative snapshot).
 - The stdio transport is intended for Claude Desktop use via `.mcpb`. Running it manually requires the client to manage the process lifecycle.
 
 ## Requirements
