@@ -13,10 +13,33 @@ type Turn struct {
 	Meta         *Meta       `json:"meta"`
 	RequestId    string      `json:"request_id,omitempty"` // optional
 	Usage        *Usage      `json:"usage,omitempty"`      // optional
+	Events       []*Event    `json:"-"`                    // signal payload, not serialized
+	FilePath     string      `json:"-"`                    // transcript path, set by the watcher
 	PlanFilePath string      `json:"-"`                    // plan signal only, not serialized
 	PlanContent  string      `json:"-"`                    // inline plan content from attachment
 	CustomTitle  string      `json:"-"`                    // title signal only, not serialized
 	TitleSource  TitleSource `json:"-"`
+}
+
+func (t *Turn) IsEventSignal() bool {
+	return len(t.Events) > 0 && t.Role == "" && t.PlanFilePath == "" && t.Usage == nil
+}
+
+func (t *Turn) IsSubagentSignal() bool {
+	if !t.IsEventSignal() {
+		return false
+	}
+
+	for _, event := range t.Events {
+		if event.Actor == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *Turn) IsUsageSignal() bool {
+	return t.Usage != nil && t.Role == ""
 }
 
 func (t *Turn) Validate() error {
@@ -45,6 +68,22 @@ func (t *Turn) Validate() error {
 			return errors.New("Turn.Validate: title signal turn requires title source")
 		}
 		return nil
+	}
+
+	// event-signal turns only carry a session ID and events
+	if t.IsEventSignal() {
+		if t.Meta.SessionId == "" {
+			return errors.New("Turn.Validate: event signal turn requires session ID")
+		}
+		return nil
+	}
+
+	// usage-signal turns (Codex token_count) only carry a session ID and usage
+	if t.IsUsageSignal() {
+		if t.Meta.SessionId == "" {
+			return errors.New("Turn.Validate: usage signal turn requires session ID")
+		}
+		return errors.Wrap(t.Usage.Validate(), "Turn.Validate")
 	}
 
 	if t.Role != RoleUser && t.Role != RoleAssistant {

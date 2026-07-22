@@ -141,6 +141,54 @@ func TestTurn_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
+	// event-signal-ok
+	form = &Turn{
+		Events: []*Event{{Kind: EventKindSkillInvoked}},
+		Meta:   &Meta{SessionId: "s1"},
+	}
+	test = &testCase{
+		_id:         "event-signal-ok",
+		_shouldPass: true,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	// event-signal-missing-session
+	form = &Turn{
+		Events: []*Event{{Kind: EventKindSkillInvoked}},
+		Meta:   &Meta{},
+	}
+	test = &testCase{
+		_id:         "event-signal-missing-session",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	// usage-signal-ok
+	form = &Turn{
+		Usage: &Usage{InputTokens: 10},
+		Meta:  &Meta{SessionId: "s1"},
+	}
+	test = &testCase{
+		_id:         "usage-signal-ok",
+		_shouldPass: true,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	// usage-signal-invalid-usage
+	form = &Turn{
+		Usage: &Usage{InputTokens: -1},
+		Meta:  &Meta{SessionId: "s1"},
+	}
+	test = &testCase{
+		_id:         "usage-signal-invalid-usage",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
 			err := test.form.Validate()
