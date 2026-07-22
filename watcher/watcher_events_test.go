@@ -32,12 +32,13 @@ func TestReadSubagentMeta(t *testing.T) {
 	t.Run("spawned-event-on-parent", func(t *testing.T) {
 		projectDir := t.TempDir()
 		store := session.NewStore(10, session.AgentClaude)
-		store.AddTurnBySessionId("parent-sess", session.AgentClaude, &session.Turn{
+		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
 			Timestamp: time.Now(),
 			Meta:      &session.Meta{SessionId: "parent-sess"},
-		})
+		}
+		store.AddTurnBySessionId("parent-sess", session.AgentClaude, turn)
 		w := claudeWatcher(projectDir, store)
 
 		path := writeSubagentMeta(t, projectDir, "parent-sess", "sub1",
@@ -58,12 +59,13 @@ func TestReadSubagentMeta(t *testing.T) {
 	t.Run("duplicate-read-no-second-event", func(t *testing.T) {
 		projectDir := t.TempDir()
 		store := session.NewStore(10, session.AgentClaude)
-		store.AddTurnBySessionId("parent-sess", session.AgentClaude, &session.Turn{
+		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
 			Timestamp: time.Now(),
 			Meta:      &session.Meta{SessionId: "parent-sess"},
-		})
+		}
+		store.AddTurnBySessionId("parent-sess", session.AgentClaude, turn)
 		w := claudeWatcher(projectDir, store)
 
 		path := writeSubagentMeta(t, projectDir, "parent-sess", "sub1", `{"agentType":"explore"}`)
@@ -80,6 +82,33 @@ func TestReadSubagentMeta(t *testing.T) {
 		assert.False(t, isSubagentMetaPath("/x/y/agent-1.meta.json"), "not under a subagents dir")
 		assert.True(t, isSubagentMetaPath("/x/sess/subagents/agent-1.meta.json"))
 	})
+}
+
+func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
+	projectDir := t.TempDir()
+	store := session.NewStore(10, session.AgentClaude)
+	w := claudeWatcher(projectDir, store)
+
+	// On-disk layout as left behind by a finished session: the subagent dir
+	// sorts lexically before the parent transcript file
+	transcript := filepath.Join(projectDir, "parent-sess.jsonl")
+	line := `{"type":"user","promptId":"p1","sessionId":"parent-sess","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"user","content":"hello"}}` + "\n"
+	require.NoError(t, os.WriteFile(transcript, []byte(line), 0o644))
+	writeSubagentMeta(t, projectDir, "parent-sess", "sub1",
+		`{"agentType":"explore","description":"survey","toolUseId":"tu1","spawnDepth":1}`)
+
+	fsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer fsWatcher.Close()
+
+	w.walkAndWatch(fsWatcher, projectDir)
+
+	sess, ok := store.GetById("parent-sess")
+	require.True(t, ok, "parent transcript must be backfilled")
+	events := sess.Events.All()
+	require.Len(t, events, 1, "spawned event must land on the parent, not be dropped")
+	assert.Equal(t, session.EventKindSubagentSpawned, events[0].Kind)
+	assert.Equal(t, "sub1", events[0].Subagent.AgentId)
 }
 
 func TestWalkAndWatch_NewDirBackfill(t *testing.T) {

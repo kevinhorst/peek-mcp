@@ -27,6 +27,13 @@ const (
 	subagentsDirName = "subagents"
 )
 
+type subagentMeta struct {
+	AgentType   string `json:"agentType"`
+	Description string `json:"description"`
+	SpawnDepth  int    `json:"spawnDepth"`
+	ToolUseId   string `json:"toolUseId"`
+}
+
 type watchedFile struct {
 	offset int64
 	parser Parser
@@ -112,6 +119,8 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		return
 	}
 
+	var subagentPaths []string
+
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -124,6 +133,23 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 			}
 			return nil
 		}
+		if isSubagentPath(path) {
+			subagentPaths = append(subagentPaths, path)
+			return nil
+		}
+		if strings.HasSuffix(path, jsonlSuffix) {
+			err = w.readNewLines(path)
+			if err != nil {
+				slog.Warn("walkAndWatch: readNewLines", "err", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Error("walkAndWatch error", "err", err)
+	}
+
+	for _, path := range subagentPaths {
 		if strings.HasSuffix(path, jsonlSuffix) {
 			err = w.readNewLines(path)
 			if err != nil {
@@ -133,10 +159,6 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		if isSubagentMetaPath(path) {
 			w.readSubagentMeta(path)
 		}
-		return nil
-	})
-	if err != nil {
-		slog.Error("walkAndWatch error", "err", err)
 	}
 }
 
@@ -198,27 +220,6 @@ func (w *Watcher) readNewLines(path string) error {
 	return nil
 }
 
-type subagentMeta struct {
-	AgentType   string `json:"agentType"`
-	Description string `json:"description"`
-	SpawnDepth  int    `json:"spawnDepth"`
-	ToolUseId   string `json:"toolUseId"`
-}
-
-func isSubagentMetaPath(path string) bool {
-	if !strings.HasSuffix(path, metaJsonSuffix) {
-		return false
-	}
-	if !strings.HasPrefix(filepath.Base(path), agentFilePrefix) {
-		return false
-	}
-	return filepath.Base(filepath.Dir(path)) == subagentsDirName
-}
-
-// The meta file carries no session id — the parent session id is the
-// grandparent directory name (<project>/<sessionId>/subagents/), the one
-// path-derived identity in the codebase. The files map marks it processed
-// so re-walks do not emit duplicate spawned events.
 func (w *Watcher) readSubagentMeta(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -268,4 +269,18 @@ func (w *Watcher) readSubagentMeta(path string) {
 	}
 
 	w.store.AddTurnBySessionId(sessionId, w.agent, turn)
+}
+
+func isSubagentMetaPath(path string) bool {
+	if !strings.HasSuffix(path, metaJsonSuffix) {
+		return false
+	}
+	if !strings.HasPrefix(filepath.Base(path), agentFilePrefix) {
+		return false
+	}
+	return filepath.Base(filepath.Dir(path)) == subagentsDirName
+}
+
+func isSubagentPath(path string) bool {
+	return filepath.Base(filepath.Dir(path)) == subagentsDirName
 }
