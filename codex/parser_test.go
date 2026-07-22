@@ -8,6 +8,7 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func splitLines(data []byte) [][]byte {
@@ -130,6 +131,8 @@ func TestCodex_TokenCountEvent(t *testing.T) {
 	turn := p.ParseLine(bytes.TrimSpace(data))
 
 	assert.NotNil(t, turn)
+	require.NoError(t, turn.Validate(), "usage-signal turn must pass the watcher gate")
+	assert.True(t, turn.IsUsageSignal())
 	assert.Equal(t, "", turn.Text, "token_count is meta-only")
 	assert.Equal(t, session.Id("sess-codex-1"), turn.Meta.SessionId)
 	assert.NotNil(t, turn.Usage)
@@ -140,7 +143,7 @@ func TestCodex_TokenCountEvent(t *testing.T) {
 	assert.Equal(t, 125, turn.Usage.TotalTokens)
 }
 
-func TestCodex_SubagentDropped(t *testing.T) {
+func TestCodex_SubagentSpawned(t *testing.T) {
 	p := NewParser()
 
 	data, err := os.ReadFile("fixtures/subagent_meta.json")
@@ -149,7 +152,12 @@ func TestCodex_SubagentDropped(t *testing.T) {
 	}
 	turn := p.ParseLine(bytes.TrimSpace(data))
 
-	assert.Nil(t, turn, "sub-agent session_meta is dropped")
+	require.NotNil(t, turn, "sub-agent session_meta yields a spawned event turn")
+	require.True(t, turn.IsSubagentSignal())
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.EventKindSubagentSpawned, turn.Events[0].Kind)
+	assert.Equal(t, "Hume", turn.Events[0].Actor)
+	assert.Equal(t, session.Id("sess-codex-parent"), turn.Meta.SessionId)
 
 	userData, err := os.ReadFile("fixtures/user_message.json")
 	if err != nil {
@@ -157,7 +165,7 @@ func TestCodex_SubagentDropped(t *testing.T) {
 	}
 	turn = p.ParseLine(bytes.TrimSpace(userData))
 
-	assert.Nil(t, turn, "lines after a dropped session_meta are ignored")
+	assert.Nil(t, turn, "chat lines in sub-agent mode are suppressed")
 }
 
 func TestCodex_ProposedPlan(t *testing.T) {

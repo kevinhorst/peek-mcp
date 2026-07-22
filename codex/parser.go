@@ -26,12 +26,36 @@ const (
 	maxPlanBytes         = 32 * 1024
 )
 
+const (
+	execCommandTool         = "exec_command"
+	functionCallOutputType  = "function_call_output"
+	functionCallType        = "function_call"
+	maxPendingCalls         = 64
+	rejectedByUserMarker    = `Rejected("rejected by user")`
+	sandboxRequireEscalated = "require_escalated"
+)
+
 type Parser struct {
-	sessionId session.Id
-	model     string
+	model            string
+	pendingEscalated map[string]*escalatedCall
+	sessionId        session.Id
+	subagentActor    string
 }
 
-func NewParser() *Parser { return &Parser{} }
+func NewParser() *Parser {
+	return &Parser{pendingEscalated: make(map[string]*escalatedCall)}
+}
+
+type escalatedCall struct {
+	cmd           string
+	justification string
+}
+
+type execCommandArgs struct {
+	Cmd                string `json:"cmd"`
+	Justification      string `json:"justification"`
+	SandboxPermissions string `json:"sandbox_permissions"`
+}
 
 func (p *Parser) ParseLine(line []byte) *session.Turn {
 	var entry Entry
@@ -71,12 +95,8 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *sessi
 		return nil
 	}
 
-	// Sub-agent rollouts are separate helper sessions — the Codex analog of
-	// Claude's isSidechain filter. sessionId stays unset, so every later
-	// line of this file is ignored (parser state is per file, see watcher).
 	if meta.Source.IsSubagent() {
-		slog.Debug("handleSessionMeta: Dropping sub-agent rollout", "id", meta.Id)
-		return nil
+		return p.handleSubagentMeta(&meta, ts)
 	}
 
 	p.sessionId = meta.Id
@@ -106,6 +126,39 @@ func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *sessi
 			Origin:    origin,
 		},
 	}
+}
+
+// Sub-agent rollouts stay out of session_list: no session is created for
+// them — their signal events attach to the parent via parent_thread_id, and
+// the store drops them when the parent is unknown (subagent no-create rule).
+func (p *Parser) handleSubagentMeta(meta *SessionMeta, ts time.Time) *session.Turn {
+	if meta.Source.ParentThreadId == "" {
+		slog.Debug("handleSubagentMeta: Dropping sub-agent rollout without parent", "id", meta.Id)
+		return nil
+	}
+
+	p.sessionId = session.Id(meta.Source.ParentThreadId)
+	p.subagentActor = meta.Source.AgentNickname
+	if p.subagentActor == "" {
+		p.subagentActor = string(meta.Id)
+	}
+
+	payload := &session.SubagentPayload{
+		AgentId:   string(meta.Id),
+		AgentType: meta.Source.AgentNickname,
+	}
+	event := &session.Event{
+		Actor:     p.subagentActor,
+		Kind:      session.EventKindSubagentSpawned,
+		Subagent:  payload,
+		Timestamp: ts,
+	}
+
+	turn := &session.Turn{
+		Events: []*session.Event{event},
+		Meta:   &session.Meta{SessionId: p.sessionId},
+	}
+	return turn
 }
 
 func (p *Parser) handleTurnContext(payload json.RawMessage) {
@@ -139,6 +192,10 @@ func (p *Parser) handleResponseItem(payload json.RawMessage, ts time.Time) *sess
 	}
 
 	if item.Type != codexMessageType {
+		return p.handleFunctionItem(&item, ts)
+	}
+
+	if p.subagentActor != "" {
 		return nil
 	}
 
@@ -152,8 +209,81 @@ func (p *Parser) handleResponseItem(payload json.RawMessage, ts time.Time) *sess
 	}
 }
 
+func (p *Parser) handleFunctionItem(item *ResponseItem, ts time.Time) *session.Turn {
+	switch item.Type {
+	case functionCallType:
+		p.rememberEscalatedCall(item)
+		return nil
+	case functionCallOutputType:
+		return p.handleFunctionCallOutput(item, ts)
+	}
+	return nil
+}
+
+// Sandbox blocks without escalation (approval policy "never") are ordinary
+// failed execs, not user denials — only require_escalated calls are tracked.
+func (p *Parser) rememberEscalatedCall(item *ResponseItem) {
+	if item.Name != execCommandTool || item.CallId == "" {
+		return
+	}
+
+	var args execCommandArgs
+	if err := json.Unmarshal([]byte(item.Arguments), &args); err != nil {
+		slog.Debug("rememberEscalatedCall: unmarshal", "err", err)
+		return
+	}
+	if args.SandboxPermissions != sandboxRequireEscalated {
+		return
+	}
+
+	if len(p.pendingEscalated) >= maxPendingCalls {
+		p.pendingEscalated = make(map[string]*escalatedCall)
+	}
+	p.pendingEscalated[item.CallId] = &escalatedCall{cmd: args.Cmd, justification: args.Justification}
+}
+
+// Grants stay implicit (a normal output follows) — parity with the Claude
+// side, where only denials are evented.
+func (p *Parser) handleFunctionCallOutput(item *ResponseItem, ts time.Time) *session.Turn {
+	pending, ok := p.pendingEscalated[item.CallId]
+	if !ok {
+		return nil
+	}
+	delete(p.pendingEscalated, item.CallId)
+
+	var output string
+	if err := json.Unmarshal(item.Output, &output); err != nil {
+		output = string(item.Output)
+	}
+
+	if !strings.Contains(output, rejectedByUserMarker) {
+		return nil
+	}
+
+	payload := &session.PermissionPayload{
+		Command:       pending.cmd,
+		Justification: pending.justification,
+		Tool:          execCommandTool,
+	}
+	event := &session.Event{
+		Actor:      p.subagentActor,
+		Kind:       session.EventKindPermissionDenied,
+		Permission: payload,
+		Timestamp:  ts,
+	}
+
+	turn := &session.Turn{
+		Events: []*session.Event{event},
+		Meta:   &session.Meta{SessionId: p.sessionId},
+	}
+	return turn
+}
+
 func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time) *session.Turn {
 	if p.sessionId == "" {
+		return nil
+	}
+	if p.subagentActor != "" {
 		return nil
 	}
 
