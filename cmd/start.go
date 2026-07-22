@@ -17,6 +17,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/codex"
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/kevinhorst/peek-mcp/watcher"
 	"github.com/mark3labs/mcp-go/server"
@@ -41,6 +42,8 @@ var startCmd = &cobra.Command{
 		codexHome, _ := flags.GetString("codex-home")
 		pollInterval, _ := flags.GetDuration("poll-interval")
 		pollWindow, _ := flags.GetDuration("poll-window")
+		stateDirPath, _ := flags.GetString("state-dir")
+		stateRetentionDays, _ := flags.GetInt("state-retention-days")
 
 		level := slog.LevelInfo
 		switch logLevel {
@@ -65,6 +68,13 @@ var startCmd = &cobra.Command{
 		}
 
 		store := session.NewStore(depth, agents...)
+
+		var stateDir *state.Dir
+		if stateDirPath != "" {
+			stateDir = state.NewDir(stateDirPath)
+			store.StateDir = stateDir
+			go runStateGC(ctx, stateDir, stateRetentionDays)
+		}
 
 		if claudeHome != "" {
 			go func() {
@@ -108,7 +118,7 @@ var startCmd = &cobra.Command{
 		}
 
 		go func() {
-			err := watcher.NewDiffWatcher(store, pollInterval, pollWindow).Run(ctx)
+			err := watcher.NewDiffWatcher(store, pollInterval, pollWindow, stateDir).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("diff watcher error", "err", err)
 				os.Exit(1)
@@ -163,9 +173,32 @@ func init() {
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
 	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
+	flags.String("state-dir", filepath.Join(defaultHome(".peek"), "state"), "State directory for diff pins/snapshots and plan revisions (empty disables persistence)")
+	flags.Int("state-retention-days", 90, "Days to keep per-session state before GC removes it (0 disables GC)")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	rootCmd.AddCommand(startCmd)
+}
+
+func runStateGC(ctx context.Context, stateDir *state.Dir, retentionDays int) {
+	if retentionDays <= 0 {
+		return
+	}
+
+	retention := time.Duration(retentionDays) * 24 * time.Hour
+	stateDir.GC(retention)
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			stateDir.GC(retention)
+		}
+	}
 }
 
 func requestLogger(next http.Handler) http.Handler {
@@ -192,19 +225,22 @@ func (sw *statusWriter) WriteHeader(code int) {
 }
 
 var envFallbacks = map[string]string{
-	"transport":     "PEEK_TRANSPORT",
-	"port":          "PEEK_PORT",
-	"depth":         "PEEK_DEPTH",
-	"claude-home":   "PEEK_CLAUDE_HOME",
-	"codex-home":    "PEEK_CODEX_HOME",
-	"poll-interval": "PEEK_POLL_INTERVAL",
-	"poll-window":   "PEEK_POLL_WINDOW",
-	"log-level":     "PEEK_LOG_LEVEL",
+	"transport":            "PEEK_TRANSPORT",
+	"port":                 "PEEK_PORT",
+	"depth":                "PEEK_DEPTH",
+	"claude-home":          "PEEK_CLAUDE_HOME",
+	"codex-home":           "PEEK_CODEX_HOME",
+	"poll-interval":        "PEEK_POLL_INTERVAL",
+	"poll-window":          "PEEK_POLL_WINDOW",
+	"state-dir":            "PEEK_STATE_DIR",
+	"state-retention-days": "PEEK_STATE_RETENTION_DAYS",
+	"log-level":            "PEEK_LOG_LEVEL",
 }
 
 var pathFlags = map[string]bool{
 	"claude-home": true,
 	"codex-home":  true,
+	"state-dir":   true,
 }
 
 const recommendedMaxOutputTokens = 125_000
