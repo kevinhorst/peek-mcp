@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -25,9 +26,9 @@ type planRevisionsView struct {
 type sessionEventsResult struct {
 	Counters      *session.Counters  `json:"counters,omitempty"`
 	Diff          string             `json:"diff,omitempty"`
-	Events        string             `json:"events,omitempty"`
+	Events        json.RawMessage    `json:"events,omitempty"`
 	PlanRevisions *planRevisionsView `json:"plan_revisions,omitempty"`
-	Revisions     string             `json:"revisions,omitempty"`
+	Revisions     json.RawMessage    `json:"revisions,omitempty"`
 	Unsupported   []string           `json:"unsupported,omitempty"`
 	Usage         *session.Usage     `json:"usage,omitempty"`
 }
