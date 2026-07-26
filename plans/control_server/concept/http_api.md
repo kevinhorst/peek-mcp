@@ -35,9 +35,9 @@
 |---|---|---|---|
 | GET | `/`, `/assets/*` | — | Embedded dashboard |
 | GET | `/api/healthz` | — | `{"status":"ok","version":...}` |
-| GET | `/api/sessions` | `agent` (claude/codex), `limit` (default 50, max 200), `title` (substring filter, reuses [codex_title_search](../codex_title_search/index_watcher.md) matching) | `{"sessions":[SessionSummary]}` |
+| GET | `/api/sessions` | `agent` (claude/codex), `limit` (default 50, max 200), `offset` (default 0), `title` (substring filter, reuses [codex_title_search](../codex_title_search/index_watcher.md) matching) | `{"sessions":[SessionSummary],"total":int}` — `total` counts after agent+title filtering, before offset/limit |
 | GET | `/api/sessions/{id}` | — | `SessionDetail` |
-| GET | `/api/sessions/{id}/turns` | `n` (default 5, max = `--depth`) | `{"turns":[Turn]}` |
+| GET | `/api/sessions/{id}/turns` | `n` (default 20, max = `--depth`) | `{"turns":[Turn]}` |
 | GET | `/api/sessions/{id}/plan` | — | `{"plan_content":..., "plan_file_path":...}`; 404 if none |
 | GET | `/api/sessions/{id}/diff` | `size` (default 262144, 0 = full) | `{"target":"main","diff":...,"truncated":bool}` |
 | GET | `/api/sessions/{id}/uncommitted-diff` | `size` (same) | `{"diff":...,"truncated":bool}` |
