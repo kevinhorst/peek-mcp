@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
@@ -21,6 +22,7 @@ type diffBaseKey struct {
 
 type DiffWatcher struct {
 	store    *session.Store
+	broker   *events.Broker
 	interval time.Duration
 	window   time.Duration
 	running  sync.Map // session.Id -> struct{}; one in-flight turn-diff per session
@@ -31,11 +33,12 @@ type DiffWatcher struct {
 	baseByKey map[diffBaseKey]string
 }
 
-func NewDiffWatcher(store *session.Store, interval, window time.Duration) *DiffWatcher {
+func NewDiffWatcher(store *session.Store, broker *events.Broker, interval, window time.Duration) *DiffWatcher {
 	return &DiffWatcher{
-		store:     store,
-		interval:  interval,
-		window:    window,
+		store:    store,
+		broker:   broker,
+		interval: interval,
+		window:   window,
 		baseByKey: make(map[diffBaseKey]string),
 	}
 }
@@ -46,13 +49,19 @@ func (w *DiffWatcher) Run(ctx context.Context) error {
 	}
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
+	ch, cancel := w.broker.Subscribe()
+	defer cancel()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case id := <-w.store.TurnAdded:
+		case ev := <-ch:
+			if ev.Type != events.TypeTurnAdded {
+				continue
+			}
+			id := session.Id(ev.SessionId)
 			sess, ok := w.store.GetById(id)
 			if !ok || sess.Meta.CWD == "" {
 				continue

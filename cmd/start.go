@@ -16,6 +16,8 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/codex"
+	"github.com/kevinhorst/peek-mcp/control"
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/kevinhorst/peek-mcp/watcher"
@@ -41,6 +43,8 @@ var startCmd = &cobra.Command{
 		codexHome, _ := flags.GetString("codex-home")
 		pollInterval, _ := flags.GetDuration("poll-interval")
 		pollWindow, _ := flags.GetDuration("poll-window")
+		controlPort, _ := flags.GetInt("control-port")
+		controlToken, _ := flags.GetString("control-token")
 
 		level := slog.LevelInfo
 		switch logLevel {
@@ -64,7 +68,8 @@ var startCmd = &cobra.Command{
 			agents = append(agents, session.AgentCodex)
 		}
 
-		store := session.NewStore(depth, agents...)
+		broker := events.NewBroker()
+		store := session.NewStore(depth, broker, agents...)
 
 		if claudeHome != "" {
 			go func() {
@@ -108,7 +113,7 @@ var startCmd = &cobra.Command{
 		}
 
 		go func() {
-			err := watcher.NewDiffWatcher(store, pollInterval, pollWindow).Run(ctx)
+			err := watcher.NewDiffWatcher(store, broker, pollInterval, pollWindow).Run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("diff watcher error", "err", err)
 				os.Exit(1)
@@ -120,6 +125,34 @@ var startCmd = &cobra.Command{
 			server.WithResourceCapabilities(false, true),
 		)
 		tools.Register(srv, store)
+
+		if controlPort > 0 {
+			controlServer, err := control.New(&control.Options{
+				Store:   store,
+				Broker:  broker,
+				Token:   controlToken,
+				Version: Version(),
+				Depth:   depth,
+			})
+			if err != nil {
+				slog.Error("control server init error", "err", err)
+				os.Exit(1)
+			}
+
+			controlAddr := fmt.Sprintf("127.0.0.1:%d", controlPort)
+			controlHTTP := &http.Server{Addr: controlAddr, Handler: controlServer.Handler()}
+			go func() {
+				<-ctx.Done()
+				controlHTTP.Shutdown(context.Background())
+			}()
+			go func() {
+				slog.Info("control server listening", "addr", "http://"+controlAddr)
+				if err := controlHTTP.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+					slog.Error("control server error", "err", err)
+					os.Exit(1)
+				}
+			}()
+		}
 
 		switch transport {
 		case "stdio":
@@ -163,6 +196,8 @@ func init() {
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
 	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
+	flags.Int("control-port", 42422, "Control server port (dashboard + JSON API + SSE); 0 disables")
+	flags.String("control-token", "", "Optional bearer token protecting the control server")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	rootCmd.AddCommand(startCmd)
@@ -199,6 +234,8 @@ var envFallbacks = map[string]string{
 	"codex-home":    "PEEK_CODEX_HOME",
 	"poll-interval": "PEEK_POLL_INTERVAL",
 	"poll-window":   "PEEK_POLL_WINDOW",
+	"control-port":  "PEEK_CONTROL_PORT",
+	"control-token": "PEEK_CONTROL_TOKEN",
 	"log-level":     "PEEK_LOG_LEVEL",
 }
 

@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kevinhorst/peek-mcp/events"
+	"time"
 )
 
 const (
@@ -22,20 +25,30 @@ type Store struct {
 	mu sync.RWMutex
 
 	TurnAdded      chan Id
+	broker        *events.Broker
 	depth          int
 	enabledAgents  []Agent
 	plainTitleById map[Id]string
 	sessions       map[Id]*Session
 }
 
-func NewStore(depth int, agents ...Agent) *Store {
+func NewStore(depth int, broker *events.Broker, agents ...Agent) *Store {
 	return &Store{
 		sessions:       make(map[Id]*Session),
 		plainTitleById: make(map[Id]string),
 		depth:          depth,
 		enabledAgents:  agents,
-		TurnAdded:      make(chan Id, 16), // small fixed buffer; dropped notifications are fine — next turn re-triggers
+		broker:        broker,
 	}
+}
+
+func (s *Store) publish(t events.Type, id Id, agent Agent) {
+	s.broker.Publish(events.Event{
+		Type:      t,
+		SessionId: string(id),
+		Agent:     string(agent),
+		Ts:        time.Now(),
+	})
 }
 
 // TODO: Agent.IsValid
@@ -95,10 +108,7 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	// update user or assistent turn
 	session.AddTurn(turn)
 
-	select {
-	case s.TurnAdded <- id:
-	default:
-	}
+	s.publish(events.TypeTurnAdded, id, agent)
 }
 
 func (s *Store) UpdateDiff(id Id, target, output string) {
@@ -109,6 +119,7 @@ func (s *Store) UpdateDiff(id Id, target, output string) {
 	if session, ok := s.sessions[id]; ok {
 		session.DiffOutput = output
 		session.DiffTarget = target
+		s.publish(events.TypeDiffUpdated, id, session.Agent)
 	}
 }
 
@@ -117,6 +128,7 @@ func (s *Store) UpdateUncommittedDiff(id Id, output string) {
 	defer s.mu.Unlock()
 	if session, ok := s.sessions[id]; ok {
 		session.UncommittedDiff = output
+		s.publish(events.TypeUncommittedDiffUpdated, id, session.Agent)
 	}
 }
 
@@ -128,6 +140,7 @@ func (s *Store) UpdatePlanForPath(filePath, content string) {
 	for _, session := range s.sessions {
 		if session.PlanFilePath == filePath {
 			session.PlanContent = content
+			s.publish(events.TypePlanUpdated, session.Meta.SessionId, session.Agent)
 		}
 	}
 }
@@ -214,6 +227,25 @@ func (s *Store) List(agents ...Agent) []*Session {
 	return s.sortByLastActiveDesc(agents...)
 }
 
+func (s *Store) WithSessions(agents []Agent, fn func([]*Session)) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	fn(s.sortByLastActiveDesc(agents...))
+}
+
+func (s *Store) WithSession(id Id, fn func(*Session)) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	session, ok := s.sessions[id]
+	if !ok {
+		return false
+	}
+	fn(session)
+	return true
+}
+
 func (s *Store) getOrCreate(id Id, agent Agent) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -228,6 +260,7 @@ func (s *Store) getOrCreate(id Id, agent Agent) *Session {
 		TurnsFinished: NewTurnBuffer(s.depth),
 	}
 	s.sessions[id] = session
+	s.publish(events.TypeSessionCreated, id, agent)
 	return session
 }
 
@@ -240,11 +273,13 @@ func (s *Store) setTitle(session *Session, title string, source TitleSource) {
 func (s *Store) updatePlanContent(session *Session, turn *Turn) {
 	if turn.PlanContent != "" {
 		session.PlanContent = turn.PlanContent
+		s.publish(events.TypePlanUpdated, id, agent)
 		return
 	}
 
 	if content, err := os.ReadFile(turn.PlanFilePath); err == nil {
 		session.PlanContent = string(content)
+		s.publish(events.TypePlanUpdated, id, agent)
 		return
 	}
 
@@ -255,6 +290,7 @@ func (s *Store) updatePlanContent(session *Session, turn *Turn) {
 		if content, err := os.ReadFile(alt); err == nil {
 			session.PlanFilePath = alt
 			session.PlanContent = string(content)
+			s.publish(events.TypePlanUpdated, id, agent)
 			return
 		}
 	}

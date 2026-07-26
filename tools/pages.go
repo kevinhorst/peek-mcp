@@ -87,7 +87,7 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 		size := b.Size
 
 		// drain turns, plan and diff into pages by priority
-		turnChunk := utf8SafeSlice(turns, size)
+		turnChunk := UTF8SafeSlice(turns, size)
 		pages[i].Turns = turnChunk
 		turns = turns[len(turnChunk):]
 		if len(turnChunk) == size {
@@ -95,7 +95,7 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 		}
 		size = size - len(turnChunk)
 
-		planChunk := utf8SafeSlice(plan, size)
+		planChunk := UTF8SafeSlice(plan, size)
 		pages[i].Plan = planChunk
 		plan = plan[len(planChunk):]
 		if len(planChunk) == size {
@@ -103,7 +103,7 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 		}
 		size = size - len(planChunk)
 
-		diffChunk := utf8SafeSlice(diff, size)
+		diffChunk := UTF8SafeSlice(diff, size)
 		pages[i].Diff = diffChunk
 		diff = diff[len(diffChunk):]
 	}
@@ -111,7 +111,7 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 	return pages[0], pages[1:]
 }
 
-func utf8SafeSlice(s string, maxBytes int) string {
+func UTF8SafeSlice(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
 	}
