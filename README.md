@@ -44,7 +44,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
-| `n` | number | no | Number of turns to return (default 5) |
+| `n` | number | no | Number of turns to return (default 20) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `request_id` | string | no | Pagination request ID from a previous response |
 
@@ -52,7 +52,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `n` | number | no | Number of turns to return (default 5) |
+| `n` | number | no | Number of turns to return (default 20) |
 | `agent` | string | yes | Agent: `claude` or `codex` |
 
 **`session_list`** Lists all sessions. Returns session ID, agent, last activity timestamp, and whether a plan or diff is available.
@@ -67,7 +67,7 @@ In addition to turns, peek-mcp passively watches two more sources:
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID |
 | `title` | string | no | Exact session title (matched by normalized hash, case-insensitive) |
-| `n` | number | no | Number of turns to return (default 5) |
+| `n` | number | no | Number of turns to return (default 20) |
 
 **`session_plan`** Returns the current plan for a session. Returns an empty response if the session has no plan.
 
@@ -261,7 +261,7 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/
 1. Start peek-mcp in a terminal tab. It runs silently and watches for sessions.
 2. Run Claude Code with Opus on a task.
 3. Open Claude Chat (Sonnet) and ask: "Use session_full to review what was just built and flag any issues."
-4. Sonnet calls the tool, reads the last 5 turns, the current plan, and the git diff against `main`. Done in under 30 seconds.
+4. Sonnet calls the tool, reads the last 20 turns, the current plan, and the git diff against `main`. Done in under 30 seconds.
 
 ## Limitations
 
