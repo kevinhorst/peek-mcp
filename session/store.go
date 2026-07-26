@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/events"
-	"time"
 )
 
 const (
@@ -25,7 +24,7 @@ type Store struct {
 	mu sync.RWMutex
 
 	TurnAdded      chan Id
-	broker        *events.Broker
+	broker         *events.Broker
 	depth          int
 	enabledAgents  []Agent
 	plainTitleById map[Id]string
@@ -38,7 +37,7 @@ func NewStore(depth int, broker *events.Broker, agents ...Agent) *Store {
 		plainTitleById: make(map[Id]string),
 		depth:          depth,
 		enabledAgents:  agents,
-		broker:        broker,
+		broker:         broker,
 	}
 }
 
@@ -89,7 +88,7 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	if turn.PlanFilePath != "" {
 		slog.Debug("Updating plan", "session", id)
 		session.PlanFilePath = turn.PlanFilePath
-		s.updatePlanContent(session, turn)
+		s.updatePlanContent(id, agent, session, turn)
 
 		// Codex plan turns are also chat turns; Claude plan signals carry no text
 		if turn.Text == "" {
@@ -270,7 +269,7 @@ func (s *Store) setTitle(session *Session, title string, source TitleSource) {
 	s.plainTitleById[session.Meta.SessionId] = strings.ToLower(strings.TrimSpace(title))
 }
 
-func (s *Store) updatePlanContent(session *Session, turn *Turn) {
+func (s *Store) updatePlanContent(id Id, agent Agent, session *Session, turn *Turn) {
 	if turn.PlanContent != "" {
 		session.PlanContent = turn.PlanContent
 		s.publish(events.TypePlanUpdated, id, agent)
