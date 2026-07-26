@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +18,7 @@ func provideIndexWatcher(t *testing.T, indexContent string) (*CodexIndexWatcher,
 		require.NoError(t, os.WriteFile(indexPath, []byte(indexContent), 0644))
 	}
 
-	store := session.NewStore(10, session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	return NewCodexIndexWatcher(codexHome, store), store
 }
 

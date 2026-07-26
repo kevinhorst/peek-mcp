@@ -64,7 +64,7 @@ func TestGetOrCreate_Existing(t *testing.T) {
 }
 
 func TestAddTurnBySessionId_PlanSentinel(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	now := time.Now()
 
 	// sentinel path + PlanContent: content stored, path never read as a file
@@ -324,7 +324,7 @@ func TestAddTurn_CustomTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-index-source-set
-	indexTitleStore := NewStore(10)
+	indexTitleStore := NewStore(10, events.NewBroker())
 	indexTitleStore.AddTurnBySessionId("s1", AgentCodex, &Turn{
 		CustomTitle: "Propagate Supabase schema",
 		Meta:        &Meta{SessionId: "s1"},
@@ -341,7 +341,7 @@ func TestAddTurn_CustomTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-repeated-title-does-not-add-turn
-	repeatedTitleStore := NewStore(10)
+	repeatedTitleStore := NewStore(10, events.NewBroker())
 	repeatedTitleStore.AddTurnBySessionId("s1", AgentCodex, &Turn{
 		CustomTitle: "Propagate Supabase schema",
 		Meta:        &Meta{SessionId: "s1"},
@@ -444,7 +444,7 @@ func TestGetByTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// fail-substring-ambiguous-lists-candidates
-	ambiguousStore := NewStore(10)
+	ambiguousStore := NewStore(10, events.NewBroker())
 	provideTitledSession(ambiguousStore, "a1", AgentCodex, "Propagate Supabase schema", now.Add(-1*time.Hour))
 	provideTitledSession(ambiguousStore, "a2", AgentCodex, "Trim schema from supabase types", now)
 
@@ -459,7 +459,7 @@ func TestGetByTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-exact-duplicate-most-recent-wins
-	duplicateStore := NewStore(10)
+	duplicateStore := NewStore(10, events.NewBroker())
 	provideTitledSession(duplicateStore, "d1", AgentCodex, "Propagate Supabase schema", now.Add(-1*time.Hour))
 	provideTitledSession(duplicateStore, "d2", AgentCodex, "Propagate Supabase schema", now)
 
@@ -474,7 +474,7 @@ func TestGetByTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-agent-filtered
-	crossAgentStore := NewStore(10)
+	crossAgentStore := NewStore(10, events.NewBroker())
 	provideTitledSession(crossAgentStore, "c1", AgentClaude, "Auth refactor", now)
 	provideTitledSession(crossAgentStore, "c2", AgentCodex, "Auth refactor", now.Add(-1*time.Hour))
 
@@ -555,7 +555,7 @@ func TestGetByTitle(t *testing.T) {
 
 func TestGetByTitle_AmbiguityCandidates(t *testing.T) {
 	now := time.Now()
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	for i := range 7 {
 		id := Id("m" + string(rune('0'+i)))
 		provideTitledSession(s, id, AgentCodex, "Propagate Supabase schema "+string(rune('0'+i)), now.Add(-time.Duration(i)*time.Hour))
@@ -599,7 +599,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests := make([]*testCase, 0)
 
 	// derived-then-index-overwrites
-	derivedThenIndex := NewStore(10)
+	derivedThenIndex := NewStore(10, events.NewBroker())
 	derivedThenIndex.AddTurnBySessionId("s1", AgentCodex, provideUserTurn("Fix the login flow"))
 	derivedThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 
@@ -613,7 +613,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests = append(tests, test)
 
 	// index-then-derived-ignored
-	indexThenDerived := NewStore(10)
+	indexThenDerived := NewStore(10, events.NewBroker())
 	indexThenDerived.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 	indexThenDerived.AddTurnBySessionId("s1", AgentCodex, provideUserTurn("Fix the login flow"))
 
@@ -627,7 +627,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests = append(tests, test)
 
 	// index-then-custom-overwrites
-	indexThenCustom := NewStore(10)
+	indexThenCustom := NewStore(10, events.NewBroker())
 	indexThenCustom.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 	indexThenCustom.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("My login fix", TitleSourceCustom))
 
@@ -641,7 +641,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests = append(tests, test)
 
 	// custom-then-index-ignored
-	customThenIndex := NewStore(10)
+	customThenIndex := NewStore(10, events.NewBroker())
 	customThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("My login fix", TitleSourceCustom))
 	customThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 
@@ -655,7 +655,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests = append(tests, test)
 
 	// index-rename-same-rank-overwrites
-	indexRename := NewStore(10)
+	indexRename := NewStore(10, events.NewBroker())
 	indexRename.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 	indexRename.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login rework", TitleSourceIndex))
 
@@ -741,7 +741,7 @@ func TestAddTurn_DerivedTitle(t *testing.T) {
 	// Run tests
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
-			s := NewStore(10)
+			s := NewStore(10, events.NewBroker())
 			for i, text := range test.texts {
 				s.AddTurnBySessionId("s1", AgentCodex, &Turn{
 					Role:      RoleUser,
@@ -760,7 +760,7 @@ func TestAddTurn_DerivedTitle(t *testing.T) {
 }
 
 func TestAddTurn_AssistantTurnDoesNotDerive(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	s.AddTurnBySessionId("s1", AgentCodex, &Turn{
 		Role:      RoleAssistant,
 		Text:      "I will fix the login flow.",
@@ -775,7 +775,7 @@ func TestAddTurn_AssistantTurnDoesNotDerive(t *testing.T) {
 
 func TestAddTurn_TitleOnlySession(t *testing.T) {
 	indexTime := time.Date(2026, 4, 19, 14, 10, 36, 0, time.UTC)
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	s.AddTurnBySessionId("s1", AgentCodex, &Turn{
 		CustomTitle: "Propagate Supabase schema",
 		Meta:        &Meta{SessionId: "s1"},
