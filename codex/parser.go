@@ -172,8 +172,10 @@ func (p *Parser) handleEventMessage(payload json.RawMessage, timestamp time.Time
 
 	usage := convertUsage(eventMessage.Info.TotalTokenUsage)
 	return &session.Turn{
-		Timestamp: timestamp,
-		Usage:     &usage,
+		Role:            session.RoleAssistant,
+		Timestamp:       timestamp,
+		Usage:           &usage,
+		UsageCumulative: true,
 		Meta: &session.Meta{
 			SessionId: p.sessionId,
 		},

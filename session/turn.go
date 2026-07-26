@@ -7,16 +7,17 @@ import (
 )
 
 type Turn struct {
-	Role         Role        `json:"role"`
-	Text         string      `json:"text"` // may be empty
-	Timestamp    time.Time   `json:"timestamp"`
-	Meta         *Meta       `json:"meta"`
-	RequestId    string      `json:"request_id,omitempty"` // optional
-	Usage        *Usage      `json:"usage,omitempty"`      // optional
-	PlanFilePath string      `json:"-"`                    // plan signal only, not serialized
-	PlanContent  string      `json:"-"`                    // inline plan content from attachment
-	CustomTitle  string      `json:"-"`                    // title signal only, not serialized
-	TitleSource  TitleSource `json:"-"`
+	Role            Role        `json:"role"`
+	Text            string      `json:"text"` // may be empty
+	Timestamp       time.Time   `json:"timestamp"`
+	Meta            *Meta       `json:"meta"`
+	RequestId       string      `json:"request_id,omitempty"` // optional
+	Usage           *Usage      `json:"usage,omitempty"`      // optional
+	UsageCumulative bool        `json:"-"`
+	PlanFilePath    string      `json:"-"` // plan signal only, not serialized
+	PlanContent     string      `json:"-"` // inline plan content from attachment
+	CustomTitle     string      `json:"-"` // title signal only, not serialized
+	TitleSource     TitleSource `json:"-"`
 }
 
 func (t *Turn) Validate() error {
