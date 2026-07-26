@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,7 +15,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// events-appended
 	t.Run("events-appended", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		turn := &Turn{
 			Events:    []*Event{{Kind: EventKindSkillInvoked, Skill: &SkillPayload{Skill: "jq"}}},
 			Role:      RoleUser,
@@ -32,7 +33,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// event-only-turn-no-chat-turn
 	t.Run("event-only-turn-no-chat-turn", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		turn := &Turn{
 			Events: []*Event{{Kind: EventKindPlanModeEnter}},
 			Meta:   &Meta{SessionId: "s1"},
@@ -47,7 +48,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// subagent-events-drop-unknown-parent
 	t.Run("subagent-events-drop-unknown-parent", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		turn := &Turn{
 			Events: []*Event{{Actor: "sub-1", Kind: EventKindSubagentSpawned, Subagent: &SubagentPayload{AgentId: "sub-1"}}},
 			Meta:   &Meta{SessionId: "unknown-parent"},
@@ -60,7 +61,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// subagent-result-resolves-agent-id
 	t.Run("subagent-result-resolves-agent-id", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		// Parent session exists via a chat turn
 		chatTurn := &Turn{
 			Role:      RoleUser,
@@ -92,7 +93,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// usage-signal-keep-last
 	t.Run("usage-signal-keep-last", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		firstSnapshot := &Turn{
 			Usage: &Usage{InputTokens: 100, TotalTokens: 100},
 			Meta:  &Meta{SessionId: "c"},
@@ -113,7 +114,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 func TestPlanRevisions(t *testing.T) {
 	// initial-version-recorded
 	t.Run("initial-version-recorded", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		s.setPlanContent("# Plan v1", sess, time.Time{})
 
@@ -124,7 +125,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// change-appends-diff-and-event
 	t.Run("change-appends-diff-and-event", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		sess.planExitSeen = true
 		s.setPlanContent("# Plan v1\n", sess, time.Time{})
@@ -140,7 +141,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// revision-timestamp-from-transcript-entry
 	t.Run("revision-timestamp-from-transcript-entry", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		entryTime := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
 		s.setPlanContent("# Plan v1", sess, entryTime)
@@ -151,7 +152,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// identical-content-no-revision
 	t.Run("identical-content-no-revision", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		s.setPlanContent("# Plan", sess, time.Time{})
 		s.setPlanContent("# Plan", sess, time.Time{})
@@ -161,7 +162,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// codex-second-block-is-alteration
 	t.Run("codex-second-block-is-alteration", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentCodex)
 		s.setPlanContent("# Plan v1\n", sess, time.Time{})
 		s.setPlanContent("# Plan v2\n", sess, time.Time{})
@@ -172,7 +173,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// claude-pre-exit-is-draft
 	t.Run("claude-pre-exit-is-draft", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		s.setPlanContent("# Plan v1\n", sess, time.Time{})
 		s.setPlanContent("# Plan v2\n", sess, time.Time{})
@@ -184,7 +185,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// cap-50-keeps-counting
 	t.Run("cap-50-keeps-counting", func(t *testing.T) {
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentCodex)
 		for index := 0; index < 60; index++ {
 			content := "# Plan v" + string(rune('A'+index%26)) + string(rune('a'+index%23)) + "\n"
@@ -204,7 +205,7 @@ func TestHydrateFromState(t *testing.T) {
 		require.NoError(t, dir.WriteDiffBase("claude", base, "s1"))
 		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff body", "s1"))
 
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		s.StateDir = dir
 		sess := s.getOrCreate("s1", AgentClaude)
 
@@ -226,7 +227,7 @@ func TestHydrateFromState(t *testing.T) {
 		require.NoError(t, dir.WritePlanVersion("claude", "s1", draft))
 		require.NoError(t, dir.WritePlanLatest("claude", "# latest", "s1"))
 
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		s.StateDir = dir
 		sess := s.getOrCreate("s1", AgentClaude)
 
@@ -246,7 +247,7 @@ func TestHydrateFromState(t *testing.T) {
 		require.NoError(t, dir.WritePlanVersion("claude", "s1", version))
 		require.NoError(t, dir.WritePlanLatest("claude", "# X", "s1"))
 
-		s := NewStore(10)
+		s := NewStore(10, events.NewBroker())
 		s.StateDir = dir
 		sess := s.getOrCreate("s1", AgentClaude)
 		s.setPlanContent("# X", sess, time.Time{})

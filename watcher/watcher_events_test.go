@@ -8,6 +8,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/kevinhorst/peek-mcp/claude"
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// spawned-event-on-parent
 	t.Run("spawned-event-on-parent", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -58,7 +59,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// duplicate-read-no-second-event
 	t.Run("duplicate-read-no-second-event", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -86,7 +87,7 @@ func TestReadSubagentMeta(t *testing.T) {
 
 func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
 	projectDir := t.TempDir()
-	store := session.NewStore(10, session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	w := claudeWatcher(projectDir, store)
 
 	// On-disk layout as left behind by a finished session: the subagent dir
@@ -113,7 +114,7 @@ func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
 
 func TestWalkAndWatch_NewDirBackfill(t *testing.T) {
 	root := t.TempDir()
-	store := session.NewStore(10, session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	w := claudeWatcher(root, store)
 
 	// A dir already populated with a transcript before we start watching it

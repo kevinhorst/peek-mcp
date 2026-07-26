@@ -54,6 +54,7 @@ type Session struct {
 	TurnActive      *Turn           `json:"-"`
 	TurnsFinished   *TurnBuffer
 	UncommittedDiff string `json:"-"`
+	usageRequestIds map[string]struct{}
 }
 
 func (s *Session) isAlterationPhase() bool {
@@ -90,6 +91,16 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 		s.LastActive = nextTurn.Timestamp
 	}
 
+	if nextTurn.Usage != nil && nextTurn.RequestId != "" {
+		if s.usageRequestIds == nil {
+			s.usageRequestIds = make(map[string]struct{})
+		}
+		if _, counted := s.usageRequestIds[nextTurn.RequestId]; !counted {
+			s.usageRequestIds[nextTurn.RequestId] = struct{}{}
+			s.TotalUsage.Add(nextTurn.Usage)
+		}
+	}
+
 	// first turn
 	if s.TurnActive == nil {
 		s.TurnActive = nextTurn
@@ -102,11 +113,6 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 		merged.Text = s.TurnActive.Text + nextTurn.Text
 		s.TurnActive = &merged
 		return
-	}
-
-	// new turn, update usage and push old turn
-	if s.TurnActive.Usage != nil {
-		s.TotalUsage.Add(s.TurnActive.Usage)
 	}
 
 	if s.TurnActive.Text != "" {

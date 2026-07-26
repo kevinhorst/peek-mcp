@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/pmezard/go-difflib/difflib"
 )
@@ -27,21 +28,30 @@ type Store struct {
 	mu sync.RWMutex
 
 	StateDir       *state.Dir
-	TurnAdded      chan Id
+	broker         *events.Broker
 	depth          int
 	enabledAgents  []Agent
 	plainTitleById map[Id]string
 	sessions       map[Id]*Session
 }
 
-func NewStore(depth int, agents ...Agent) *Store {
+func NewStore(depth int, broker *events.Broker, agents ...Agent) *Store {
 	return &Store{
 		sessions:       make(map[Id]*Session),
 		plainTitleById: make(map[Id]string),
 		depth:          depth,
 		enabledAgents:  agents,
-		TurnAdded:      make(chan Id, 16), // small fixed buffer; dropped notifications are fine — next turn re-triggers
+		broker:         broker,
 	}
+}
+
+func (s *Store) publish(t events.Type, id Id, agent Agent) {
+	s.broker.Publish(events.Event{
+		Type:      t,
+		SessionId: string(id),
+		Agent:     string(agent),
+		Ts:        time.Now(),
+	})
 }
 
 // TODO: Agent.IsValid
@@ -123,10 +133,7 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	// update user or assistent turn
 	session.AddTurn(turn)
 
-	select {
-	case s.TurnAdded <- id:
-	default:
-	}
+	s.publish(events.TypeTurnAdded, id, agent)
 }
 
 func (s *Store) addSubagentEvents(id Id, turn *Turn) {
@@ -157,6 +164,7 @@ func (s *Store) setPlanContent(content string, session *Session, timestamp time.
 	previous := session.PlanContent
 	session.PlanContent = content
 	s.recordPlanRevision(content, previous, session, timestamp)
+	s.publish(events.TypePlanUpdated, session.Meta.SessionId, session.Agent)
 }
 
 func (s *Store) recordPlanRevision(current, previous string, session *Session, timestamp time.Time) {
@@ -225,6 +233,7 @@ func (s *Store) UpdateDiff(id Id, target, output string) {
 		session.DiffTarget = target
 		session.DiffSource = DiffSourceLive
 		session.DiffCapturedAt = time.Now()
+		s.publish(events.TypeDiffUpdated, id, session.Agent)
 	}
 }
 
@@ -258,6 +267,7 @@ func (s *Store) UpdateUncommittedDiff(id Id, output string) {
 	defer s.mu.Unlock()
 	if session, ok := s.sessions[id]; ok {
 		session.UncommittedDiff = output
+		s.publish(events.TypeUncommittedDiffUpdated, id, session.Agent)
 	}
 }
 
@@ -355,6 +365,25 @@ func (s *Store) List(agents ...Agent) []*Session {
 	return s.sortByLastActiveDesc(agents...)
 }
 
+func (s *Store) WithSessions(agents []Agent, fn func([]*Session)) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	fn(s.sortByLastActiveDesc(agents...))
+}
+
+func (s *Store) WithSession(id Id, fn func(*Session)) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	session, ok := s.sessions[id]
+	if !ok {
+		return false
+	}
+	fn(session)
+	return true
+}
+
 func (s *Store) getOrCreate(id Id, agent Agent) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -371,6 +400,7 @@ func (s *Store) getOrCreate(id Id, agent Agent) *Session {
 	}
 	s.hydrateFromState(session)
 	s.sessions[id] = session
+	s.publish(events.TypeSessionCreated, id, agent)
 	return session
 }
 

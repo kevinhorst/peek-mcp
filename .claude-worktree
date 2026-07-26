@@ -1,0 +1,4 @@
+created-at: 2026-07-26 21:47:03 +0200
+branch: claude/merge-conflict-replay-a55b3a
+main-repo: /Users/kevinpersonal/GolandProjects/peek-mcp
+purpose: untracked sentinel — keeps the harness from classifying this worktree as free (reset/auto-remove); written by worktree-sessionstart.sh

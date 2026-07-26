@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -154,8 +155,8 @@ func TestDiffWatcher_DiffBase(t *testing.T) {
 	gitRun(t, dir, "branch", "develop")
 	gitRun(t, dir, "checkout", "-b", "feature", "develop")
 
-	store := session.NewStore(10, session.AgentClaude)
-	w := NewDiffWatcher(store, time.Second, 0, nil)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, nil)
 	ctx := context.Background()
 
 	// cached-after-base-deleted
@@ -184,7 +185,7 @@ func TestDiffWatcher_Refresh(t *testing.T) {
 	gitRun(t, dir, "checkout", "feature")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "feature.txt"), []byte("committed\nuncommitted\n"), 0o644))
 
-	store := session.NewStore(10, session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	turn := &session.Turn{
 		Meta:      &session.Meta{SessionId: "sess-1", CWD: dir},
 		Role:      session.RoleUser,
@@ -193,7 +194,7 @@ func TestDiffWatcher_Refresh(t *testing.T) {
 	}
 	store.AddTurnBySessionId("sess-1", session.AgentClaude, turn)
 
-	w := NewDiffWatcher(store, time.Second, 0, nil)
+	w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, nil)
 	w.refresh(context.Background(), "sess-1", dir)
 
 	sess, ok := store.GetById("sess-1")

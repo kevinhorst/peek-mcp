@@ -92,7 +92,7 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *se
 		size := b.Size
 
 		// drain turns, events, plan, diff, and memory into pages by priority
-		turnChunk := utf8SafeSlice(turns, size)
+		turnChunk := UTF8SafeSlice(turns, size)
 		page.Turns = turnChunk
 		turns = turns[len(turnChunk):]
 		if len(turnChunk) == size {
@@ -100,7 +100,7 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *se
 		}
 		size = size - len(turnChunk)
 
-		eventChunk := utf8SafeSlice(events, size)
+		eventChunk := UTF8SafeSlice(events, size)
 		page.Events = eventChunk
 		events = events[len(eventChunk):]
 		if len(eventChunk) == size {
@@ -108,7 +108,7 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *se
 		}
 		size = size - len(eventChunk)
 
-		planChunk := utf8SafeSlice(plan, size)
+		planChunk := UTF8SafeSlice(plan, size)
 		page.Plan = planChunk
 		plan = plan[len(planChunk):]
 		if len(planChunk) == size {
@@ -116,7 +116,7 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *se
 		}
 		size = size - len(planChunk)
 
-		diffChunk := utf8SafeSlice(diff, size)
+		diffChunk := UTF8SafeSlice(diff, size)
 		page.Diff = diffChunk
 		diff = diff[len(diffChunk):]
 		if len(diffChunk) == size {
@@ -124,7 +124,7 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *se
 		}
 		size = size - len(diffChunk)
 
-		memoryChunk := utf8SafeSlice(memory, size)
+		memoryChunk := UTF8SafeSlice(memory, size)
 		page.Memory = memoryChunk
 		memory = memory[len(memoryChunk):]
 	}
@@ -151,7 +151,7 @@ func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEvent
 		pages[pageIndex] = page
 		size := b.Size
 
-		eventChunk := utf8SafeSlice(events, size)
+		eventChunk := UTF8SafeSlice(events, size)
 		page.Events = rawJsonSegment(eventChunk)
 		events = events[len(eventChunk):]
 		if len(eventChunk) == size {
@@ -159,7 +159,7 @@ func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEvent
 		}
 		size = size - len(eventChunk)
 
-		revisionChunk := utf8SafeSlice(revisions, size)
+		revisionChunk := UTF8SafeSlice(revisions, size)
 		page.Revisions = rawJsonSegment(revisionChunk)
 		revisions = revisions[len(revisionChunk):]
 	}
@@ -182,7 +182,7 @@ func rawJsonSegment(segment string) json.RawMessage {
 	return quoted
 }
 
-func utf8SafeSlice(s string, maxBytes int) string {
+func UTF8SafeSlice(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
 	}

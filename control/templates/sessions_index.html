@@ -1,0 +1,16 @@
+{{template "head" .}}
+{{template "nav" .}}
+<h1>Sessions</h1>
+<details class="section" open>
+  <summary>Claude <span class="meta" id="last-active-claude"></span></summary>
+  <div id="sessions-claude" hx-get="/fragments/sessions?agent=claude&amp;offset=0" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
+<details class="section" open>
+  <summary>Codex <span class="meta" id="last-active-codex"></span></summary>
+  <div id="sessions-codex" hx-get="/fragments/sessions?agent=codex&amp;offset=0" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
+{{template "foot" .}}

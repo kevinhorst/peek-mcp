@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -15,7 +16,7 @@ import (
 //   - "s1" (Claude, titled "Login simplification", active 1h ago)
 //   - "s2" (Codex, titled "Auth refactor", active now)
 func provideCompleteStore() *Store {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	now := time.Now()
 
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
@@ -46,7 +47,7 @@ func provideCompleteStore() *Store {
 }
 
 func TestGetOrCreate_New(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	sess := s.getOrCreate("s1", AgentClaude)
 
 	assert.Equal(t, Id("s1"), sess.Meta.SessionId)
@@ -55,7 +56,7 @@ func TestGetOrCreate_New(t *testing.T) {
 }
 
 func TestGetOrCreate_Existing(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	s1 := s.getOrCreate("s1", AgentClaude)
 	s2 := s.getOrCreate("s1", AgentClaude)
 
@@ -63,7 +64,7 @@ func TestGetOrCreate_Existing(t *testing.T) {
 }
 
 func TestAddTurnBySessionId_PlanSentinel(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	now := time.Now()
 
 	// sentinel path + PlanContent: content stored, path never read as a file
@@ -135,7 +136,7 @@ func TestGetById(t *testing.T) {
 		_id:         "fail-empty-store",
 		_shouldPass: false,
 
-		store:   NewStore(10),
+		store:   NewStore(10, events.NewBroker()),
 		queryId: "s1",
 	}
 	tests = append(tests, test)
@@ -152,7 +153,7 @@ func TestGetById(t *testing.T) {
 }
 
 func TestList_Empty(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	assert.Empty(t, s.List())
 }
 
@@ -178,7 +179,7 @@ func TestList_FilteredByAgent(t *testing.T) {
 }
 
 func TestMostRecent_Empty(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	_, ok := s.Last()
 	assert.False(t, ok)
 }
@@ -204,7 +205,7 @@ func TestLast_FilteredByAgent(t *testing.T) {
 }
 
 func TestAddTurn_PlanInlineContent(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		PlanFilePath: "/nonexistent/plan.md",
 		PlanContent:  "# Inline Plan",
@@ -221,7 +222,7 @@ func TestAddTurn_PlanFileReadFallback(t *testing.T) {
 	planPath := filepath.Join(dir, "plan.md")
 	os.WriteFile(planPath, []byte("# Disk Plan"), 0644)
 
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		PlanFilePath: planPath,
 		Meta:         &Meta{SessionId: "s1"},
@@ -232,7 +233,7 @@ func TestAddTurn_PlanFileReadFallback(t *testing.T) {
 }
 
 func TestAddTurn_PlanFileReadFailure_PreservesExisting(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	// First turn sets plan content via inline
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		PlanFilePath: "/some/plan.md",
@@ -260,7 +261,7 @@ func TestAddTurn_PlanWorktreeFallback(t *testing.T) {
 	os.MkdirAll(plansDir, 0755)
 	os.WriteFile(filepath.Join(plansDir, "my-plan.md"), []byte("# Worktree Plan"), 0644)
 
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		PlanFilePath: "/Users/someone/.claude/plans/my-plan.md", // wrong global path
 		Meta:         &Meta{SessionId: "s1", CWD: cwd},
@@ -273,10 +274,10 @@ func TestAddTurn_PlanWorktreeFallback(t *testing.T) {
 
 func TestAddTurn_CustomTitle(t *testing.T) {
 	type testCase struct {
+		_id                  string
 		_expectedTitle       string
 		_expectedTitleSource TitleSource
 		_expectedTurnCount   int
-		_id                  string
 
 		store *Store
 	}
@@ -284,7 +285,7 @@ func TestAddTurn_CustomTitle(t *testing.T) {
 	tests := make([]*testCase, 0)
 
 	// pass-set-title
-	setTitleStore := NewStore(10)
+	setTitleStore := NewStore(10, events.NewBroker())
 	setTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		CustomTitle: "Login simplification",
 		Meta:        &Meta{SessionId: "s1"},
@@ -301,7 +302,7 @@ func TestAddTurn_CustomTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-update-title
-	updateTitleStore := NewStore(10)
+	updateTitleStore := NewStore(10, events.NewBroker())
 	updateTitleStore.AddTurnBySessionId("s1", AgentClaude, &Turn{
 		CustomTitle: "Old title",
 		Meta:        &Meta{SessionId: "s1"},
@@ -323,7 +324,7 @@ func TestAddTurn_CustomTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-index-source-set
-	indexTitleStore := NewStore(10)
+	indexTitleStore := NewStore(10, events.NewBroker())
 	indexTitleStore.AddTurnBySessionId("s1", AgentCodex, &Turn{
 		CustomTitle: "Propagate Supabase schema",
 		Meta:        &Meta{SessionId: "s1"},
@@ -340,7 +341,7 @@ func TestAddTurn_CustomTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-repeated-title-does-not-add-turn
-	repeatedTitleStore := NewStore(10)
+	repeatedTitleStore := NewStore(10, events.NewBroker())
 	repeatedTitleStore.AddTurnBySessionId("s1", AgentCodex, &Turn{
 		CustomTitle: "Propagate Supabase schema",
 		Meta:        &Meta{SessionId: "s1"},
@@ -385,9 +386,9 @@ func provideTitledSession(s *Store, id Id, agent Agent, title string, lastActive
 
 func TestGetByTitle(t *testing.T) {
 	type testCase struct {
+		_id                  string
 		_expectedErrContains string
 		_expectedSessionId   Id
-		_id                  string
 		_shouldPass          bool
 
 		agent Agent
@@ -443,7 +444,7 @@ func TestGetByTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// fail-substring-ambiguous-lists-candidates
-	ambiguousStore := NewStore(10)
+	ambiguousStore := NewStore(10, events.NewBroker())
 	provideTitledSession(ambiguousStore, "a1", AgentCodex, "Propagate Supabase schema", now.Add(-1*time.Hour))
 	provideTitledSession(ambiguousStore, "a2", AgentCodex, "Trim schema from supabase types", now)
 
@@ -458,7 +459,7 @@ func TestGetByTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-exact-duplicate-most-recent-wins
-	duplicateStore := NewStore(10)
+	duplicateStore := NewStore(10, events.NewBroker())
 	provideTitledSession(duplicateStore, "d1", AgentCodex, "Propagate Supabase schema", now.Add(-1*time.Hour))
 	provideTitledSession(duplicateStore, "d2", AgentCodex, "Propagate Supabase schema", now)
 
@@ -473,7 +474,7 @@ func TestGetByTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// pass-agent-filtered
-	crossAgentStore := NewStore(10)
+	crossAgentStore := NewStore(10, events.NewBroker())
 	provideTitledSession(crossAgentStore, "c1", AgentClaude, "Auth refactor", now)
 	provideTitledSession(crossAgentStore, "c2", AgentCodex, "Auth refactor", now.Add(-1*time.Hour))
 
@@ -513,7 +514,7 @@ func TestGetByTitle(t *testing.T) {
 	tests = append(tests, test)
 
 	// fail-title-update-removes-old-index
-	storeWithUpdate := NewStore(10)
+	storeWithUpdate := NewStore(10, events.NewBroker())
 	provideTitledSession(storeWithUpdate, "s1", AgentClaude, "Old title", now.Add(-1*time.Hour))
 	provideTitledSession(storeWithUpdate, "s1", AgentClaude, "New title", now)
 
@@ -554,7 +555,7 @@ func TestGetByTitle(t *testing.T) {
 
 func TestGetByTitle_AmbiguityCandidates(t *testing.T) {
 	now := time.Now()
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	for i := range 7 {
 		id := Id("m" + string(rune('0'+i)))
 		provideTitledSession(s, id, AgentCodex, "Propagate Supabase schema "+string(rune('0'+i)), now.Add(-time.Duration(i)*time.Hour))
@@ -598,7 +599,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests := make([]*testCase, 0)
 
 	// derived-then-index-overwrites
-	derivedThenIndex := NewStore(10)
+	derivedThenIndex := NewStore(10, events.NewBroker())
 	derivedThenIndex.AddTurnBySessionId("s1", AgentCodex, provideUserTurn("Fix the login flow"))
 	derivedThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 
@@ -612,7 +613,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests = append(tests, test)
 
 	// index-then-derived-ignored
-	indexThenDerived := NewStore(10)
+	indexThenDerived := NewStore(10, events.NewBroker())
 	indexThenDerived.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 	indexThenDerived.AddTurnBySessionId("s1", AgentCodex, provideUserTurn("Fix the login flow"))
 
@@ -626,7 +627,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests = append(tests, test)
 
 	// index-then-custom-overwrites
-	indexThenCustom := NewStore(10)
+	indexThenCustom := NewStore(10, events.NewBroker())
 	indexThenCustom.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 	indexThenCustom.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("My login fix", TitleSourceCustom))
 
@@ -640,7 +641,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests = append(tests, test)
 
 	// custom-then-index-ignored
-	customThenIndex := NewStore(10)
+	customThenIndex := NewStore(10, events.NewBroker())
 	customThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("My login fix", TitleSourceCustom))
 	customThenIndex.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 
@@ -654,7 +655,7 @@ func TestAddTurn_TitlePrecedence(t *testing.T) {
 	tests = append(tests, test)
 
 	// index-rename-same-rank-overwrites
-	indexRename := NewStore(10)
+	indexRename := NewStore(10, events.NewBroker())
 	indexRename.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login fix", TitleSourceIndex))
 	indexRename.AddTurnBySessionId("s1", AgentCodex, provideTitleTurn("Login rework", TitleSourceIndex))
 
@@ -740,7 +741,7 @@ func TestAddTurn_DerivedTitle(t *testing.T) {
 	// Run tests
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
-			s := NewStore(10)
+			s := NewStore(10, events.NewBroker())
 			for i, text := range test.texts {
 				s.AddTurnBySessionId("s1", AgentCodex, &Turn{
 					Role:      RoleUser,
@@ -759,7 +760,7 @@ func TestAddTurn_DerivedTitle(t *testing.T) {
 }
 
 func TestAddTurn_AssistantTurnDoesNotDerive(t *testing.T) {
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	s.AddTurnBySessionId("s1", AgentCodex, &Turn{
 		Role:      RoleAssistant,
 		Text:      "I will fix the login flow.",
@@ -774,7 +775,7 @@ func TestAddTurn_AssistantTurnDoesNotDerive(t *testing.T) {
 
 func TestAddTurn_TitleOnlySession(t *testing.T) {
 	indexTime := time.Date(2026, 4, 19, 14, 10, 36, 0, time.UTC)
-	s := NewStore(10)
+	s := NewStore(10, events.NewBroker())
 	s.AddTurnBySessionId("s1", AgentCodex, &Turn{
 		CustomTitle: "Propagate Supabase schema",
 		Meta:        &Meta{SessionId: "s1"},
@@ -825,4 +826,131 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func drainTypes(ch <-chan events.Event) []events.Type {
+	types := make([]events.Type, 0)
+	for {
+		select {
+		case ev := <-ch:
+			types = append(types, ev.Type)
+		default:
+			return types
+		}
+	}
+}
+
+func TestPublish_TurnAdded(t *testing.T) {
+	broker := events.NewBroker()
+	ch, cancel := broker.Subscribe()
+	defer cancel()
+	s := NewStore(10, broker)
+
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		Role:      RoleUser,
+		Text:      "hello",
+		Timestamp: time.Now(),
+		Meta:      &Meta{SessionId: "s1"},
+	})
+
+	assert.Equal(t, []events.Type{events.TypeSessionCreated, events.TypeTurnAdded}, drainTypes(ch))
+}
+
+func TestPublish_PlanSignal(t *testing.T) {
+	broker := events.NewBroker()
+	ch, cancel := broker.Subscribe()
+	defer cancel()
+	s := NewStore(10, broker)
+
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		PlanFilePath: "/nonexistent/plan.md",
+		PlanContent:  "# Plan",
+		Meta:         &Meta{SessionId: "s1"},
+	})
+
+	assert.Equal(t, []events.Type{events.TypeSessionCreated, events.TypePlanUpdated}, drainTypes(ch))
+}
+
+func TestPublish_UpdateDiff(t *testing.T) {
+	broker := events.NewBroker()
+	s := NewStore(10, broker)
+	s.getOrCreate("s1", AgentClaude)
+
+	ch, cancel := broker.Subscribe()
+	defer cancel()
+
+	s.UpdateDiff("s1", "main", "diff")
+	assert.Equal(t, []events.Type{events.TypeDiffUpdated}, drainTypes(ch))
+
+	s.UpdateDiff("unknown", "main", "diff")
+	assert.Empty(t, drainTypes(ch))
+}
+
+func TestPublish_UpdateUncommittedDiff(t *testing.T) {
+	broker := events.NewBroker()
+	s := NewStore(10, broker)
+	s.getOrCreate("s1", AgentClaude)
+
+	ch, cancel := broker.Subscribe()
+	defer cancel()
+
+	s.UpdateUncommittedDiff("s1", "diff")
+	assert.Equal(t, []events.Type{events.TypeUncommittedDiffUpdated}, drainTypes(ch))
+}
+
+func TestPublish_UpdatePlanForPath(t *testing.T) {
+	broker := events.NewBroker()
+	s := NewStore(10, broker)
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		PlanFilePath: "/plans/a.md",
+		PlanContent:  "# A",
+		Meta:         &Meta{SessionId: "s1"},
+	})
+	s.getOrCreate("s2", AgentCodex)
+
+	ch, cancel := broker.Subscribe()
+	defer cancel()
+
+	s.UpdatePlanForPath("/plans/a.md", "# A v2")
+
+	types := drainTypes(ch)
+	assert.Equal(t, []events.Type{events.TypePlanUpdated}, types)
+}
+
+func TestWithSessions(t *testing.T) {
+	s := provideCompleteStore()
+
+	var ids []Id
+	s.WithSessions(nil, func(sessions []*Session) {
+		for _, sess := range sessions {
+			ids = append(ids, sess.Meta.SessionId)
+		}
+	})
+	assert.Equal(t, []Id{"s2", "s1"}, ids)
+
+	ids = nil
+	s.WithSessions([]Agent{AgentClaude}, func(sessions []*Session) {
+		for _, sess := range sessions {
+			ids = append(ids, sess.Meta.SessionId)
+		}
+	})
+	assert.Equal(t, []Id{"s1"}, ids)
+}
+
+func TestWithSession(t *testing.T) {
+	s := provideCompleteStore()
+
+	var title string
+	found := s.WithSession("s1", func(sess *Session) {
+		title = sess.Title
+	})
+	assert.True(t, found)
+	assert.Equal(t, "Login simplification", title)
+
+	called := false
+	found = s.WithSession("unknown", func(sess *Session) {
+		called = true
+	})
+	assert.False(t, found)
+	assert.False(t, called)
 }

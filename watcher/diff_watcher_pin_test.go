@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/stretchr/testify/assert"
@@ -52,9 +53,9 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 	// pin-survives-target-advance
 	t.Run("pin-survives-target-advance", func(t *testing.T) {
 		dir := buildFeatureRepo(t)
-		store := session.NewStore(10, session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
-		w := NewDiffWatcher(store, time.Second, 0, state.NewDir(t.TempDir()))
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, state.NewDir(t.TempDir()))
 
 		w.refresh(ctx, "s1", dir)
 		sess, _ := store.GetById("s1")
@@ -80,9 +81,9 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 	// pin-survives-branch-merge
 	t.Run("pin-survives-branch-merge", func(t *testing.T) {
 		dir := buildFeatureRepo(t)
-		store := session.NewStore(10, session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
-		w := NewDiffWatcher(store, time.Second, 0, state.NewDir(t.TempDir()))
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, state.NewDir(t.TempDir()))
 
 		w.refresh(ctx, "s1", dir)
 		sess, _ := store.GetById("s1")
@@ -103,9 +104,9 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 	// failure-flips-to-snapshot
 	t.Run("failure-flips-to-snapshot", func(t *testing.T) {
 		dir := buildFeatureRepo(t)
-		store := session.NewStore(10, session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
-		w := NewDiffWatcher(store, time.Second, 0, state.NewDir(t.TempDir()))
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, state.NewDir(t.TempDir()))
 
 		w.refresh(ctx, "s1", dir)
 		require.NoError(t, os.RemoveAll(dir))
@@ -126,10 +127,10 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 		gitRun(t, dir, "commit", "-m", "tracked")
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("v1\nextra\n"), 0o644))
 
-		store := session.NewStore(10, session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		stateDir := state.NewDir(t.TempDir())
-		w := NewDiffWatcher(store, time.Second, 0, stateDir)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, stateDir)
 
 		w.refresh(ctx, "s1", dir)
 		snapshotBefore, _, ok := stateDir.ReadDiffSnapshot("claude", "s1")
@@ -150,10 +151,10 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 	// snapshot-written-on-change-only
 	t.Run("snapshot-written-on-change-only", func(t *testing.T) {
 		dir := buildFeatureRepo(t)
-		store := session.NewStore(10, session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		stateDir := state.NewDir(t.TempDir())
-		w := NewDiffWatcher(store, time.Second, 0, stateDir)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, stateDir)
 
 		w.refresh(ctx, "s1", dir)
 		content, _, ok := stateDir.ReadDiffSnapshot("claude", "s1")

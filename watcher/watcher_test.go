@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kevinhorst/peek-mcp/codex"
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,7 @@ func TestReadNewLines_PerFileParserState(t *testing.T) {
 	fileA := filepath.Join(dir, "rollout-a.jsonl")
 	fileB := filepath.Join(dir, "rollout-b.jsonl")
 
-	store := session.NewStore(10, session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
 	w := New(session.AgentCodex, dir, newParser, store)
 

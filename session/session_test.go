@@ -110,3 +110,36 @@ func TestSession_Validate(t *testing.T) {
 		})
 	}
 }
+
+func provideUsageTurn(requestId string, outputTokens int) *Turn {
+	return &Turn{
+		Role:      RoleAssistant,
+		Text:      "text",
+		Timestamp: time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
+		RequestId: requestId,
+		Usage:     &Usage{InputTokens: 1, OutputTokens: outputTokens},
+		Meta:      &Meta{SessionId: Id("sess-123")},
+	}
+}
+
+func TestSession_AddTurn_UsageDedupByRequestId(t *testing.T) {
+	s := provideCompleteSession()
+
+	s.AddTurn(provideUsageTurn("req-a", 10))
+	s.AddTurn(provideUsageTurn("req-a", 10))
+	s.AddTurn(provideUsageTurn("req-b", 20))
+	s.AddTurn(provideUsageTurn("req-a", 10))
+	s.AddTurn(provideUsageTurn("", 40))
+
+	assert.Equal(t, 30, s.TotalUsage.OutputTokens)
+	assert.Equal(t, 2, s.TotalUsage.InputTokens)
+}
+
+func TestSession_AddTurn_UsageCountsActiveTurn(t *testing.T) {
+	s := provideCompleteSession()
+
+	s.AddTurn(provideUsageTurn("req-a", 10))
+
+	assert.Equal(t, 10, s.TotalUsage.OutputTokens)
+	assert.NotNil(t, s.TurnActive)
+}
