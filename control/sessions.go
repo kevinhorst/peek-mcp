@@ -2,6 +2,7 @@ package control
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/tools"
@@ -29,7 +30,16 @@ type detailPage struct {
 }
 
 type sessionListData struct {
-	Sessions []sessionSummary
+	Agent      session.Agent
+	Sessions   []sessionSummary
+	LastActive time.Time
+	Total      int
+	Offset     int
+	PrevOffset int
+	NextOffset int
+	HasPrev    bool
+	HasNext    bool
+	RangeEnd   int
 }
 
 type turnsData struct {
@@ -73,22 +83,38 @@ func (s *Server) handleSessionDetailPage(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleSessionsFragment(w http.ResponseWriter, r *http.Request) {
-	data := sessionListData{Sessions: make([]sessionSummary, 0)}
-	s.store.WithSessions(nil, func(sessions []*session.Session) {
-		for _, sess := range sessions {
+	agents, ok := agentParam(r)
+	if !ok || agents == nil {
+		respondBadRequest("agent must be \"claude\" or \"codex\"", w)
+		return
+	}
+	offset, ok := intParam(r, "offset", 0)
+	if !ok {
+		respondBadRequest("offset must be a non-negative integer", w)
+		return
+	}
+	data := sessionListData{Agent: agents[0], Sessions: make([]sessionSummary, 0), Offset: offset}
+	s.store.WithSessions(agents, func(sessions []*session.Session) {
+		data.Total = len(sessions)
+		if len(sessions) > 0 {
+			data.LastActive = sessions[0].LastActive
+		}
+		for _, sess := range pageSlice(sessions, offset, defaultSessionLimit) {
 			data.Sessions = append(data.Sessions, newSessionSummary(sess))
-			if len(data.Sessions) == defaultSessionLimit {
-				break
-			}
 		}
 	})
+	data.HasPrev = offset > 0
+	data.PrevOffset = max(0, offset-defaultSessionLimit)
+	data.NextOffset = offset + defaultSessionLimit
+	data.HasNext = data.NextOffset < data.Total
+	data.RangeEnd = offset + len(data.Sessions)
 	s.renderFragment(w, tmplSessionList, data)
 }
 
 func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 	id := session.Id(r.PathValue("id"))
 	data := turnsData{Id: id}
-	if !s.store.WithSession(id, func(sess *session.Session) { data.Turns = sess.Turns(defaultTurns) }) {
+	if !s.store.WithSession(id, func(sess *session.Session) { data.Turns = sess.Turns(tools.DefaultReturnedTurns) }) {
 		respondNotFound("unknown session", w)
 		return
 	}

@@ -39,6 +39,7 @@ type Server struct {
 func New(opts *Options) (*Server, error) {
 	funcs := template.FuncMap{
 		"baseName": filepath.Base,
+		"add":      func(a, b int) int { return a + b },
 		"ts": func(t time.Time) string {
 			return t.Format("2006-01-02 15:04:05")
 		},

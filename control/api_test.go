@@ -25,6 +25,7 @@ func TestSessions(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code)
 	list := decode[sessionsResponse](t, response)
 	require.Len(t, list.Sessions, 2)
+	assert.Equal(t, 2, list.Total)
 	assert.Equal(t, session.Id("s2"), list.Sessions[0].Id)
 	assert.Equal(t, session.Id("s1"), list.Sessions[1].Id)
 	assert.Equal(t, "Login simplification", list.Sessions[1].Title)
@@ -64,6 +65,22 @@ func TestSessions_Limit(t *testing.T) {
 
 	response := get(server, "/api/sessions?limit=-1")
 	assert.Equal(t, http.StatusBadRequest, response.Code)
+}
+
+func TestSessions_Offset(t *testing.T) {
+	server, _ := newTestServer(t, "")
+
+	list := decode[sessionsResponse](t, get(server, "/api/sessions?offset=1"))
+	require.Len(t, list.Sessions, 1)
+	assert.Equal(t, 2, list.Total)
+	assert.Equal(t, session.Id("s1"), list.Sessions[0].Id)
+
+	beyond := decode[sessionsResponse](t, get(server, "/api/sessions?offset=5"))
+	assert.Empty(t, beyond.Sessions)
+	assert.Equal(t, 2, beyond.Total)
+
+	assert.Equal(t, http.StatusBadRequest, get(server, "/api/sessions?offset=-1").Code)
+	assert.Equal(t, http.StatusBadRequest, get(server, "/api/sessions?offset=x").Code)
 }
 
 func TestSessionDetail(t *testing.T) {

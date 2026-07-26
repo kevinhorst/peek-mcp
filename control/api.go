@@ -15,7 +15,6 @@ const (
 	defaultSessionLimit = 50
 	maxSessionLimit     = 200
 	defaultDiffSize     = 256 * 1024
-	defaultTurns        = 5
 )
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -41,13 +40,27 @@ func intParam(r *http.Request, name string, fallback int) (int, bool) {
 	return n, true
 }
 
-func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	var agents []session.Agent
+func agentParam(r *http.Request) ([]session.Agent, bool) {
 	switch agent := r.URL.Query().Get("agent"); agent {
 	case "":
+		return nil, true
 	case string(session.AgentClaude), string(session.AgentCodex):
-		agents = []session.Agent{session.Agent(agent)}
+		return []session.Agent{session.Agent(agent)}, true
 	default:
+		return nil, false
+	}
+}
+
+func pageSlice(sessions []*session.Session, offset, limit int) []*session.Session {
+	if offset >= len(sessions) {
+		return nil
+	}
+	return sessions[offset:min(offset+limit, len(sessions))]
+}
+
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	agents, ok := agentParam(r)
+	if !ok {
 		respondBadRequest("agent must be \"claude\" or \"codex\"", w)
 		return
 	}
@@ -59,21 +72,30 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if limit == 0 || limit > maxSessionLimit {
 		limit = maxSessionLimit
 	}
+	offset, ok := intParam(r, "offset", 0)
+	if !ok {
+		respondBadRequest("offset must be a non-negative integer", w)
+		return
+	}
 	title := strings.ToLower(r.URL.Query().Get("title"))
 
-	list := make([]sessionSummary, 0)
+	resp := sessionsResponse{Sessions: make([]sessionSummary, 0)}
 	s.store.WithSessions(agents, func(sessions []*session.Session) {
-		for _, sess := range sessions {
-			if title != "" && !strings.Contains(strings.ToLower(sess.Title), title) {
-				continue
-			}
-			list = append(list, newSessionSummary(sess))
-			if len(list) == limit {
-				break
+		filtered := sessions
+		if title != "" {
+			filtered = make([]*session.Session, 0, len(sessions))
+			for _, sess := range sessions {
+				if strings.Contains(strings.ToLower(sess.Title), title) {
+					filtered = append(filtered, sess)
+				}
 			}
 		}
+		resp.Total = len(filtered)
+		for _, sess := range pageSlice(filtered, offset, limit) {
+			resp.Sessions = append(resp.Sessions, newSessionSummary(sess))
+		}
 	})
-	writeJSON(w, sessionsResponse{Sessions: list})
+	writeJSON(w, resp)
 }
 
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +115,7 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTurns(w http.ResponseWriter, r *http.Request) {
-	n, ok := intParam(r, "n", defaultTurns)
+	n, ok := intParam(r, "n", tools.DefaultReturnedTurns)
 	if !ok {
 		respondBadRequest("n must be a non-negative integer", w)
 		return

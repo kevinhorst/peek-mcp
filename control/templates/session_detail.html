@@ -7,20 +7,28 @@
   {{if .Summary.Model}}· {{.Summary.Model}}{{end}}
   · {{ts .Summary.LastActive}}
 </div>
-<h2>Turns</h2>
-<div hx-get="/fragments/sessions/{{.Summary.Id}}/turns" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
-  <div class="empty">Loading…</div>
-</div>
-<h2>Plan</h2>
-<div hx-get="/fragments/sessions/{{.Summary.Id}}/plan" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
-  <div class="empty">Loading…</div>
-</div>
-<h2>Diff</h2>
-<div hx-get="/fragments/sessions/{{.Summary.Id}}/diff" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
-  <div class="empty">Loading…</div>
-</div>
-<h2>Uncommitted diff</h2>
-<div hx-get="/fragments/sessions/{{.Summary.Id}}/uncommitted-diff" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
-  <div class="empty">Loading…</div>
-</div>
+<details class="section">
+  <summary>Turns</summary>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/turns" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
+<details class="section">
+  <summary>Plan</summary>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/plan" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
+<details class="section">
+  <summary>Diff</summary>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/diff" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
+<details class="section">
+  <summary>Uncommitted diff</summary>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/uncommitted-diff" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
 {{template "foot" .}}

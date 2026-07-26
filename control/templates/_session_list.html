@@ -1,17 +1,34 @@
-<div hx-get="/fragments/sessions" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+<div id="sessions-{{.Agent}}" hx-get="/fragments/sessions?agent={{.Agent}}&amp;offset={{.Offset}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
 {{if .Sessions}}
-{{range .Sessions}}
-<div class="card">
-  <span class="badge">{{.Agent}}</span>
-  <span class="label"><a href="/sessions/{{.Id}}">{{if .Title}}{{.Title}}{{else}}{{.Id}}{{end}}</a></span>
-  <span class="label">{{if .CWD}}{{baseName .CWD}}{{if .GitBranch}} @ {{.GitBranch}}{{end}}{{end}}</span>
-  <span class="meta">{{ts .LastActive}}</span>
-  {{if .HasPlan}}<span class="badge badge-ok">plan</span>{{end}}
-  {{if .HasDiff}}<span class="badge badge-ok">diff</span>{{end}}
-  {{if .HasUncommittedDiff}}<span class="badge badge-action">uncommitted</span>{{end}}
+<table class="evidence-table">
+  <thead>
+    <tr><th>Id</th><th>Title</th><th>Branch</th><th>Timestamp</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+  {{range .Sessions}}
+  <tr>
+    <td><a href="/sessions/{{.Id}}">{{printf "%.8s" .Id}}</a></td>
+    <td>{{.Title}}</td>
+    <td>{{.GitBranch}}</td>
+    <td class="meta">{{ts .LastActive}}</td>
+    <td>
+      {{if .HasPlan}}<span class="badge badge-ok">plan</span>{{end}}
+      {{if .HasDiff}}<span class="badge badge-ok">diff</span>{{end}}
+      {{if .HasUncommittedDiff}}<span class="badge badge-action">uncommitted</span>{{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{if or .HasPrev .HasNext}}
+<div class="section-controls">
+  {{if .HasPrev}}<button class="small" hx-get="/fragments/sessions?agent={{.Agent}}&amp;offset={{.PrevOffset}}" hx-target="#sessions-{{.Agent}}" hx-swap="outerHTML">prev</button>{{end}}
+  <span class="meta">{{if .Sessions}}{{add .Offset 1}}–{{.RangeEnd}} of {{.Total}}{{end}}</span>
+  {{if .HasNext}}<button class="small" hx-get="/fragments/sessions?agent={{.Agent}}&amp;offset={{.NextOffset}}" hx-target="#sessions-{{.Agent}}" hx-swap="outerHTML">next</button>{{end}}
 </div>
 {{end}}
 {{else}}
-<div class="empty">No sessions yet — start a Claude Code or Codex session.</div>
+<div class="empty">No {{.Agent}} sessions yet.</div>
 {{end}}
 </div>
+<span id="last-active-{{.Agent}}" class="meta" hx-swap-oob="true">{{if not .LastActive.IsZero}}{{ts .LastActive}}{{end}}</span>

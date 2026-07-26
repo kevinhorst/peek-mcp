@@ -27,6 +27,7 @@ type sessionDetail struct {
 
 type sessionsResponse struct {
 	Sessions []sessionSummary `json:"sessions"`
+	Total    int              `json:"total"`
 }
 
 type turnsResponse struct {
