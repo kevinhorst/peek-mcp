@@ -9,7 +9,7 @@ description: >
 
 | Input | Tool | Notes |
 |-------|------|-------|
-| `/peek [n]`, "what is Claude doing", "show session" | `session_full` | n defaults to 5 |
+| `/peek [n]`, "what is Claude doing", "show session" | `session_full` | n defaults to 20 |
 | `/peek list` | `session_list` | shows all sessions with plan/diff flags |
 | `/peek plan` | `session_plan` | current plan only |
 | `/peek diff` | `session_diff` | git diff only |
@@ -33,7 +33,7 @@ Do NOT reproduce the tool result. The data is already in context for the LLM —
 
 After calling the tool, respond with only a short confirmation line, e.g.:
 
-> Peeked at session **Login simplification** (5 turns, has plan, has diff).
+> Peeked at session **Login simplification** (20 turns, has plan, has diff).
 
 Include: session title or ID, turn count, and which sections are present (plan/diff). Nothing else.
 
