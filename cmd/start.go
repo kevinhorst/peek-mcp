@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -188,7 +188,7 @@ func init() {
 	flags.String("diff-target", "main", "Branch to diff against for session_diff")
 	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
-	flags.Int("control-port", 0, "Control server port (dashboard + JSON API + SSE); 0 disables")
+	flags.Int("control-port", 42422, "Control server port (dashboard + JSON API + SSE); 0 disables")
 	flags.String("control-token", "", "Optional bearer token protecting the control server")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
