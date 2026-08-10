@@ -22,6 +22,16 @@ build-linux-arm64:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-linux-arm64 .
 
 
+build-windows-amd64:
+	@mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-windows-amd64.exe .
+
+
+build-windows-arm64:
+	@mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags '$(LDFLAGS)' -o $(DIST)/peek-mcp-windows-arm64.exe .
+
+
 build-local: clean-dist
 	@mkdir -p $(DIST)
 	go build -o dist/peek-mcp .
@@ -43,9 +53,10 @@ clean-dist:
 
 
 git-release:
-	sed -i '' 's/^VERSION = .*/VERSION = $(VERSION)/' Makefile
-	sed -i '' 's/^var version = ".*"/var version = "$(VERSION)"/' cmd/version.go
-	sed -i '' 's/^  "version": ".*",/  "version": "$(VERSION)",/' mcpb/manifest.json
+	sed -i.bak 's/^VERSION = .*/VERSION = $(VERSION)/' Makefile
+	sed -i.bak 's/^var version = ".*"/var version = "$(VERSION)"/' cmd/version.go
+	sed -i.bak 's/^  "version": ".*",/  "version": "$(VERSION)",/' mcpb/manifest.json
+	rm -f Makefile.bak cmd/version.go.bak mcpb/manifest.json.bak
 	git commit -am "cmd: release v$(VERSION)"
 	git tag v$(VERSION)
 
