@@ -176,7 +176,7 @@ peek-mcp start --port 4242 --depth 20
 | `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
 | `--poll-window` | `1h` | Only poll repos whose session was active within this window |
-| `--control-port` | `0` | Control server port (dashboard + JSON API + SSE); `0` disables. Suggested: `4243` |
+| `--control-port` | `42442` | Control server start port; walks up to `42499` if taken (dashboard + JSON API + SSE); `0` disables |
 | `--control-token` | — | Optional bearer token protecting the control server |
 
 ### Environment variables
@@ -199,18 +199,18 @@ Every flag has a corresponding environment variable that is used when the flag i
 ## Control server (dashboard + JSON API)
 
 ```bash
-peek-mcp start --control-port 4243
+peek-mcp start --control-port 42442
 ```
 
-Serves a live dashboard on `http://127.0.0.1:4243/` in both transports — session list, turns, plan, and diffs update as agents work. The same data is scriptable as JSON:
+Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns, plan, and diffs update as agents work. If the start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. The same data is scriptable as JSON:
 
 ```bash
-curl -s http://127.0.0.1:4243/api/sessions | jq
-curl -s "http://127.0.0.1:4243/api/sessions/<id>/diff?size=0" | jq -r .diff
-curl -N http://127.0.0.1:4243/api/events
+curl -s http://127.0.0.1:42442/api/sessions | jq
+curl -s "http://127.0.0.1:42442/api/sessions/<id>/diff?size=0" | jq -r .diff
+curl -N http://127.0.0.1:42442/api/events
 ```
 
-The server is read-only, binds to loopback only, rejects non-local `Host` headers, and sends no CORS headers. With `--control-token <t>`, requests need `Authorization: Bearer <t>` — or open `http://127.0.0.1:4243/?token=<t>` once in the browser to set a session cookie.
+The server is read-only, binds to loopback only, rejects non-local `Host` headers, and sends no CORS headers. With `--control-token <t>`, requests need `Authorization: Bearer <t>` — or open `http://127.0.0.1:42442/?token=<t>` once in the browser to set a session cookie.
 
 ## Connecting to Claude Chat
 
