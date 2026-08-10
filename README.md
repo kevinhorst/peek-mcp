@@ -101,6 +101,8 @@ In addition to turns, peek-mcp passively watches two more sources:
 | Claude Code | `~/.claude/projects/<encoded-cwd>/*.jsonl` |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
 
+On Windows the session roots resolve to `%USERPROFILE%\.claude` and `%USERPROFILE%\.codex`.
+
 ### Agent parity
 
 | Capability | Claude Code | Codex |
@@ -127,6 +129,19 @@ Or build from source:
 git clone https://github.com/kevinhorst/peek-mcp
 cd peek-mcp
 go build -o peek-mcp .
+```
+
+### Windows
+
+Download `peek-mcp-windows-amd64.exe` (or `-arm64.exe`) from the
+[latest release](https://github.com/kevinhorst/peek-mcp/releases/latest),
+rename it to `peek-mcp.exe`, and place it on your `PATH`.
+
+The binary is unsigned; on first run SmartScreen may warn. Choose
+**More info → Run anyway**, or unblock it in PowerShell:
+
+```powershell
+Unblock-File peek-mcp.exe
 ```
 
 ## Quick setup
@@ -244,6 +259,8 @@ Merge `hooks/settings.snippet.json` into your project `.claude/settings.json`:
 }
 ```
 
+On Windows the hook works unchanged: Claude Code on Windows requires Git for Windows and runs hooks through its bash.
+
 ## Installing in Claude Desktop (.mcpb)
 
 For one-click install on macOS — useful for distributing peek-mcp inside an organisation — peek-mcp ships as an [MCP Bundle](https://github.com/modelcontextprotocol/mcpb). The bundle is a self-contained `.mcpb` file with a universal (arm64 + amd64) macOS binary inside.
@@ -285,7 +302,7 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/
 ## Requirements
 
 - Go 1.26+
-- macOS or Linux
+- macOS, Linux, or Windows
 - Claude Code and/or Codex CLI installed (peek-mcp reads their output; it does not depend on them at runtime)
 
 ## License
