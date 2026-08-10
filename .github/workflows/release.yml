@@ -10,7 +10,10 @@ on:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -47,6 +50,11 @@ jobs:
           make build-linux-amd64
           make build-linux-arm64
 
+      - name: Build windows binaries
+        run: |
+          make build-windows-amd64
+          make build-windows-arm64
+
       - uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -54,4 +62,6 @@ jobs:
             dist/peek-mcp
             dist/peek-mcp-linux-amd64
             dist/peek-mcp-linux-arm64
+            dist/peek-mcp-windows-amd64.exe
+            dist/peek-mcp-windows-arm64.exe
           generate_release_notes: true
