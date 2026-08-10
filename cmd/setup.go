@@ -129,12 +129,12 @@ func setupClaudeDesktop(p *prompter) error {
 
 	fmt.Printf("  Binary: %s\n", binPath)
 
-	home, err := os.UserHomeDir()
+	cfgDir, err := os.UserConfigDir()
 	if err != nil {
-		return fmt.Errorf("cannot determine home directory: %w", err)
+		return fmt.Errorf("cannot determine user config directory: %w", err)
 	}
 
-	path := filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+	path := filepath.Join(cfgDir, "Claude", "claude_desktop_config.json")
 	fmt.Printf("  Config: %s\n", path)
 
 	data, err := os.ReadFile(path)
