@@ -68,8 +68,8 @@
     "control_port": {
       "type": "number",
       "title": "Control dashboard port",
-      "description": "Local dashboard + JSON API port (0 disables).",
-      "default": 4243,
+      "description": "Local dashboard + JSON API start port; walks up to +57 if taken (0 disables).",
+      "default": 42442,
       "min": 0,
       "max": 65535,
       "required": false
