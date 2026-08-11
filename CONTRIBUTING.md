@@ -20,8 +20,7 @@ session.Store            — in-memory ring buffer, keyed by session ID
     │        │  plan_watcher.go — watches ~/.claude/plans/, writes Plan to store
     │        │  diff_watcher.go — runs git diff after each turn, writes Diff to store
     ▼
-tools.Register           — exposes session_full / session_latest / session_get /
-                           session_list / session_plan / session_diff via mcp-go
+tools.Register           — exposes session_get / session_list via mcp-go
     │
     ▼
 HTTP (streamable) or stdio transport
@@ -70,7 +69,7 @@ For distribution builds:
 make serve-http
 ```
 
-Builds and starts the HTTP server on `http://localhost:4242/mcp` with debug logging enabled. Open a Claude Code session in another terminal to generate traffic; `session_latest` will reflect it within seconds.
+Builds and starts the HTTP server on `http://localhost:4242/mcp` with debug logging enabled. Open a Claude Code session in another terminal to generate traffic; `session_get` will reflect it within seconds.
 
 To test the stdio transport:
 
@@ -106,7 +105,7 @@ peek-mcp currently supports Claude Code and Codex CLI. To add another agent:
 1. Create a new package (e.g. `myagent/`) with a `Parser` that implements the interface consumed by `watcher.New`.
 2. Add the watched directory path and a `watcher.New(...)` goroutine in `cmd/start.go`.
 3. Add a flag for the agent's home directory if the path is not fixed.
-4. Document the session path in the README's supported agents table.
+4. Document the session path in the supported agents table in `docs/tools.md`.
 
 ## Releasing
 

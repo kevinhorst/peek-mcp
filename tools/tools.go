@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -28,56 +27,54 @@ func withMaxResultSize() *mcp.Meta {
 }
 
 func Register(server *server.MCPServer, store *session.Store, telemetryStore *telemetry.Store) {
-	pageStore := &PageStore[*sessionFullResult]{
-		PagesByRequestId: make(map[string]<-chan *sessionFullResult),
+	pageStore := &PageStore[*sessionGetResult]{
+		PagesByRequestId: make(map[string]<-chan *sessionGetResult),
 	}
 	eventsPageStore := &PageStore[*sessionEventsResult]{
 		PagesByRequestId: make(map[string]<-chan *sessionEventsResult),
 	}
 
-	sessionFull :=
-		mcp.NewTool("session_full",
-			mcp.WithDescription("Returns turns, plan, and git diff for a session in one call. Prefer this over calling session_latest, session_plan, and session_diff separately. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
-			mcp.WithString("id",
-				mcp.Description("Session ID (omit for most recent session)"),
-			),
-			mcp.WithString("title",
-				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
-			),
-			mcp.WithNumber("n",
-				mcp.Description("Number of turns to return (default 20)"),
-			),
-			mcp.WithString("agent",
-				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
-			),
-			mcp.WithString("request_id",
-				mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
-			),
-			mcp.WithBoolean("remember",
-				mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only."),
-			),
-			mcp.WithBoolean("json",
-				mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
-			),
-		)
-	sessionFull.Meta = withMaxResultSize()
-	server.AddTool(sessionFull, sessionFullHandler(store, pageStore))
-
-	sessionLatest := mcp.NewTool("session_latest",
-		mcp.WithDescription("Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out."),
-		mcp.WithNumber("n",
-			mcp.Description("Number of turns to return (default 20)"),
+	sessionGet := mcp.NewTool("session_get",
+		mcp.WithDescription("Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memory) for a session. Defaults to the most recently active session when id and title are omitted. Select sections with the turns/events/plan/diff/uncommitted_diff/remember flags. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
+		mcp.WithString("id",
+			mcp.Description("Session ID (omit for most recent session)"),
+		),
+		mcp.WithString("title",
+			mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
 		),
 		mcp.WithString("agent",
-			mcp.Required(),
-			mcp.Description("Agent: \"claude\" or \"codex\""),
+			mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted and more than one agent is enabled."),
+		),
+		mcp.WithNumber("n",
+			mcp.Description("Number of turns to return (default 20). Only applies to the turns section."),
+		),
+		mcp.WithBoolean("turns",
+			mcp.Description("Return the session turns (default true)."),
+		),
+		mcp.WithBoolean("events",
+			mcp.Description("Return the typed event stream entries (default true)."),
+		),
+		mcp.WithBoolean("plan",
+			mcp.Description("Return the session plan (default true)."),
+		),
+		mcp.WithBoolean("diff",
+			mcp.Description("Return the pre-computed merge-base git diff against the inferred base branch, reported as diff_target (default true)."),
+		),
+		mcp.WithBoolean("uncommitted_diff",
+			mcp.Description("Return the live uncommitted git diff (`git diff HEAD`) in the session's own working tree (default false)."),
+		),
+		mcp.WithBoolean("remember",
+			mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only (default false)."),
+		),
+		mcp.WithString("request_id",
+			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 		),
 		mcp.WithBoolean("json",
 			mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
 		),
 	)
-	sessionLatest.Meta = withMaxResultSize()
-	server.AddTool(sessionLatest, sessionLatestHandler(store))
+	sessionGet.Meta = withMaxResultSize()
+	server.AddTool(sessionGet, sessionGetHandler(store, pageStore))
 
 	sessionList :=
 		mcp.NewTool("session_list",
@@ -89,89 +86,8 @@ func Register(server *server.MCPServer, store *session.Store, telemetryStore *te
 	sessionList.Meta = withMaxResultSize()
 	server.AddTool(sessionList, sessionListHandler(store))
 
-	sessionGet := mcp.NewTool("session_get",
-		mcp.WithDescription("Returns the last N turns from a specific session by ID or title."),
-		mcp.WithString("id",
-			mcp.Description("Session ID"),
-		),
-		mcp.WithString("title",
-			mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
-		),
-		mcp.WithString("agent",
-			mcp.Description("Agent: \"claude\" or \"codex\". Scopes title matching when provided."),
-		),
-		mcp.WithNumber("n",
-			mcp.Description("Number of turns to return (default 20)"),
-		),
-		mcp.WithBoolean("remember",
-			mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only."),
-		),
-		mcp.WithBoolean("json",
-			mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
-		),
-	)
-	sessionGet.Meta = withMaxResultSize()
-	server.AddTool(sessionGet, sessionGetHandler(store))
-
-	sessionPlan :=
-		mcp.NewTool("session_plan",
-			mcp.WithDescription("Returns the current plan for the given session (or the most recently active session if no ID is provided). For Claude sessions this is the plan-mode plan file; for Codex the latest proposed_plan block. Returns an empty response if the session has no plan."),
-			mcp.WithString("id",
-				mcp.Description("Session ID (optional, defaults to the most recently active session)"),
-			),
-			mcp.WithString("title",
-				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
-			),
-			mcp.WithString("agent",
-				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
-			),
-			mcp.WithBoolean("json",
-				mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
-			),
-		)
-	sessionPlan.Meta = withMaxResultSize()
-	server.AddTool(sessionPlan, sessionPlanHandler(store))
-
-	sessionDiff :=
-		mcp.NewTool("session_diff",
-			mcp.WithDescription("Returns the pre-computed git diff for a session. The base branch is inferred from the session's live checkout (branch creation point from the reflog, falling back to origin/HEAD, then local main/master, then HEAD) and the diff uses merge-base semantics, refreshed automatically on each new turn. The resolved base is exposed as diff_target in session_full and session_list. If id is omitted, uses the most recent session."),
-			mcp.WithString("id",
-				mcp.Description("Session ID (omit for most recent session)"),
-			),
-			mcp.WithString("title",
-				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
-			),
-			mcp.WithString("agent",
-				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
-			),
-			mcp.WithBoolean("json",
-				mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
-			),
-		)
-	sessionDiff.Meta = withMaxResultSize()
-	server.AddTool(sessionDiff, sessionDiffHandler(store))
-
-	sessionUncommittedDiff :=
-		mcp.NewTool("session_uncommitted_diff",
-			mcp.WithDescription("Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees. If id is omitted, uses the most recent session."),
-			mcp.WithString("id",
-				mcp.Description("Session ID (omit for most recent session)"),
-			),
-			mcp.WithString("title",
-				mcp.Description("Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to agent when provided. For Codex, titles come from Codex's session index (thread name)."),
-			),
-			mcp.WithString("agent",
-				mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted."),
-			),
-			mcp.WithBoolean("json",
-				mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
-			),
-		)
-	sessionUncommittedDiff.Meta = withMaxResultSize()
-	server.AddTool(sessionUncommittedDiff, sessionUncommittedDiffHandler(store))
-
 	sessionEvents := mcp.NewTool("session_events",
-		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_full for those."),
+		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_get for those."),
 		mcp.WithString("id",
 			mcp.Description("Session ID (omit for most recent session)"),
 		),
@@ -198,11 +114,10 @@ func Register(server *server.MCPServer, store *session.Store, telemetryStore *te
 	server.AddTool(sessionEvents, sessionEventsHandler(store, eventsPageStore, telemetryStore))
 }
 
-func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResult]) server.ToolHandlerFunc {
+func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
 
-		// Continuation: return next page for an existing request
 		if reqId, ok := args["request_id"].(string); ok && reqId != "" {
 			next, ok := pageStore.next(reqId)
 			if !ok {
@@ -214,15 +129,14 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResul
 				reqId = ""
 			}
 
-			result := &sessionFullResultPage{
-				sessionFullResult: next,
-				RequestId:         reqId,
-				HasMore:           pageStore.hasNext(reqId),
+			result := &sessionGetResultPage{
+				sessionGetResult: next,
+				RequestId:        reqId,
+				HasMore:          pageStore.hasNext(reqId),
 			}
 			return respond(ctx, request, result)
 		}
 
-		// First call: resolve session and build pages
 		sess, err := resolveSession(s, request)
 		if err != nil {
 			if !errors.Is(err, errSessionSelectorMissing) {
@@ -239,23 +153,32 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResul
 			sess = found
 		}
 
-		n := intArgFromRequest("n", request)
-		if n <= 0 {
-			n = DefaultReturnedTurns
+		var turns, events, plan, diff, uncommitted, memory string
+		if boolArgFromRequest(request, "turns", true) {
+			n := intArgFromRequest(request, "n")
+			if n <= 0 {
+				n = DefaultReturnedTurns
+			}
+			data, err := json.Marshal(sess.Turns(n))
+			if err != nil {
+				return nil, fmt.Errorf("marshaling turns: %w", err)
+			}
+			turns = string(data)
 		}
-
-		data, err := json.Marshal(sess.Turns(n))
-		if err != nil {
-			return nil, fmt.Errorf("marshaling turns: %w", err)
+		withDiff := boolArgFromRequest(request, "diff", true)
+		if boolArgFromRequest(request, "events", true) {
+			events = marshalEventEntries(sess)
 		}
-		turns := string(data)
-
-		diff := sess.DiffOutput
-		plan := sess.PlanContent
-
-		events := marshalEventEntries(sess)
-		memory := ""
-		if boolArgFromRequest("remember", request) {
+		if boolArgFromRequest(request, "plan", true) {
+			plan = sess.PlanContent
+		}
+		if withDiff {
+			diff = sess.DiffOutput
+		}
+		if boolArgFromRequest(request, "uncommitted_diff", false) {
+			uncommitted = sess.UncommittedDiff
+		}
+		if boolArgFromRequest(request, "remember", false) {
 			memory = marshalMemoryBlock(sess)
 		}
 
@@ -265,10 +188,14 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResul
 			memory,
 			plan,
 			turns,
+			uncommitted,
 		)
-		firstPage.DiffTarget = sess.DiffTarget
+		if withDiff {
+			firstPage.DiffTarget = sess.DiffTarget
+		}
+		firstPage.TotalUsage = sess.CurrentUsage()
 
-		resultPage := newSessionFullResultPage(firstPage)
+		resultPage := newSessionGetResultPage(firstPage)
 		if len(nextPages) == 0 {
 			return respond(ctx, request, resultPage)
 		}
@@ -278,37 +205,6 @@ func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResul
 
 		resultPage.WithRequestId(requestId)
 		return respond(ctx, request, resultPage)
-	}
-}
-
-func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		agent, err := resolveAgentFromRequest(s, request)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
-		turnNumber := DefaultReturnedTurns
-		n := intArgFromRequest("n", request)
-		if n > 0 {
-			turnNumber = n
-		}
-
-		lastSession, ok := s.Last(agent)
-		if !ok {
-			return mcp.NewToolResultText("session_latest: No sessions found"), nil
-		}
-
-		turns := lastSession.Turns(turnNumber)
-		if len(turns) == 0 {
-			return mcp.NewToolResultText("No turns found"), nil
-		}
-
-		result := &sessionLatestResult{
-			Events: newEventEntries(lastSession.Events.All()),
-			Turns:  turns,
-		}
-		return respondForRequest(request, result)
 	}
 }
 
@@ -338,123 +234,6 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		return respondWithStructured(map[string]any{"sessions": items})
-	}
-}
-
-func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		currentSession, err := resolveSession(s, request)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
-		turnNumber := DefaultReturnedTurns
-		n := intArgFromRequest("n", request)
-		if n > 0 {
-			turnNumber = n
-		}
-
-		turns := currentSession.Turns(turnNumber)
-		if len(turns) == 0 {
-			return mcp.NewToolResultError("No turns found"), nil
-		}
-
-		result := &sessionGetResult{
-			Events:     newEventEntries(currentSession.Events.All()),
-			TotalUsage: currentSession.CurrentUsage(),
-			Turns:      turns,
-		}
-		if boolArgFromRequest("remember", request) {
-			result.Memory = memoryBlock(currentSession)
-		}
-
-		return respondForRequest(request, result)
-	}
-}
-
-func sessionPlanHandler(s *session.Store) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		currentSession, err := resolveSession(s, request)
-		if err != nil {
-			if !errors.Is(err, errSessionSelectorMissing) {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-			agent, agentErr := resolveAgentFromRequest(s, request)
-			if agentErr != nil {
-				return mcp.NewToolResultError(agentErr.Error()), nil
-			}
-			found, ok := s.Last(agent)
-			if !ok {
-				return respondWithText("No sessions found.")
-			}
-			currentSession = found
-		}
-
-		if currentSession.PlanContent == "" {
-			return mcp.NewToolResultText("No plan found for this session"), nil
-		}
-
-		if boolArgFromRequest("json", request) {
-			result := &sessionPlanResult{Plan: currentSession.PlanContent}
-			return respondWithStructured(result)
-		}
-		return respondWithText(currentSession.PlanContent)
-	}
-}
-
-func sessionDiffHandler(s *session.Store) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		currentSession, err := resolveSession(s, request)
-		if err != nil {
-			if !errors.Is(err, errSessionSelectorMissing) {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-			agent, agentErr := resolveAgentFromRequest(s, request)
-			if agentErr != nil {
-				return mcp.NewToolResultError(agentErr.Error()), nil
-			}
-			found, ok := s.Last(agent)
-			if !ok {
-				return respondWithText("No sessions found.")
-			}
-			currentSession = found
-		}
-
-		result := &sessionDiffResult{
-			Diff:       currentSession.DiffOutput,
-			DiffTarget: currentSession.DiffTarget,
-			Source:     diffAvailability(currentSession),
-		}
-		if currentSession.DiffSource == session.DiffSourceSnapshot {
-			result.CapturedAt = currentSession.DiffCapturedAt.Format(time.RFC3339)
-		}
-		return respondForRequest(request, result)
-	}
-}
-
-func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		currentSession, err := resolveSession(s, request)
-		if err != nil {
-			if !errors.Is(err, errSessionSelectorMissing) {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-			agent, agentErr := resolveAgentFromRequest(s, request)
-			if agentErr != nil {
-				return mcp.NewToolResultError(agentErr.Error()), nil
-			}
-			found, ok := s.Last(agent)
-			if !ok {
-				return respondWithText("No sessions found.")
-			}
-			currentSession = found
-		}
-
-		if boolArgFromRequest("json", request) {
-			result := &sessionUncommittedDiffResult{Diff: currentSession.UncommittedDiff}
-			return respondWithStructured(result)
-		}
-		return respondWithText(currentSession.UncommittedDiff)
 	}
 }
 
@@ -499,7 +278,7 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 
 		events := marshalEvents(currentSession)
 		revisions := ""
-		if boolArgFromRequest("revisions", request) {
+		if boolArgFromRequest(request, "revisions", false) {
 			revisions = marshalPlanRevisions(currentSession)
 		}
 
@@ -521,7 +300,7 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 			}
 		}
 		firstPage.TouchedFiles = newTouchedFileViews(currentSession)
-		if boolArgFromRequest("breakdown", request) {
+		if boolArgFromRequest(request, "breakdown", false) {
 			firstPage.Skills = newSkillStatViews(currentSession)
 			firstPage.Subagents = newSubagentStatViews(currentSession)
 		}

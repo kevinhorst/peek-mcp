@@ -47,13 +47,9 @@ func TestRespond_JsonFlag(t *testing.T) {
 	// Run tests
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
-			response := &sessionPlanResult{Plan: "content"}
+			response := &sessionGetResult{Plan: "content"}
 
 			result, err := respond(context.Background(), test.request, response)
-			assert.NoError(t, err)
-			assert.Equal(t, test._shouldBeStructure, result.StructuredContent != nil)
-
-			result, err = respondForRequest(test.request, response)
 			assert.NoError(t, err)
 			assert.Equal(t, test._shouldBeStructure, result.StructuredContent != nil)
 		})

@@ -9,6 +9,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestMcpArgs(t *testing.T) {
+	assert.Equal(t, []string{"start", "--transport=stdio"}, mcpArgs(true))
+	assert.Equal(t, []string{"start", "--transport=stdio", "--control-port=0"}, mcpArgs(false))
+}
+
 func TestWriteConfig_CreatesParentDirs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "a", "b", "settings.json")
 	err := writeConfig(path, map[string]any{"key": "val"})
