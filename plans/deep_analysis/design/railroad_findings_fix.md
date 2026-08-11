@@ -441,3 +441,4 @@ Phase 4:
 | Date | Trigger | What changed |
 |------|---------|--------------|
 | — | initial | plan created |
+| 2026-08-11 | user errata after D3 landed | `json: true` is now authoritative: typed structuredContent (events/revisions/turns/memory as real JSON), never paginated, regardless of client; default is a paginated text block for every client. DEC-3's string contract now applies to text mode only. |

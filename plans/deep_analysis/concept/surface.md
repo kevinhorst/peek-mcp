@@ -63,7 +63,7 @@ Typed event stream + counters + usage for one session.
 - revisions: include plan revision diffs, default false (bool)
 
 **Response fields:**
-- events: ordered event list ([signals.md](signals.md) model), serialized as a JSON-encoded string chunked across pages (string)
+- events: ordered event list ([signals.md](signals.md) model) — a JSON-encoded string chunked across pages in text mode, a typed array with `json: true` (string | array)
 - counters: plan_rejections, plan_alterations, permission_denials, skills_invoked, subagents_spawned (object)
 - usage: token totals (object)
 - plan_revisions: count + timestamps, diffs when requested (object)

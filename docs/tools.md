@@ -7,7 +7,7 @@ Full parameter reference for every tool peek-mcp exposes. For task-oriented walk
 ## Common semantics
 
 - **Title matching** — a `title` is matched exact-first (case-insensitive), then falls back to substring match. When `agent` is provided, matching is scoped to that agent. For Codex, titles come from Codex's session index (the thread name).
-- **Pagination** — responses that carry turns or diffs are paginated by the client's capability. When a response has `has_more: true`, call the same tool again with the returned `request_id` to fetch the next page. Chunked payload fields (`turns`, `events`, `revisions`) are JSON-encoded strings split at page boundaries — concatenate the chunks across pages, then parse the result.
+- **Pagination** — responses that carry turns or diffs are paginated by the client's capability. When a response has `has_more: true`, call the same tool again with the returned `request_id` to fetch the next page. Chunked payload fields (`turns`, `events`, `revisions`) are JSON-encoded strings split at page boundaries — concatenate the chunks across pages, then parse the result. `json: true` responses are never paginated.
 - **Most-recent default** — `session_get` uses the most recently active session when `id` and `title` are omitted (an `agent` is then required when more than one agent is enabled, so the lookup knows which side to read).
 
 ## `session_get`
@@ -27,7 +27,7 @@ Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memo
 | `uncommitted_diff` | boolean | no | Return the live `git diff HEAD` in the session's own working tree, refreshed as files are saved (default `false`) |
 | `remember` | boolean | no | Include the project's auto-memory (`MEMORY.md` + fact files). Claude sessions only (default `false`) |
 | `request_id` | string | no | Pagination request ID from a previous response |
-| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default `false`) |
+| `json` | boolean | no | Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default `false`: paginated JSON text block) |
 
 The first page also carries `total_usage`, the running token total (including the in-flight turn).
 
@@ -43,7 +43,7 @@ Returns the typed event stream of a session (plan lifecycle, permission denials,
 | `revisions` | boolean | no | Include plan revision diffs (default `false`; they dominate response size) |
 | `breakdown` | boolean | no | Include per-skill and per-subagent time and token usage (default `false`; Claude sessions only). A skill window spans from its invocation to the next user prompt or next skill; skill usage counts main-loop tokens only — subagent tokens are listed per subagent and never enter the session's `usage` totals |
 | `request_id` | string | no | Pagination request ID from a previous response |
-| `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default `false`) |
+| `json` | boolean | no | Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default `false`: paginated JSON text block) |
 
 ## `session_list`
 
