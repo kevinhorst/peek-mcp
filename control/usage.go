@@ -4,11 +4,29 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/pricing"
 	"github.com/kevinhorst/peek-mcp/session"
 )
+
+const (
+	usageDetailCost    = "cost"
+	usageDetailDenials = "denials"
+	usageDetailModels  = "models"
+	usageDetailPlans   = "plans"
+	usageDetailSkills  = "skills"
+)
+
+func usageDetailParam(r *http.Request) string {
+	switch detail := r.URL.Query().Get("detail"); detail {
+	case usageDetailCost, usageDetailDenials, usageDetailModels, usageDetailPlans, usageDetailSkills:
+		return detail
+	}
+	return ""
+}
 
 func displayTotalTokens(usage *session.Usage) int {
 	if usage.TotalTokens > 0 {
@@ -85,22 +103,11 @@ func newCostData(id session.Id, agent session.Agent, model string, usage *sessio
 	return data
 }
 
-func (s *Server) handleUsageCostFragment(w http.ResponseWriter, r *http.Request) {
-	id := session.Id(r.PathValue("id"))
-	var data costData
-	if !s.store.WithSession(id, func(sess *session.Session) {
-		data = newCostData(id, sess.Agent, sess.Meta.Model, sess.CurrentUsage())
-	}) {
-		respondNotFound("unknown session", w)
-		return
-	}
-	s.renderFragment(w, tmplUsageCost, data)
-}
-
 type planVersionRow struct {
-	Index      int
-	Timestamp  time.Time
-	Alteration bool
+	Index     int
+	Timestamp time.Time
+	Phase     string
+	Delta     string
 }
 
 type planVersionsData struct {
@@ -108,22 +115,57 @@ type planVersionsData struct {
 	Versions []planVersionRow
 }
 
-func (s *Server) handleUsagePlansFragment(w http.ResponseWriter, r *http.Request) {
-	id := session.Id(r.PathValue("id"))
-	data := planVersionsData{Id: id}
-	if !s.store.WithSession(id, func(sess *session.Session) {
-		for _, revision := range sess.PlanRevisions {
-			data.Versions = append(data.Versions, planVersionRow{
-				Index:      revision.Index,
-				Timestamp:  revision.Timestamp,
-				Alteration: revision.IsAlteration,
-			})
-		}
-	}) {
-		respondNotFound("unknown session", w)
-		return
+func newPlanVersionsData(sess *session.Session) *planVersionsData {
+	data := &planVersionsData{Id: sess.Meta.SessionId}
+	for _, revision := range sess.PlanRevisions {
+		data.Versions = append(data.Versions, planVersionRow{
+			Index:     revision.Index,
+			Timestamp: revision.Timestamp,
+			Phase:     revisionPhase(revision),
+			Delta:     revisionDelta(revision),
+		})
 	}
-	s.renderFragment(w, tmplUsagePlans, data)
+	return data
+}
+
+func revisionPhase(revision *session.PlanRevision) string {
+	if revision.Index == 0 {
+		return "initial"
+	}
+	if revision.IsAlteration {
+		return "alteration"
+	}
+	return "planning"
+}
+
+const maxRevisionDeltaLines = 999
+
+func revisionDelta(revision *session.PlanRevision) string {
+	if revision.Index == 0 {
+		return "+" + truncatedLineCount(strings.Count(revision.Content, "\n")+1)
+	}
+
+	var added, removed int
+	for line := range strings.Lines(revision.Diff) {
+		switch {
+		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
+		case strings.HasPrefix(line, "+"):
+			added++
+		case strings.HasPrefix(line, "-"):
+			removed++
+		}
+	}
+	if added == 0 && removed == 0 {
+		return ""
+	}
+	return "+" + truncatedLineCount(added) + " −" + truncatedLineCount(removed)
+}
+
+func truncatedLineCount(count int) string {
+	if count > maxRevisionDeltaLines {
+		return "999+"
+	}
+	return strconv.Itoa(count)
 }
 
 type skillRow struct {
@@ -131,6 +173,7 @@ type skillRow struct {
 	StartedAt time.Time
 	Duration  string
 	Tokens    int
+	Cost      string
 }
 
 type skillsData struct {
@@ -138,27 +181,55 @@ type skillsData struct {
 	Skills []skillRow
 }
 
-func (s *Server) handleUsageSkillsFragment(w http.ResponseWriter, r *http.Request) {
-	id := session.Id(r.PathValue("id"))
-	data := skillsData{Id: id}
-	if !s.store.WithSession(id, func(sess *session.Session) {
-		for _, skill := range sess.Skills {
-			duration := "running"
-			if !skill.EndedAt.IsZero() {
-				duration = skill.EndedAt.Sub(skill.StartedAt).Round(time.Second).String()
-			}
-			data.Skills = append(data.Skills, skillRow{
-				Skill:     skill.Skill,
-				StartedAt: skill.StartedAt,
-				Duration:  duration,
-				Tokens:    displayTotalTokens(&skill.Usage),
-			})
+func newSkillsData(id session.Id, sess *session.Session) *skillsData {
+	data := &skillsData{Id: id}
+	for _, skill := range sess.Skills {
+		duration := "running"
+		if !skill.EndedAt.IsZero() {
+			duration = skill.EndedAt.Sub(skill.StartedAt).Round(time.Second).String()
 		}
-	}) {
-		respondNotFound("unknown session", w)
-		return
+		model := skill.Model
+		if model == "" {
+			model = sess.Meta.Model
+		}
+		cost := newCostData(id, sess.Agent, model, &skill.Usage)
+		data.Skills = append(data.Skills, skillRow{
+			Skill:     skill.Skill,
+			StartedAt: skill.StartedAt,
+			Duration:  duration,
+			Tokens:    displayTotalTokens(&skill.Usage),
+			Cost:      cost.Total,
+		})
 	}
-	s.renderFragment(w, tmplUsageSkills, data)
+	return data
+}
+
+type modelRow struct {
+	Timestamp time.Time
+	From      string
+	To        string
+}
+
+type modelsData struct {
+	Id     session.Id
+	Models []modelRow
+}
+
+func newModelsData(sess *session.Session) *modelsData {
+	data := &modelsData{Id: sess.Meta.SessionId}
+	all := sess.Events.All()
+	slices.Reverse(all)
+	for _, event := range all {
+		if event.Kind != session.EventKindModelChanged || event.Model == nil {
+			continue
+		}
+		data.Models = append(data.Models, modelRow{
+			Timestamp: event.Timestamp,
+			From:      event.Model.From,
+			To:        event.Model.To,
+		})
+	}
+	return data
 }
 
 type denialRow struct {
@@ -172,25 +243,19 @@ type denialsData struct {
 	Denials []denialRow
 }
 
-func (s *Server) handleUsageDenialsFragment(w http.ResponseWriter, r *http.Request) {
-	id := session.Id(r.PathValue("id"))
-	data := denialsData{Id: id}
-	if !s.store.WithSession(id, func(sess *session.Session) {
-		all := sess.Events.All()
-		slices.Reverse(all)
-		for _, event := range all {
-			if event.Kind != session.EventKindPermissionDenied || event.Permission == nil {
-				continue
-			}
-			data.Denials = append(data.Denials, denialRow{
-				Tool:      event.Permission.Tool,
-				Command:   event.Permission.Command,
-				Timestamp: event.Timestamp,
-			})
+func newDenialsData(sess *session.Session) *denialsData {
+	data := &denialsData{Id: sess.Meta.SessionId}
+	all := sess.Events.All()
+	slices.Reverse(all)
+	for _, event := range all {
+		if event.Kind != session.EventKindPermissionDenied || event.Permission == nil {
+			continue
 		}
-	}) {
-		respondNotFound("unknown session", w)
-		return
+		data.Denials = append(data.Denials, denialRow{
+			Tool:      event.Permission.Tool,
+			Command:   event.Permission.Command,
+			Timestamp: event.Timestamp,
+		})
 	}
-	s.renderFragment(w, tmplUsageDenials, data)
+	return data
 }

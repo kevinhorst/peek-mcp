@@ -1,0 +1,9 @@
+{{if .Models}}
+<table class="usage-table">
+  <tr><th>Timestamp</th><th>From</th><th>To</th></tr>
+  {{range .Models}}<tr><td>{{ts .Timestamp}}</td><td>{{.From}}</td><th>{{.To}}</th></tr>
+  {{end}}
+</table>
+{{else}}
+<div class="empty">No model changes.</div>
+{{end}}

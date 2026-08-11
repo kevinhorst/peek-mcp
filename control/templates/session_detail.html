@@ -9,7 +9,7 @@
 </div>
 <details class="section" open>
   <summary>Usage</summary>
-  <div hx-get="/fragments/sessions/{{.Summary.Id}}/usage" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/usage" hx-trigger="load" hx-swap="outerHTML">
     <div class="empty">Loading…</div>
   </div>
 </details>

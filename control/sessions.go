@@ -20,10 +20,6 @@ const (
 	tmplPlan          = "_plan.html"
 	tmplDiff          = "_diff.html"
 	tmplUsage         = "_usage.html"
-	tmplUsageCost     = "_usage_cost.html"
-	tmplUsageDenials  = "_usage_denials.html"
-	tmplUsagePlans    = "_usage_plans.html"
-	tmplUsageSkills   = "_usage_skills.html"
 	tmplEvents        = "_events.html"
 )
 
@@ -129,6 +125,12 @@ type usageData struct {
 	TotalTokens  int
 	CachePercent string
 	PlanVersions int
+	Detail       string
+	Cost         *costData
+	Denials      *denialsData
+	Models       *modelsData
+	Plans        *planVersionsData
+	Skills       *skillsData
 }
 
 type eventsData struct {
@@ -138,13 +140,26 @@ type eventsData struct {
 
 func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
 	id := session.Id(r.PathValue("id"))
-	data := usageData{Id: id}
+	data := usageData{Id: id, Detail: usageDetailParam(r)}
 	if !s.store.WithSession(id, func(sess *session.Session) {
 		data.Counters = sess.Counters
 		data.Usage = *sess.CurrentUsage()
 		data.TotalTokens = displayTotalTokens(&data.Usage)
 		data.CachePercent = cachePercent(sess.Agent, &data.Usage)
 		data.PlanVersions = len(sess.PlanRevisions)
+		switch data.Detail {
+		case usageDetailCost:
+			cost := newCostData(id, sess.Agent, sess.Meta.Model, sess.CurrentUsage())
+			data.Cost = &cost
+		case usageDetailDenials:
+			data.Denials = newDenialsData(sess)
+		case usageDetailModels:
+			data.Models = newModelsData(sess)
+		case usageDetailPlans:
+			data.Plans = newPlanVersionsData(sess)
+		case usageDetailSkills:
+			data.Skills = newSkillsData(id, sess)
+		}
 	}) {
 		respondNotFound("unknown session", w)
 		return

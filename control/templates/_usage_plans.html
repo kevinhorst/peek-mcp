@@ -1,11 +1,9 @@
-<div hx-get="/fragments/sessions/{{.Id}}/usage/plans" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
 {{if .Versions}}
 <table class="usage-table">
-  <tr><th>Revision</th><th>Timestamp</th><th>Alteration</th></tr>
-  {{range .Versions}}<tr><th>{{.Index}}</th><td>{{ts .Timestamp}}</td><td>{{if .Alteration}}yes{{end}}</td></tr>
+  <tr><th>Revision</th><th>Timestamp</th><th>Phase</th><th>Δ</th></tr>
+  {{range .Versions}}<tr><th>{{.Index}}</th><td>{{ts .Timestamp}}</td><td>{{.Phase}}</td><td>{{.Delta}}</td></tr>
   {{end}}
 </table>
 {{else}}
 <div class="empty">No plan versions yet.</div>
 {{end}}
-</div>
