@@ -35,10 +35,10 @@ type DiffWatcher struct {
 
 func NewDiffWatcher(store *session.Store, broker *events.Broker, interval, window time.Duration) *DiffWatcher {
 	return &DiffWatcher{
-		store:    store,
-		broker:   broker,
-		interval: interval,
-		window:   window,
+		store:     store,
+		broker:    broker,
+		interval:  interval,
+		window:    window,
 		baseByKey: make(map[diffBaseKey]string),
 	}
 }
