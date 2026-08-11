@@ -2,6 +2,7 @@ package state
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -92,6 +93,20 @@ func (d *Dir) Gc(retention time.Duration) {
 	for _, agentDir := range agentDirs {
 		d.pruneAgentDir(filepath.Join(d.root, agentDir.Name()), cutoff)
 	}
+}
+
+func (d *Dir) Size() int64 {
+	var total int64
+	filepath.WalkDir(d.root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		if info, err := entry.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
 }
 
 func (d *Dir) ReadDiffBase(agent, sessionId string) (base DiffBase, ok bool) {

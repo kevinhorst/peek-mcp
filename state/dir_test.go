@@ -95,6 +95,16 @@ func TestDirReadWrite(t *testing.T) {
 	})
 }
 
+func TestSize(t *testing.T) {
+	dir := NewDir(filepath.Join(t.TempDir(), "missing"))
+	assert.Zero(t, dir.Size())
+
+	dir = NewDir(t.TempDir())
+	require.NoError(t, dir.WriteDiffSnapshot("claude", "12345", "s1"))
+	require.NoError(t, dir.WritePlanLatest("claude", "abc", "s1"))
+	assert.Equal(t, int64(8), dir.Size())
+}
+
 func TestGc(t *testing.T) {
 	// old-session-pruned
 	t.Run("old-session-pruned", func(t *testing.T) {
