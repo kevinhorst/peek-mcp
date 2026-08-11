@@ -6,36 +6,31 @@ import (
 	"github.com/pkg/errors"
 )
 
+type FileTouch struct {
+	Path  string `json:"path"`
+	Write bool   `json:"write"`
+}
+
 type Turn struct {
-	Role         Role        `json:"role"`
-	Text         string      `json:"text"` // may be empty
-	Timestamp    time.Time   `json:"timestamp"`
-	Meta         *Meta       `json:"meta"`
-	RequestId    string      `json:"request_id,omitempty"` // optional
-	Usage        *Usage      `json:"usage,omitempty"`      // optional
-	Events       []*Event    `json:"-"`                    // signal payload, not serialized
-	FilePath     string      `json:"-"`                    // transcript path, set by the watcher
-	PlanFilePath string      `json:"-"`                    // plan signal only, not serialized
-	PlanContent  string      `json:"-"`                    // inline plan content from attachment
-	CustomTitle  string      `json:"-"`                    // title signal only, not serialized
-	TitleSource  TitleSource `json:"-"`
+	Role         Role         `json:"role"`
+	Text         string       `json:"text"` // may be empty
+	Timestamp    time.Time    `json:"timestamp"`
+	Meta         *Meta        `json:"meta"`
+	RequestId    string       `json:"request_id,omitempty"` // optional
+	Usage        *Usage       `json:"usage,omitempty"`      // optional
+	Events       []*Event     `json:"-"`                    // signal payload, not serialized
+	FileTouches  []*FileTouch `json:"-"`                    // touched-file signal, not serialized
+	FilePath     string       `json:"-"`                    // transcript path, set by the watcher
+	PlanFilePath string       `json:"-"`                    // plan signal only, not serialized
+	PlanContent  string       `json:"-"`                    // inline plan content from attachment
+	CustomTitle  string       `json:"-"`                    // title signal only, not serialized
+	PromptId     string       `json:"-"`                    // prompt submission id, not serialized
+	SubagentId   string       `json:"-"`                    // subagent signal: routes fold to per-agent stats
+	TitleSource  TitleSource  `json:"-"`
 }
 
 func (t *Turn) IsEventSignal() bool {
-	return len(t.Events) > 0 && t.Role == "" && t.PlanFilePath == "" && t.Usage == nil
-}
-
-func (t *Turn) IsSubagentSignal() bool {
-	if !t.IsEventSignal() {
-		return false
-	}
-
-	for _, event := range t.Events {
-		if event.Actor == "" {
-			return false
-		}
-	}
-	return true
+	return (len(t.Events) > 0 || len(t.FileTouches) > 0) && t.Role == "" && t.PlanFilePath == "" && t.Usage == nil
 }
 
 func (t *Turn) IsUsageSignal() bool {
@@ -49,6 +44,17 @@ func (t *Turn) Validate() error {
 
 	if t.Meta == nil {
 		return errors.New("Turn.Validate: meta must not be nil")
+	}
+
+	// subagent-signal turns carry a session ID plus per-agent events/usage/timestamps
+	if t.SubagentId != "" {
+		if t.Meta.SessionId == "" {
+			return errors.New("Turn.Validate: subagent signal turn requires session ID")
+		}
+		if t.Usage != nil {
+			return errors.Wrap(t.Usage.Validate(), "Turn.Validate")
+		}
+		return nil
 	}
 
 	// plan-signal turns only carry a session ID and plan file path

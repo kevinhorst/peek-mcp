@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -23,14 +24,67 @@ type planRevisionsView struct {
 	Timestamps []time.Time `json:"timestamps,omitempty"`
 }
 
+type telemetryTimeView struct {
+	ActiveSeconds int     `json:"active_seconds"`
+	CostUSD       float64 `json:"cost_usd,omitempty"`
+}
+
+type sessionTimeView struct {
+	StartedAt     time.Time          `json:"started_at"`
+	LastActive    time.Time          `json:"last_active"`
+	WallSeconds   int                `json:"wall_seconds"`
+	IdleSeconds   int                `json:"idle_seconds"`
+	ActiveSeconds int                `json:"active_seconds"`
+	Telemetry     *telemetryTimeView `json:"telemetry,omitempty"`
+}
+
 type sessionEventsResult struct {
-	Counters      *session.Counters  `json:"counters,omitempty"`
-	Diff          string             `json:"diff,omitempty"`
-	Events        json.RawMessage    `json:"events,omitempty"`
-	PlanRevisions *planRevisionsView `json:"plan_revisions,omitempty"`
-	Revisions     json.RawMessage    `json:"revisions,omitempty"`
-	Unsupported   []string           `json:"unsupported,omitempty"`
-	Usage         *session.Usage     `json:"usage,omitempty"`
+	Counters      *session.Counters   `json:"counters,omitempty"`
+	Diff          string              `json:"diff,omitempty"`
+	Events        json.RawMessage     `json:"events,omitempty"`
+	PlanRevisions *planRevisionsView  `json:"plan_revisions,omitempty"`
+	Revisions     json.RawMessage     `json:"revisions,omitempty"`
+	Skills        []*skillStatView    `json:"skills,omitempty"`
+	Subagents     []*subagentStatView `json:"subagents,omitempty"`
+	Time          *sessionTimeView    `json:"time,omitempty"`
+	TouchedFiles  []*touchedFileView  `json:"touched_files,omitempty"`
+	Unsupported   []string            `json:"unsupported,omitempty"`
+	Usage         *session.Usage      `json:"usage,omitempty"`
+}
+
+type touchedFileView struct {
+	Path   string `json:"path"`
+	Reads  int    `json:"reads,omitempty"`
+	Writes int    `json:"writes,omitempty"`
+}
+
+func newTouchedFileViews(currentSession *session.Session) []*touchedFileView {
+	if len(currentSession.TouchedFiles) == 0 {
+		return nil
+	}
+
+	views := make([]*touchedFileView, 0, len(currentSession.TouchedFiles))
+	for path, counts := range currentSession.TouchedFiles {
+		views = append(views, &touchedFileView{Path: path, Reads: counts.Reads, Writes: counts.Writes})
+	}
+	sort.Slice(views, func(i, j int) bool { return views[i].Path < views[j].Path })
+	return views
+}
+
+func newSessionTimeView(currentSession *session.Session) *sessionTimeView {
+	if currentSession.StartedAt.IsZero() {
+		return nil
+	}
+
+	wall := currentSession.LastActive.Sub(currentSession.StartedAt)
+	idle := currentSession.Idle
+	return &sessionTimeView{
+		StartedAt:     currentSession.StartedAt,
+		LastActive:    currentSession.LastActive,
+		WallSeconds:   int(wall.Seconds()),
+		IdleSeconds:   int(idle.Seconds()),
+		ActiveSeconds: int((wall - idle).Seconds()),
+	}
 }
 
 type sessionEventsResultPage struct {
@@ -48,6 +102,71 @@ func newSessionEventsResultPage(result *sessionEventsResult) *sessionEventsResul
 func (p *sessionEventsResultPage) WithRequestId(id string) {
 	p.HasMore = true
 	p.RequestId = id
+}
+
+type subagentStatView struct {
+	AgentId     string         `json:"agent_id"`
+	AgentType   string         `json:"agent_type,omitempty"`
+	Description string         `json:"description,omitempty"`
+	StartedAt   time.Time      `json:"started_at"`
+	LastActive  time.Time      `json:"last_active"`
+	Seconds     int            `json:"seconds"`
+	Usage       *session.Usage `json:"usage,omitempty"`
+}
+
+func newSubagentStatViews(currentSession *session.Session) []*subagentStatView {
+	if len(currentSession.Subagents) == 0 {
+		return nil
+	}
+
+	views := make([]*subagentStatView, 0, len(currentSession.Subagents))
+	for agentId, stat := range currentSession.Subagents {
+		usage := stat.Usage
+		views = append(views, &subagentStatView{
+			AgentId:     agentId,
+			AgentType:   stat.AgentType,
+			Description: stat.Description,
+			StartedAt:   stat.FirstActive,
+			LastActive:  stat.LastActive,
+			Seconds:     int(stat.LastActive.Sub(stat.FirstActive).Seconds()),
+			Usage:       &usage,
+		})
+	}
+	sort.Slice(views, func(i, j int) bool { return views[i].StartedAt.Before(views[j].StartedAt) })
+	return views
+}
+
+type skillStatView struct {
+	Skill     string         `json:"skill"`
+	Args      string         `json:"args,omitempty"`
+	StartedAt time.Time      `json:"started_at"`
+	EndedAt   time.Time      `json:"ended_at"`
+	Seconds   int            `json:"seconds"`
+	Usage     *session.Usage `json:"usage,omitempty"`
+}
+
+func newSkillStatViews(currentSession *session.Session) []*skillStatView {
+	if len(currentSession.Skills) == 0 {
+		return nil
+	}
+
+	views := make([]*skillStatView, 0, len(currentSession.Skills))
+	for _, stat := range currentSession.Skills {
+		ended := stat.EndedAt
+		if ended.IsZero() {
+			ended = currentSession.LastActive
+		}
+		usage := stat.Usage
+		views = append(views, &skillStatView{
+			Skill:     stat.Skill,
+			Args:      stat.Args,
+			StartedAt: stat.StartedAt,
+			EndedAt:   ended,
+			Seconds:   int(ended.Sub(stat.StartedAt).Seconds()),
+			Usage:     &usage,
+		})
+	}
+	return views
 }
 
 func firstLine(text string) string {

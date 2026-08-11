@@ -69,7 +69,7 @@ func TestParseLine_SubagentRollout(t *testing.T) {
 		require.NoError(t, err)
 		turn := p.ParseLine(data)
 		require.NotNil(t, turn)
-		require.True(t, turn.IsSubagentSignal())
+		require.NotEmpty(t, turn.SubagentId)
 		require.Len(t, turn.Events, 1)
 		assert.Equal(t, session.EventKindSubagentSpawned, turn.Events[0].Kind)
 		assert.Equal(t, "Hume", turn.Events[0].Actor)

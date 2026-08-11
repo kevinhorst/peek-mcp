@@ -50,8 +50,9 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 	t.Run("subagent-events-drop-unknown-parent", func(t *testing.T) {
 		s := NewStore(10, events.NewBroker())
 		turn := &Turn{
-			Events: []*Event{{Actor: "sub-1", Kind: EventKindSubagentSpawned, Subagent: &SubagentPayload{AgentId: "sub-1"}}},
-			Meta:   &Meta{SessionId: "unknown-parent"},
+			Events:     []*Event{{Actor: "sub-1", Kind: EventKindSubagentSpawned, Subagent: &SubagentPayload{AgentId: "sub-1"}}},
+			SubagentId: "sub-1",
+			Meta:       &Meta{SessionId: "unknown-parent"},
 		}
 		s.AddTurnBySessionId("unknown-parent", AgentClaude, turn)
 
@@ -72,8 +73,9 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 		s.AddTurnBySessionId("p", AgentClaude, chatTurn)
 		// Spawned event (subagent signal, actor set)
 		spawnedTurn := &Turn{
-			Events: []*Event{{Actor: "sub-9", Kind: EventKindSubagentSpawned, Subagent: &SubagentPayload{AgentId: "sub-9", ToolUseId: "tu"}}},
-			Meta:   &Meta{SessionId: "p"},
+			Events:     []*Event{{Actor: "sub-9", Kind: EventKindSubagentSpawned, Subagent: &SubagentPayload{AgentId: "sub-9", ToolUseId: "tu"}}},
+			SubagentId: "sub-9",
+			Meta:       &Meta{SessionId: "p"},
 		}
 		s.AddTurnBySessionId("p", AgentClaude, spawnedTurn)
 		// Result event on the parent, agent id unknown at parse time
@@ -108,6 +110,60 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 		sess, ok := s.GetById("c")
 		require.True(t, ok)
 		assert.Equal(t, 250, sess.TotalUsage.TotalTokens, "cumulative snapshots are kept-last, not summed")
+	})
+}
+
+func TestAddTurnBySessionId_SkillWindowOrdering(t *testing.T) {
+	now := time.Now()
+
+	// slash-command-prompt-close-then-open
+	t.Run("slash-command-prompt-close-then-open", func(t *testing.T) {
+		s := NewStore(10, events.NewBroker())
+		first := &Turn{
+			Events:    []*Event{{Kind: EventKindSkillInvoked, Skill: &SkillPayload{Skill: "first", Source: SkillSourceSlash}, Timestamp: now}},
+			Role:      RoleUser,
+			Text:      "<command-name>/first</command-name>",
+			Timestamp: now,
+			Meta:      &Meta{SessionId: "s1"},
+		}
+		s.AddTurnBySessionId("s1", AgentClaude, first)
+		second := &Turn{
+			Events:    []*Event{{Kind: EventKindSkillInvoked, Skill: &SkillPayload{Skill: "second", Source: SkillSourceSlash}, Timestamp: now.Add(time.Minute)}},
+			Role:      RoleUser,
+			Text:      "<command-name>/second</command-name>",
+			Timestamp: now.Add(time.Minute),
+			Meta:      &Meta{SessionId: "s1"},
+		}
+		s.AddTurnBySessionId("s1", AgentClaude, second)
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		require.Len(t, sess.Skills, 2)
+		assert.Equal(t, "first", sess.Skills[0].Skill)
+		assert.Equal(t, now.Add(time.Minute), sess.Skills[0].EndedAt)
+		assert.True(t, sess.Skills[1].EndedAt.IsZero(), "second window stays open after its own prompt")
+	})
+
+	// subagent-turn-folds-touches-and-stats
+	t.Run("subagent-turn-folds-touches-and-stats", func(t *testing.T) {
+		s := NewStore(10, events.NewBroker())
+		chatTurn := &Turn{Role: RoleUser, Text: "start", Timestamp: now, Meta: &Meta{SessionId: "p"}}
+		s.AddTurnBySessionId("p", AgentClaude, chatTurn)
+		subTurn := &Turn{
+			FileTouches: []*FileTouch{{Path: "/a.go", Write: true}},
+			RequestId:   "r1",
+			SubagentId:  "sub-1",
+			Timestamp:   now,
+			Usage:       &Usage{InputTokens: 3},
+			Meta:        &Meta{SessionId: "p"},
+		}
+		s.AddTurnBySessionId("p", AgentClaude, subTurn)
+
+		sess, ok := s.GetById("p")
+		require.True(t, ok)
+		assert.Equal(t, 1, sess.TouchedFiles["/a.go"].Writes)
+		assert.Equal(t, 3, sess.Subagents["sub-1"].Usage.InputTokens)
+		assert.Equal(t, 0, sess.TotalUsage.InputTokens)
 	})
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
+	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/kevinhorst/peek-mcp/watcher"
 	"github.com/mark3labs/mcp-go/server"
@@ -75,6 +76,11 @@ var startCmd = &cobra.Command{
 
 		broker := events.NewBroker()
 		store := session.NewStore(depth, broker, agents...)
+
+		var telemetryStore *telemetry.Store
+		if controlPort > 0 {
+			telemetryStore = telemetry.NewStore()
+		}
 
 		var stateDir *state.Dir
 		if stateDirPath != "" {
@@ -137,12 +143,13 @@ var startCmd = &cobra.Command{
 			server.WithResourceCapabilities(false, true),
 		)
 		invocations := tools.NewInvocationCounter()
-		tools.Register(srv, store, invocations)
+		tools.Register(srv, store, invocations, telemetryStore)
 
 		if controlPort > 0 {
 			controlOpts := &control.Options{
 				Store:       store,
 				Broker:      broker,
+				Telemetry:   telemetryStore,
 				Token:       controlToken,
 				Version:     Version(),
 				Depth:       depth,

@@ -12,6 +12,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
+	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
 )
 
@@ -24,6 +25,7 @@ var assetsFS embed.FS
 type Options struct {
 	Store       *session.Store
 	Broker      *events.Broker
+	Telemetry   *telemetry.Store
 	Token       string
 	Version     string
 	Depth       int
@@ -37,6 +39,7 @@ type Options struct {
 type Server struct {
 	store       *session.Store
 	broker      *events.Broker
+	telemetry   *telemetry.Store
 	token       string
 	version     string
 	depth       int
@@ -66,6 +69,7 @@ func New(opts *Options) (*Server, error) {
 	return &Server{
 		store:       opts.Store,
 		broker:      opts.Broker,
+		telemetry:   opts.Telemetry,
 		token:       opts.Token,
 		version:     opts.Version,
 		depth:       opts.Depth,
@@ -125,5 +129,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/events", s.handleSessionEvents)
 	mux.HandleFunc("POST /api/restart", s.handleRestart)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
+	mux.HandleFunc("POST /otlp/v1/metrics", s.handleOtlpMetrics)
 	return s.logRequests(s.checkHost(s.auth(mux)))
 }

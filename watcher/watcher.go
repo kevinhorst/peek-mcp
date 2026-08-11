@@ -264,8 +264,9 @@ func (w *Watcher) readSubagentMeta(path string) {
 		Timestamp: info.ModTime(),
 	}
 	turn := &session.Turn{
-		Events: []*session.Event{event},
-		Meta:   &session.Meta{SessionId: sessionId},
+		Events:     []*session.Event{event},
+		SubagentId: agentId,
+		Meta:       &session.Meta{SessionId: sessionId},
 	}
 
 	w.store.AddTurnBySessionId(sessionId, w.agent, turn)

@@ -45,6 +45,22 @@ func (p *prompter) Confirm(question string, defaultYes bool) bool {
 	}
 }
 
+func (p *prompter) Ask(question, defaultValue string) string {
+	if defaultValue == "" {
+		fmt.Fprintf(p.out, "%s: ", question)
+	} else {
+		fmt.Fprintf(p.out, "%s [%s]: ", question, defaultValue)
+	}
+	if !p.scanner.Scan() {
+		return defaultValue
+	}
+	text := strings.TrimSpace(p.scanner.Text())
+	if text == "" {
+		return defaultValue
+	}
+	return text
+}
+
 func (p *prompter) Choose(question string, options []string, defaultIdx int) int {
 	if p.auto {
 		return defaultIdx

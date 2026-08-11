@@ -16,8 +16,13 @@ const ProjectsDir = "projects"
 const (
 	toolNameAgent           = "Agent"
 	toolNameAskUserQuestion = "AskUserQuestion"
+	toolNameEdit            = "Edit"
 	toolNameExitPlanMode    = "ExitPlanMode"
+	toolNameMultiEdit       = "MultiEdit"
+	toolNameNotebookEdit    = "NotebookEdit"
+	toolNameRead            = "Read"
 	toolNameSkill           = "Skill"
+	toolNameWrite           = "Write"
 
 	contentTypeToolResult = "tool_result"
 	contentTypeToolUse    = "tool_use"
@@ -98,7 +103,7 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 		return nil
 	}
 
-	events := p.eventsFromUserContent(entry, &message)
+	events, touches := p.eventsFromUserContent(entry, &message)
 
 	text := extractTextBlocks(message.Content)
 	if event := slashCommandEvent(entry, text); event != nil {
@@ -107,14 +112,16 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 
 	isPrompt := entry.PromptId != "" && strings.TrimSpace(text) != ""
 	if !isPrompt {
-		return eventTurn(entry, events)
+		return eventTurn(entry, events, touches)
 	}
 
 	turn := &session.Turn{
-		Events:    events,
-		Role:      session.RoleUser,
-		Text:      text,
-		Timestamp: entry.Timestamp,
+		Events:      events,
+		FileTouches: touches,
+		PromptId:    entry.PromptId,
+		Role:        session.RoleUser,
+		Text:        text,
+		Timestamp:   entry.Timestamp,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
@@ -198,7 +205,7 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 	events := planModeEvents(attachment.Type, entry)
 
 	if attachment.PlanFilePath == "" {
-		return eventTurn(entry, events)
+		return eventTurn(entry, events, nil)
 	}
 
 	return &session.Turn{
@@ -224,14 +231,35 @@ func (p *Parser) handleSidechain(entry *Entry) *session.Turn {
 	}
 
 	var events []*session.Event
+	var touches []*session.FileTouch
+	var usage *session.Usage
 	switch entry.Type {
 	case EntryTypeUser:
-		events = p.eventsFromUserContent(entry, &message)
+		events, touches = p.eventsFromUserContent(entry, &message)
 	case EntryTypeAssistant:
 		events = p.eventsFromAssistantContent(entry, &message)
+		if message.Usage != nil {
+			usage = &session.Usage{
+				InputTokens:              message.Usage.InputTokens,
+				OutputTokens:             message.Usage.OutputTokens,
+				CacheCreationInputTokens: message.Usage.CacheCreationInputTokens,
+				CacheReadInputTokens:     message.Usage.CacheReadInputTokens,
+			}
+		}
 	}
 
-	return eventTurn(entry, events)
+	return &session.Turn{
+		Events:      events,
+		FileTouches: touches,
+		RequestId:   entry.RequestId,
+		SubagentId:  entry.AgentId,
+		Timestamp:   entry.Timestamp,
+		Usage:       usage,
+		Meta: &session.Meta{
+			SessionId: entry.SessionId,
+			CWD:       entry.CurrentWorkingDir,
+		},
+	}
 }
 
 func (p *Parser) eventsFromAssistantContent(entry *Entry, message *Message) []*session.Event {
@@ -258,10 +286,11 @@ func (p *Parser) eventsFromAssistantContent(entry *Entry, message *Message) []*s
 	return events
 }
 
-func (p *Parser) eventsFromUserContent(entry *Entry, message *Message) []*session.Event {
+func (p *Parser) eventsFromUserContent(entry *Entry, message *Message) ([]*session.Event, []*session.FileTouch) {
 	blocks := contentBlocks(message.Content)
 
 	events := make([]*session.Event, 0)
+	touches := make([]*session.FileTouch, 0)
 	for index := range blocks {
 		block := &blocks[index]
 		if block.Type != contentTypeToolResult {
@@ -275,17 +304,17 @@ func (p *Parser) eventsFromUserContent(entry *Entry, message *Message) []*sessio
 
 		delete(p.pendingTools, block.ToolUseId)
 
+		if touch := fileTouchFromResult(block, pending); touch != nil {
+			touches = append(touches, touch)
+		}
+
 		event := toolResultEvent(block, entry, pending)
 		if event != nil {
 			events = append(events, event)
 		}
 	}
 
-	if len(events) == 0 {
-		return nil
-	}
-
-	return events
+	return events, touches
 }
 
 func (p *Parser) rememberToolUse(block *ContentBlock) {
@@ -323,6 +352,41 @@ type skillInput struct {
 	Skill string `json:"skill"`
 }
 
+type fileToolInput struct {
+	FilePath     string `json:"file_path"`
+	NotebookPath string `json:"notebook_path"`
+}
+
+func fileTouchFromResult(block *ContentBlock, pending *pendingToolUse) *session.FileTouch {
+	if block.IsError {
+		return nil
+	}
+
+	var isWrite bool
+	switch pending.name {
+	case toolNameEdit, toolNameMultiEdit, toolNameNotebookEdit, toolNameWrite:
+		isWrite = true
+	case toolNameRead:
+	default:
+		return nil
+	}
+
+	var input fileToolInput
+	if err := json.Unmarshal(pending.input, &input); err != nil {
+		return nil
+	}
+
+	path := input.FilePath
+	if path == "" {
+		path = input.NotebookPath
+	}
+	if path == "" {
+		return nil
+	}
+
+	return &session.FileTouch{Path: path, Write: isWrite}
+}
+
 func contentBlocks(raw json.RawMessage) []ContentBlock {
 	var blocks []ContentBlock
 	if err := json.Unmarshal(raw, &blocks); err != nil {
@@ -331,13 +395,14 @@ func contentBlocks(raw json.RawMessage) []ContentBlock {
 	return blocks
 }
 
-func eventTurn(entry *Entry, events []*session.Event) *session.Turn {
-	if len(events) == 0 {
+func eventTurn(entry *Entry, events []*session.Event, touches []*session.FileTouch) *session.Turn {
+	if len(events) == 0 && len(touches) == 0 {
 		return nil
 	}
 
 	turn := &session.Turn{
-		Events: events,
+		Events:      events,
+		FileTouches: touches,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
