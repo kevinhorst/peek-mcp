@@ -100,7 +100,7 @@ Full parameters, title-matching and pagination rules, supported agents, and the 
 
 ## Dashboard
 
-Run with `--control-port` and peek-mcp serves a live, read-only dashboard on loopback — session list, turns, plan, and diffs, updating as agents work. It doubles as a scriptable JSON API. See [docs/reference.md](docs/reference.md#control-server-dashboard--json-api).
+Run with `--control-port` and peek-mcp serves a live, read-only dashboard on loopback — session list, turns, plan, diffs, usage metrics, and auto-memory, updating as agents work. It doubles as a scriptable JSON API. See [docs/reference.md](docs/reference.md#control-server-dashboard--json-api).
 
 ![peek-mcp dashboard — session list](docs/assets/dashboard-sessions.png)
 

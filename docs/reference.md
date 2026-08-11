@@ -54,7 +54,7 @@ A global config file at `~/.peek/config.json` is shared by every peek instance a
 peek-mcp start --control-port 42442
 ```
 
-Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns, plan, diffs, per-session usage and events update as agents work. A `/stats` page shows server uptime, config snapshot, state-directory size, and per-tool invocation counts. If the start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. The same data is scriptable as JSON:
+Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns, plan, diffs, per-session usage (tokens, cost, session/idle time, skills, subagents, touched files) and events update as agents work; Claude sessions also show the project's auto-memory. A `/stats` page shows server uptime, config snapshot, state-directory size, and per-tool invocation counts. If the start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. The same data is scriptable as JSON:
 
 ```bash
 curl -s http://127.0.0.1:42442/api/sessions | jq
