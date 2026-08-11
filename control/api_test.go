@@ -5,12 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
+	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -224,6 +226,37 @@ func TestStats_WithoutStateDir(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.NotContains(t, response.Body.String(), "state_disk_bytes")
 	assert.NotContains(t, response.Body.String(), "invocations")
+}
+
+func TestHandleStats_TelemetryExport(t *testing.T) {
+	// detector-set-includes-status
+	t.Run("detector-set-includes-status", func(t *testing.T) {
+		store, broker := newTestStore()
+		settingsPath := filepath.Join(t.TempDir(), "settings.json")
+		server, err := New(&Options{
+			Store:    store,
+			Broker:   broker,
+			Version:  "test",
+			Depth:    10,
+			Detector: telemetry.NewDetector(42442, settingsPath),
+		})
+		require.NoError(t, err)
+
+		response := get(server, "/api/stats")
+		require.Equal(t, http.StatusOK, response.Code)
+		stats := decode[statsResponse](t, response)
+		require.NotNil(t, stats.TelemetryExport)
+		assert.Equal(t, telemetry.ExportNotConfigured, stats.TelemetryExport.State)
+	})
+
+	// detector-nil-omits-field
+	t.Run("detector-nil-omits-field", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		response := get(server, "/api/stats")
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.NotContains(t, response.Body.String(), "telemetry_export")
+	})
 }
 
 func TestSessionEvents(t *testing.T) {

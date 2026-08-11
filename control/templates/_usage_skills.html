@@ -1,0 +1,11 @@
+<div hx-get="/fragments/sessions/{{.Id}}/usage/skills" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Skills}}
+<table class="usage-table">
+  <tr><th>Skill</th><th>Started</th><th>Duration</th><th>Tokens</th></tr>
+  {{range .Skills}}<tr><th>{{.Skill}}</th><td>{{ts .StartedAt}}</td><td>{{.Duration}}</td><td>{{.Tokens}}</td></tr>
+  {{end}}
+</table>
+{{else}}
+<div class="empty">No skills invoked yet.</div>
+{{end}}
+</div>

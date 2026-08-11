@@ -4,4 +4,8 @@
 <div hx-get="/fragments/stats" hx-trigger="load, every 10s" hx-swap="outerHTML">
   <div class="empty">Loading…</div>
 </div>
+<h2>Config</h2>
+<div hx-get="/fragments/config" hx-trigger="load, config-op from:body" hx-swap="innerHTML">
+  <div class="empty">Loading…</div>
+</div>
 {{template "foot" .}}

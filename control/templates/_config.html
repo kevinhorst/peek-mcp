@@ -1,0 +1,2 @@
+{{range .Rows}}{{template "_config_row.html" .}}{{end}}
+{{if .RestartAvailable}}<button hx-post="/api/restart" hx-confirm="Restart peek-mcp?">Restart</button>{{end}}

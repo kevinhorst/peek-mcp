@@ -1,0 +1,12 @@
+<div hx-get="/fragments/sessions/{{.Id}}/usage/denials" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Denials}}
+<table class="usage-table">
+  <tr><th>Tool</th><th>Command</th><th>Timestamp</th></tr>
+  {{range .Denials}}<tr><th>{{.Tool}}</th><td>{{.Command}}</td><td>{{ts .Timestamp}}</td></tr>
+  {{end}}
+</table>
+<div class="meta">From the event buffer (capped).</div>
+{{else}}
+<div class="empty">No permission denials.</div>
+{{end}}
+</div>

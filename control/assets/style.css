@@ -431,3 +431,11 @@ pre.file-view::before {
 .md-body th, .md-body td { border: 1px solid var(--line); padding: 4px 10px; }
 .md-body blockquote { border-left: 3px solid var(--brand-deep); padding-left: 12px; color: var(--text-2); }
 .md-body a { color: var(--neon); }
+
+.usage-grid { display: flex; gap: 16px; align-items: flex-start; }
+.usage-grid > .usage-detail { flex: 1; min-width: 0; }
+.usage-table { border-collapse: collapse; font-size: 0.9375rem; }
+.usage-table th, .usage-table td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
+.usage-table th { color: var(--text-2); font-weight: 600; }
+tr.usage-row { cursor: pointer; }
+tr.usage-row:hover th, tr.usage-row:hover td { color: var(--neon); }

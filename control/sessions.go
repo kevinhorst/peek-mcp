@@ -20,6 +20,10 @@ const (
 	tmplPlan          = "_plan.html"
 	tmplDiff          = "_diff.html"
 	tmplUsage         = "_usage.html"
+	tmplUsageCost     = "_usage_cost.html"
+	tmplUsageDenials  = "_usage_denials.html"
+	tmplUsagePlans    = "_usage_plans.html"
+	tmplUsageSkills   = "_usage_skills.html"
 	tmplEvents        = "_events.html"
 )
 
@@ -119,9 +123,12 @@ func (s *Server) handleSessionsFragment(w http.ResponseWriter, r *http.Request) 
 }
 
 type usageData struct {
-	Id       session.Id
-	Counters session.Counters
-	Usage    session.Usage
+	Id           session.Id
+	Counters     session.Counters
+	Usage        session.Usage
+	TotalTokens  int
+	CachePercent string
+	PlanVersions int
 }
 
 type eventsData struct {
@@ -135,6 +142,9 @@ func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
 	if !s.store.WithSession(id, func(sess *session.Session) {
 		data.Counters = sess.Counters
 		data.Usage = *sess.CurrentUsage()
+		data.TotalTokens = displayTotalTokens(&data.Usage)
+		data.CachePercent = cachePercent(sess.Agent, &data.Usage)
+		data.PlanVersions = len(sess.PlanRevisions)
 	}) {
 		respondNotFound("unknown session", w)
 		return

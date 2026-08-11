@@ -1,0 +1,25 @@
+<div class="card card-config" id="config-{{.Key}}">
+  <span class="label label-key">
+    <strong>{{.Key}}</strong>
+    <br><span class="meta explanation">{{.Explanation}}</span>
+  </span>
+  {{if .RestartNeeded}}<span class="badge badge-action" title="saved value {{.SavedValue}} takes effect after restart">restart required</span>{{end}}
+  {{if .Overridden}}<span class="badge badge-dim" title="a flag or PEEK_* env var pins this key; the config file value is ignored at startup">overridden</span>{{end}}
+  {{if .Editable}}
+    {{if eq .Type "enum"}}
+    <select name="value"
+            hx-post="/api/config/{{.Key}}"
+            hx-target="#config-{{.Key}}" hx-swap="outerHTML">
+      {{range .Values}}<option {{if eq . $.Value}}selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    {{else}}
+    <form class="inline-form" hx-post="/api/config/{{.Key}}"
+          hx-target="#config-{{.Key}}" hx-swap="outerHTML">
+      <input type="{{if eq .Type "number"}}number{{else}}text{{end}}" name="value" value="{{.Value}}">
+      <button type="submit" class="small">Save</button>
+    </form>
+    {{end}}
+  {{else}}
+  <span class="meta">{{.Value}}</span>
+  {{end}}
+</div>

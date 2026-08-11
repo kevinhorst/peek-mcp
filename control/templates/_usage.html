@@ -1,16 +1,20 @@
 <div hx-get="/fragments/sessions/{{.Id}}/usage" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
-<table>
+<div class="usage-grid">
+<table class="usage-table">
   <tr><th>Input tokens</th><td>{{.Usage.InputTokens}}</td></tr>
   <tr><th>Output tokens</th><td>{{.Usage.OutputTokens}}</td></tr>
-  <tr><th>Cache creation</th><td>{{.Usage.CacheCreationInputTokens}}</td></tr>
-  <tr><th>Cache read</th><td>{{.Usage.CacheReadInputTokens}}</td></tr>
-  <tr><th>Cached input</th><td>{{.Usage.CachedInputTokens}}</td></tr>
-  <tr><th>Reasoning output</th><td>{{.Usage.ReasoningOutputTokens}}</td></tr>
-  <tr><th>Total tokens</th><td>{{.Usage.TotalTokens}}</td></tr>
-  <tr><th>Permission denials</th><td>{{.Counters.PermissionDenials}}</td></tr>
-  <tr><th>Plan alterations</th><td>{{.Counters.PlanAlterations}}</td></tr>
+  {{if .Usage.CacheCreationInputTokens}}<tr><th>Cache creation</th><td>{{.Usage.CacheCreationInputTokens}}</td></tr>{{end}}
+  {{if .Usage.CacheReadInputTokens}}<tr><th>Cache read</th><td>{{.Usage.CacheReadInputTokens}}</td></tr>{{end}}
+  {{if .Usage.CachedInputTokens}}<tr><th>Cached input</th><td>{{.Usage.CachedInputTokens}}</td></tr>{{end}}
+  {{if .Usage.ReasoningOutputTokens}}<tr><th>Reasoning output</th><td>{{.Usage.ReasoningOutputTokens}}</td></tr>{{end}}
+  {{if .CachePercent}}<tr><th>Cache hit</th><td>{{.CachePercent}}</td></tr>{{end}}
+  <tr class="usage-row" hx-get="/fragments/sessions/{{.Id}}/usage/cost" hx-target="#usage-detail-{{.Id}}"><th>Total tokens</th><td>{{.TotalTokens}}</td></tr>
+  <tr class="usage-row" hx-get="/fragments/sessions/{{.Id}}/usage/denials" hx-target="#usage-detail-{{.Id}}"><th>Permission denials</th><td>{{.Counters.PermissionDenials}}</td></tr>
+  <tr class="usage-row" hx-get="/fragments/sessions/{{.Id}}/usage/plans" hx-target="#usage-detail-{{.Id}}"><th>Plan versions</th><td>{{.PlanVersions}}</td></tr>
   <tr><th>Plan rejections</th><td>{{.Counters.PlanRejections}}</td></tr>
-  <tr><th>Skills invoked</th><td>{{.Counters.SkillsInvoked}}</td></tr>
+  <tr class="usage-row" hx-get="/fragments/sessions/{{.Id}}/usage/skills" hx-target="#usage-detail-{{.Id}}"><th>Skills invoked</th><td>{{.Counters.SkillsInvoked}}</td></tr>
   <tr><th>Subagents spawned</th><td>{{.Counters.SubagentsSpawned}}</td></tr>
 </table>
+<div id="usage-detail-{{.Id}}" class="usage-detail" hx-preserve></div>
+</div>
 </div>

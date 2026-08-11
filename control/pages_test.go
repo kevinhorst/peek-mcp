@@ -21,6 +21,7 @@ func TestStatsPage(t *testing.T) {
 	body := response.Body.String()
 	assert.Contains(t, body, `href="/stats"`)
 	assert.Contains(t, body, `hx-get="/fragments/stats"`)
+	assert.Contains(t, body, `hx-get="/fragments/config"`)
 }
 
 func TestStatsFragment(t *testing.T) {
@@ -38,7 +39,8 @@ func TestStatsFragment(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code)
 	body := response.Body.String()
 	assert.Contains(t, body, "<th>PID</th>")
-	assert.Contains(t, body, "<th>Transport</th>")
+	assert.Contains(t, body, `<table class="evidence-table">`)
+	assert.NotContains(t, body, "<th>Transport</th>")
 	assert.Contains(t, body, "1 claude · 1 codex · 2 total")
 	assert.NotContains(t, body, "Restart")
 }
@@ -51,6 +53,11 @@ func TestUsageFragment(t *testing.T) {
 	body := response.Body.String()
 	assert.Contains(t, body, "<th>Input tokens</th><td>10</td>")
 	assert.Contains(t, body, "<th>Skills invoked</th><td>0</td>")
+	assert.Contains(t, body, "<th>Total tokens</th><td>15</td>")
+	assert.Contains(t, body, "<th>Plan versions</th><td>1</td>")
+	assert.NotContains(t, body, "Plan alterations")
+	assert.NotContains(t, body, "Cached input")
+	assert.NotContains(t, body, "Reasoning output")
 
 	assert.Equal(t, http.StatusNotFound, get(server, "/fragments/sessions/unknown/usage").Code)
 }

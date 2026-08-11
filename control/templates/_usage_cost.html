@@ -1,0 +1,12 @@
+<div hx-get="/fragments/sessions/{{.Id}}/usage/cost" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Known}}
+<table class="usage-table">
+  <tr><th>Component</th><th>Tokens</th><th>Rate/MTok</th><th>Cost</th></tr>
+  {{range .Rows}}<tr><th>{{.Component}}</th><td>{{.Tokens}}</td><td>{{.Rate}}</td><td>{{.Cost}}</td></tr>
+  {{end}}<tr><th>Total</th><td></td><td></td><td>{{.Total}}</td></tr>
+</table>
+<div class="meta">Estimate from embedded rates for {{.Model}}.</div>
+{{else}}
+<div class="empty">No pricing for model {{if .Model}}{{.Model}}{{else}}(unknown){{end}}.</div>
+{{end}}
+</div>

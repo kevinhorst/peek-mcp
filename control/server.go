@@ -23,33 +23,39 @@ var templateFS embed.FS
 var assetsFS embed.FS
 
 type Options struct {
-	Store       *session.Store
-	Broker      *events.Broker
-	Telemetry   *telemetry.Store
-	Token       string
-	Version     string
-	Depth       int
-	StartedAt   time.Time
-	StateDir    *state.Dir
-	Invocations *tools.InvocationCounter
-	Config      Config
-	Restart     func()
+	Store          *session.Store
+	Broker         *events.Broker
+	Telemetry      *telemetry.Store
+	Detector       *telemetry.Detector
+	Token          string
+	Version        string
+	Depth          int
+	StartedAt      time.Time
+	StateDir       *state.Dir
+	Invocations    *tools.InvocationCounter
+	Config         Config
+	ConfigPath     string
+	OverriddenKeys map[string]bool
+	Restart        func()
 }
 
 type Server struct {
-	store       *session.Store
-	broker      *events.Broker
-	telemetry   *telemetry.Store
-	token       string
-	version     string
-	depth       int
-	tmpl        *template.Template
-	sseClients  atomic.Int64
-	startedAt   time.Time
-	stateDir    *state.Dir
-	invocations *tools.InvocationCounter
-	config      Config
-	restart     func()
+	store          *session.Store
+	broker         *events.Broker
+	telemetry      *telemetry.Store
+	detector       *telemetry.Detector
+	token          string
+	version        string
+	depth          int
+	tmpl           *template.Template
+	sseClients     atomic.Int64
+	startedAt      time.Time
+	stateDir       *state.Dir
+	invocations    *tools.InvocationCounter
+	config         Config
+	configPath     string
+	overriddenKeys map[string]bool
+	restart        func()
 }
 
 func New(opts *Options) (*Server, error) {
@@ -67,18 +73,21 @@ func New(opts *Options) (*Server, error) {
 	}
 
 	return &Server{
-		store:       opts.Store,
-		broker:      opts.Broker,
-		telemetry:   opts.Telemetry,
-		token:       opts.Token,
-		version:     opts.Version,
-		depth:       opts.Depth,
-		tmpl:        tmpl,
-		startedAt:   opts.StartedAt,
-		stateDir:    opts.StateDir,
-		invocations: opts.Invocations,
-		config:      opts.Config,
-		restart:     opts.Restart,
+		store:          opts.Store,
+		broker:         opts.Broker,
+		telemetry:      opts.Telemetry,
+		detector:       opts.Detector,
+		token:          opts.Token,
+		version:        opts.Version,
+		depth:          opts.Depth,
+		tmpl:           tmpl,
+		startedAt:      opts.StartedAt,
+		stateDir:       opts.StateDir,
+		invocations:    opts.Invocations,
+		config:         opts.Config,
+		configPath:     opts.ConfigPath,
+		overriddenKeys: opts.OverriddenKeys,
+		restart:        opts.Restart,
 	}, nil
 }
 
@@ -111,11 +120,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /stats", s.handleStatsPage)
 	mux.HandleFunc("GET /fragments/sessions", s.handleSessionsFragment)
 	mux.HandleFunc("GET /fragments/stats", s.handleStatsFragment)
+	mux.HandleFunc("GET /fragments/config", s.handleConfigFragment)
 	mux.HandleFunc("GET /fragments/sessions/{id}/turns", s.handleTurnsFragment)
 	mux.HandleFunc("GET /fragments/sessions/{id}/plan", s.handlePlanFragment)
 	mux.HandleFunc("GET /fragments/sessions/{id}/diff", s.handleDiffFragment)
 	mux.HandleFunc("GET /fragments/sessions/{id}/uncommitted-diff", s.handleUncommittedDiffFragment)
 	mux.HandleFunc("GET /fragments/sessions/{id}/usage", s.handleUsageFragment)
+	mux.HandleFunc("GET /fragments/sessions/{id}/usage/cost", s.handleUsageCostFragment)
+	mux.HandleFunc("GET /fragments/sessions/{id}/usage/plans", s.handleUsagePlansFragment)
+	mux.HandleFunc("GET /fragments/sessions/{id}/usage/skills", s.handleUsageSkillsFragment)
+	mux.HandleFunc("GET /fragments/sessions/{id}/usage/denials", s.handleUsageDenialsFragment)
 	mux.HandleFunc("GET /fragments/sessions/{id}/events", s.handleEventsFragment)
 	mux.HandleFunc("GET /api/healthz", s.handleHealthz)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
@@ -128,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/usage", s.handleUsage)
 	mux.HandleFunc("GET /api/sessions/{id}/events", s.handleSessionEvents)
 	mux.HandleFunc("POST /api/restart", s.handleRestart)
+	mux.HandleFunc("POST /api/config/{key}", s.handleConfigSet)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 	mux.HandleFunc("POST /otlp/v1/metrics", s.handleOtlpMetrics)
 	return s.logRequests(s.checkHost(s.auth(mux)))

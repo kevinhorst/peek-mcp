@@ -43,6 +43,10 @@ func (s *Server) stats() statsResponse {
 	if s.invocations != nil {
 		resp.Invocations = s.invocations.Snapshot()
 	}
+	if s.detector != nil {
+		exportStatus := s.detector.Status()
+		resp.TelemetryExport = &exportStatus
+	}
 	return resp
 }
 
