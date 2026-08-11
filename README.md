@@ -1,8 +1,8 @@
 # peek-mcp
 
-A lightweight MCP server that reads Claude Code and Codex CLI sessions directly from disk and serves them over MCP — so any other model or agent can see what an agent did, live, without spending tokens on summarization or copying context by hand.
+Shared session context for AI agents. peek-mcp watches the sessions Claude Code and Codex CLI write to disk and serves them live over MCP — turns, plans, and git diffs — so agents can hand work to each other, review each other, escape full context windows, be orchestrated as a fleet, and have their history mined. No copy-paste, no summarization, no workflow change.
 
-Agents already write their sessions to disk as JSONL. peek-mcp watches those files, parses them passively, and exposes the last N turns, the plan, and the git diff to any connected client. There is nothing to push and no workflow to interrupt — a second model just calls a tool and gets the context it needs.
+Agents already write everything to disk as JSONL — peek-mcp just reads it, passively. There is nothing to push and nothing to configure in the producing agent: any connected client calls a tool and gets the context it needs.
 
 ## Use cases
 
