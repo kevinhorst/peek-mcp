@@ -11,7 +11,7 @@ import (
 
 const maxEventSummaryChars = 200
 
-type eventEntry struct {
+type EventEntry struct {
 	Actor     string            `json:"actor,omitempty"`
 	Event     session.EventKind `json:"event"`
 	Summary   string            `json:"summary,omitempty"`
@@ -55,10 +55,10 @@ func firstLine(text string) string {
 	return strings.TrimSpace(line)
 }
 
-func newEventEntries(events []*session.Event) []*eventEntry {
-	entries := make([]*eventEntry, 0, len(events))
+func NewEventEntries(events []*session.Event) []*EventEntry {
+	entries := make([]*EventEntry, 0, len(events))
 	for _, event := range events {
-		entry := &eventEntry{
+		entry := &EventEntry{
 			Actor:     event.Actor,
 			Event:     event.Kind,
 			Summary:   summarizeEvent(event),

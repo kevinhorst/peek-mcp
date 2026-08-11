@@ -12,14 +12,14 @@ type sessionDiffResult struct {
 }
 
 type sessionGetResult struct {
-	Events     []*eventEntry      `json:"events,omitempty"`
+	Events     []*EventEntry      `json:"events,omitempty"`
 	Memory     *memoryBlockResult `json:"memory,omitempty"`
 	TotalUsage *session.Usage     `json:"total_usage,omitempty"`
 	Turns      []*session.Turn    `json:"turns"`
 }
 
 type sessionLatestResult struct {
-	Events []*eventEntry   `json:"events,omitempty"`
+	Events []*EventEntry   `json:"events,omitempty"`
 	Turns  []*session.Turn `json:"turns"`
 }
 

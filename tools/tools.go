@@ -26,7 +26,14 @@ func withMaxResultSize() *mcp.Meta {
 	})
 }
 
-func Register(server *server.MCPServer, store *session.Store) {
+func counted(counter *InvocationCounter, name string, handler server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		counter.Inc(name)
+		return handler(ctx, req)
+	}
+}
+
+func Register(server *server.MCPServer, store *session.Store, counter *InvocationCounter) {
 	pageStore := &PageStore[*sessionFullResult]{
 		PagesByRequestId: make(map[string]<-chan *sessionFullResult),
 	}
@@ -60,7 +67,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 		)
 	sessionFull.Meta = withMaxResultSize()
-	server.AddTool(sessionFull, sessionFullHandler(store, pageStore))
+	server.AddTool(sessionFull, counted(counter, "session_full", sessionFullHandler(store, pageStore)))
 
 	sessionLatest := mcp.NewTool("session_latest",
 		mcp.WithDescription("Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out."),
@@ -76,7 +83,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 	)
 	sessionLatest.Meta = withMaxResultSize()
-	server.AddTool(sessionLatest, sessionLatestHandler(store))
+	server.AddTool(sessionLatest, counted(counter, "session_latest", sessionLatestHandler(store)))
 
 	sessionList :=
 		mcp.NewTool("session_list",
@@ -86,7 +93,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 		)
 	sessionList.Meta = withMaxResultSize()
-	server.AddTool(sessionList, sessionListHandler(store))
+	server.AddTool(sessionList, counted(counter, "session_list", sessionListHandler(store)))
 
 	sessionGet := mcp.NewTool("session_get",
 		mcp.WithDescription("Returns the last N turns from a specific session by ID or title."),
@@ -110,7 +117,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 	)
 	sessionGet.Meta = withMaxResultSize()
-	server.AddTool(sessionGet, sessionGetHandler(store))
+	server.AddTool(sessionGet, counted(counter, "session_get", sessionGetHandler(store)))
 
 	sessionPlan :=
 		mcp.NewTool("session_plan",
@@ -129,7 +136,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 		)
 	sessionPlan.Meta = withMaxResultSize()
-	server.AddTool(sessionPlan, sessionPlanHandler(store))
+	server.AddTool(sessionPlan, counted(counter, "session_plan", sessionPlanHandler(store)))
 
 	sessionDiff :=
 		mcp.NewTool("session_diff",
@@ -148,7 +155,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 		)
 	sessionDiff.Meta = withMaxResultSize()
-	server.AddTool(sessionDiff, sessionDiffHandler(store))
+	server.AddTool(sessionDiff, counted(counter, "session_diff", sessionDiffHandler(store)))
 
 	sessionUncommittedDiff :=
 		mcp.NewTool("session_uncommitted_diff",
@@ -167,7 +174,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 			),
 		)
 	sessionUncommittedDiff.Meta = withMaxResultSize()
-	server.AddTool(sessionUncommittedDiff, sessionUncommittedDiffHandler(store))
+	server.AddTool(sessionUncommittedDiff, counted(counter, "session_uncommitted_diff", sessionUncommittedDiffHandler(store)))
 
 	sessionEvents := mcp.NewTool("session_events",
 		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_full for those."),
@@ -191,7 +198,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 	)
 	sessionEvents.Meta = withMaxResultSize()
-	server.AddTool(sessionEvents, sessionEventsHandler(store, eventsPageStore))
+	server.AddTool(sessionEvents, counted(counter, "session_events", sessionEventsHandler(store, eventsPageStore)))
 }
 
 func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResult]) server.ToolHandlerFunc {
@@ -301,7 +308,7 @@ func sessionLatestHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		result := &sessionLatestResult{
-			Events: newEventEntries(lastSession.Events.All()),
+			Events: NewEventEntries(lastSession.Events.All()),
 			Turns:  turns,
 		}
 		return respondForRequest(request, result)
@@ -356,7 +363,7 @@ func sessionGetHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		result := &sessionGetResult{
-			Events:     newEventEntries(currentSession.Events.All()),
+			Events:     NewEventEntries(currentSession.Events.All()),
 			TotalUsage: currentSession.CurrentUsage(),
 			Turns:      turns,
 		}
@@ -601,7 +608,7 @@ func marshalPlanRevisions(currentSession *session.Session) string {
 }
 
 func marshalEventEntries(currentSession *session.Session) string {
-	entries := newEventEntries(currentSession.Events.All())
+	entries := NewEventEntries(currentSession.Events.All())
 	if len(entries) == 0 {
 		return ""
 	}
