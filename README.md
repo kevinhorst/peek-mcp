@@ -34,19 +34,22 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
 In addition to turns, peek-mcp passively watches two more sources:
 
 - **Plans** — Claude Code writes a plan file to `~/.claude/plans/` at the start of each task. peek-mcp reads and stores it alongside the session so `session_get` can surface it without any extra prompting.
-- **Git diffs** — After each new turn, peek-mcp infers the session branch's base (reflog creation point, falling back to `origin/HEAD`, then local `main`/`master`, then `HEAD`) and runs `git diff --merge-base <base>` in the session's working directory. `session_get` exposes the result via its `diff` section (`include: ["diff"]`) — no configuration needed; the resolved base is reported as `diff_target`.
+- **Git diffs** — After each new turn, peek-mcp infers the session branch's base (reflog creation point, falling back to `origin/HEAD`, then local `main`/`master`, then `HEAD`) and runs `git diff --merge-base <base>` in the session's working directory. `session_get` exposes the result via its `diff` section — no configuration needed; the resolved base is reported as `diff_target`.
 
 ## MCP Tools
 
-**`session_get`** Returns session data (turns, plan, git diff, uncommitted diff) for a session in one call. Defaults to the most recently active session when `id` and `title` are omitted. Responses are paginated: if `has_more` is true, call again with the returned `request_id` to get the next page.
+**`session_get`** Returns session data (turns, plan, git diff, uncommitted diff) for a session in one call. Defaults to the most recently active session when `id` and `title` are omitted. Sections are selected with flat boolean flags. Responses are paginated: if `has_more` is true, call again with the returned `request_id` to get the next page.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when `id` and `title` are omitted and more than one agent is enabled |
-| `n` | number | no | Number of turns to return (default 20). Only applies to the `turns` section |
-| `include` | string[] | no | Sections to return: `turns`, `plan`, `diff`, `uncommitted_diff` (default: `turns`, `plan`, `diff`). `diff` is the pre-computed merge-base diff against the inferred base branch (reported as `diff_target`); `uncommitted_diff` is the live `git diff HEAD` in the session's own working tree |
+| `n` | number | no | Number of turns to return (default 20). Only applies to the turns section |
+| `turns` | boolean | no | Return the session turns (default `true`) |
+| `plan` | boolean | no | Return the session plan (default `true`) |
+| `diff` | boolean | no | Return the pre-computed merge-base diff against the inferred base branch, reported as `diff_target` (default `true`) |
+| `uncommitted_diff` | boolean | no | Return the live `git diff HEAD` in the session's own working tree (default `false`) |
 | `request_id` | string | no | Pagination request ID from a previous response |
 
 **`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, whether a plan or diff is available, the inferred diff base (`diff_target`), and session metadata (cwd, git branch, model, origin).

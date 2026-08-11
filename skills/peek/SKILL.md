@@ -11,8 +11,8 @@ description: >
 |-------|------|-------|
 | `/peek [n]`, "what is Claude doing", "show session" | `session_get` | n defaults to 20 |
 | `/peek list` | `session_list` | shows all sessions with plan/diff flags |
-| `/peek plan` | `session_get` with `include: ["plan"]` | current plan only |
-| `/peek diff` | `session_get` with `include: ["diff"]` | git diff only |
+| `/peek plan` | `session_get` with `turns: false, diff: false` | current plan only |
+| `/peek diff` | `session_get` with `turns: false, plan: false` | git diff only |
 | `/peek <id>` or `/peek <id> [n]` | `session_get` with `id` param | specific session by ID |
 | `/peek <title>` or `/peek <title> [n]` | `session_get` with `title` param | exact title match (case-insensitive) |
 
