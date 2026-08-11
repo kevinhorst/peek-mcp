@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/codex"
+	"github.com/kevinhorst/peek-mcp/config"
 	"github.com/kevinhorst/peek-mcp/control"
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
@@ -37,6 +39,14 @@ var startCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		startedAt := time.Now()
 		applyEnvFallbacks(cmd)
+		overriddenKeys := changedConfigKeys(cmd)
+		configPath := config.DefaultPath()
+		configFile, err := config.Load(configPath)
+		if err != nil {
+			slog.Warn("start: Ignoring invalid config file", "path", configPath, "err", err)
+			configFile = &config.File{}
+		}
+		applyConfigFileFallbacks(cmd, configFile)
 		warnMaxOutputTokens()
 		flags := cmd.Flags()
 		logLevel, _ := flags.GetString("log-level")
@@ -143,19 +153,35 @@ var startCmd = &cobra.Command{
 			server.WithResourceCapabilities(false, true),
 		)
 		invocations := tools.NewInvocationCounter()
-		tools.Register(srv, store, invocations, telemetryStore)
 
+		var detector *telemetry.Detector
 		if controlPort > 0 {
+			controlLn, err := listenLoopback(controlPort, controlPort+controlPortSpan-1)
+			if err != nil {
+				slog.Error("control server error", "err", err)
+				os.Exit(1)
+			}
+
+			boundPort := controlLn.Addr().(*net.TCPAddr).Port
+			if claudeHome != "" {
+				detector = telemetry.NewDetector(boundPort, filepath.Join(claudeHome, "settings.json"))
+				exportStatus := detector.Status()
+				slog.Info("telemetry export", "status", exportStatus.State, "detail", exportStatus.Detail)
+			}
+
 			controlOpts := &control.Options{
-				Store:       store,
-				Broker:      broker,
-				Telemetry:   telemetryStore,
-				Token:       controlToken,
-				Version:     Version(),
-				Depth:       depth,
-				StartedAt:   startedAt,
-				StateDir:    stateDir,
-				Invocations: invocations,
+				Store:          store,
+				Broker:         broker,
+				Telemetry:      telemetryStore,
+				Detector:       detector,
+				Token:          controlToken,
+				Version:        Version(),
+				Depth:          depth,
+				StartedAt:      startedAt,
+				StateDir:       stateDir,
+				Invocations:    invocations,
+				ConfigPath:     configPath,
+				OverriddenKeys: overriddenKeys,
 				Config: control.Config{
 					Transport:          transport,
 					Port:               port,
@@ -166,7 +192,7 @@ var startCmd = &cobra.Command{
 					PollWindow:         pollWindow.String(),
 					StateDir:           stateDirPath,
 					StateRetentionDays: stateRetentionDays,
-					ControlPort:        controlPort,
+					ControlPort:        boundPort,
 					TokenSet:           controlToken != "",
 					LogLevel:           logLevel,
 				},
@@ -189,12 +215,6 @@ var startCmd = &cobra.Command{
 				os.Exit(1)
 			}
 
-			controlLn, err := listenLoopback(controlPort, controlPort+controlPortSpan-1)
-			if err != nil {
-				slog.Error("control server error", "err", err)
-				os.Exit(1)
-			}
-
 			controlHTTP := &http.Server{Handler: controlServer.Handler()}
 			go func() {
 				<-ctx.Done()
@@ -208,6 +228,8 @@ var startCmd = &cobra.Command{
 				}
 			}()
 		}
+
+		tools.Register(srv, store, invocations, telemetryStore, detector)
 
 		switch transport {
 		case "stdio":
@@ -353,6 +375,22 @@ func applyEnvFallbacks(cmd *cobra.Command) {
 			cmd.Flags().Set(flag, expanded)
 		}
 	}
+}
+
+func applyConfigFileFallbacks(cmd *cobra.Command, file *config.File) {
+	for flag, value := range file.FlagValues() {
+		if !cmd.Flags().Changed(flag) {
+			cmd.Flags().Set(flag, value)
+		}
+	}
+}
+
+func changedConfigKeys(cmd *cobra.Command) map[string]bool {
+	changed := make(map[string]bool)
+	for _, key := range config.EditableKeys {
+		changed[key] = cmd.Flags().Changed(key)
+	}
+	return changed
 }
 
 func defaultHome(name string) string {

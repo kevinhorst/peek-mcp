@@ -170,8 +170,15 @@ func setupClaudeCode(p *prompter, controlServer bool) error {
 	return nil
 }
 
-func setupTelemetry(p *prompter, _ bool) error {
+const defaultMetricExportIntervalMs = "10000"
+
+func setupTelemetry(p *prompter, controlServer bool) error {
 	fmt.Println("Enabling Claude Code telemetry export to peek-mcp...")
+
+	if !controlServer {
+		fmt.Println("  Telemetry export stays disabled because the control server is disabled.")
+		return nil
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -195,31 +202,19 @@ func setupTelemetry(p *prompter, _ bool) error {
 	if env == nil {
 		env = map[string]any{}
 	}
-	if _, exists := env["CLAUDE_CODE_ENABLE_TELEMETRY"]; exists {
-		if !p.Confirm("  Telemetry is already configured. Overwrite?", false) {
-			fmt.Println("  Skipped.")
-			return nil
-		}
+	if !p.Confirm("  Enable telemetry export to peek?", true) {
+		fmt.Println("  Skipped.")
+		return nil
 	}
-
-	port := p.Ask("  Control server port", strconv.Itoa(controlPortBase))
-	token := p.Ask("  Control server token (empty for none)", "")
 
 	env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "1"
 	env["OTEL_METRICS_EXPORTER"] = "otlp"
 	env["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/json"
-	env["OTEL_EXPORTER_OTLP_ENDPOINT"] = fmt.Sprintf("http://127.0.0.1:%s/otlp", port)
-	if token != "" {
-		env["OTEL_EXPORTER_OTLP_HEADERS"] = "Authorization=Bearer " + token
-	} else {
-		delete(env, "OTEL_EXPORTER_OTLP_HEADERS")
-	}
+	env["OTEL_EXPORTER_OTLP_ENDPOINT"] = fmt.Sprintf("http://127.0.0.1:%d/otlp", controlPortBase)
+	env["OTEL_METRIC_EXPORT_INTERVAL"] = defaultMetricExportIntervalMs
+	delete(env, "OTEL_EXPORTER_OTLP_HEADERS")
 	cfg["env"] = env
 
-	if !p.Confirm("  Write telemetry config?", true) {
-		fmt.Println("  Skipped.")
-		return nil
-	}
 	if err := writeConfig(path, cfg); err != nil {
 		return err
 	}

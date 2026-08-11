@@ -1,0 +1,86 @@
+package cmd
+
+import (
+	"testing"
+	"time"
+
+	"github.com/kevinhorst/peek-mcp/config"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func newConfigFlagCommand() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Flags().Int("depth", 20, "")
+	cmd.Flags().Duration("poll-interval", time.Second*5, "")
+	cmd.Flags().Duration("poll-window", time.Hour, "")
+	cmd.Flags().Int("state-retention-days", 90, "")
+	cmd.Flags().String("log-level", "info", "")
+	return cmd
+}
+
+func TestApplyConfigFileFallbacks(t *testing.T) {
+	// flag-beats-file
+	t.Run("flag-beats-file", func(t *testing.T) {
+		cmd := newConfigFlagCommand()
+		require.NoError(t, cmd.Flags().Set("depth", "30"))
+		file := &config.File{}
+		require.NoError(t, file.Set(config.KeyDepth, "50"))
+
+		applyConfigFileFallbacks(cmd, file)
+
+		depth, _ := cmd.Flags().GetInt("depth")
+		assert.Equal(t, 30, depth)
+	})
+
+	// env-marked-changed-beats-file
+	t.Run("env-marked-changed-beats-file", func(t *testing.T) {
+		cmd := newConfigFlagCommand()
+		require.NoError(t, cmd.Flags().Set("log-level", "warn"))
+		file := &config.File{}
+		require.NoError(t, file.Set(config.KeyLogLevel, "debug"))
+
+		applyConfigFileFallbacks(cmd, file)
+
+		level, _ := cmd.Flags().GetString("log-level")
+		assert.Equal(t, "warn", level)
+	})
+
+	// file-beats-default
+	t.Run("file-beats-default", func(t *testing.T) {
+		cmd := newConfigFlagCommand()
+		file := &config.File{}
+		require.NoError(t, file.Set(config.KeyDepth, "50"))
+		require.NoError(t, file.Set(config.KeyPollInterval, "10s"))
+
+		applyConfigFileFallbacks(cmd, file)
+
+		depth, _ := cmd.Flags().GetInt("depth")
+		interval, _ := cmd.Flags().GetDuration("poll-interval")
+		assert.Equal(t, 50, depth)
+		assert.Equal(t, 10*time.Second, interval)
+	})
+
+	// empty-file-keeps-defaults
+	t.Run("empty-file-keeps-defaults", func(t *testing.T) {
+		cmd := newConfigFlagCommand()
+
+		applyConfigFileFallbacks(cmd, &config.File{})
+
+		depth, _ := cmd.Flags().GetInt("depth")
+		level, _ := cmd.Flags().GetString("log-level")
+		assert.Equal(t, 20, depth)
+		assert.Equal(t, "info", level)
+	})
+}
+
+func TestChangedConfigKeys(t *testing.T) {
+	cmd := newConfigFlagCommand()
+	require.NoError(t, cmd.Flags().Set("depth", "30"))
+
+	changed := changedConfigKeys(cmd)
+
+	assert.True(t, changed[config.KeyDepth])
+	assert.False(t, changed[config.KeyLogLevel])
+}
