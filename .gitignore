@@ -3,6 +3,7 @@
 **/.idea/**
 
 .claude/**
+.claude-worktree
 .codex/**
 .serena/**
 
