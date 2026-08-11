@@ -10,6 +10,7 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/telemetry"
 )
 
 //go:embed templates/*.html
@@ -19,16 +20,18 @@ var templateFS embed.FS
 var assetsFS embed.FS
 
 type Options struct {
-	Store   *session.Store
-	Broker  *events.Broker
-	Token   string
-	Version string
-	Depth   int
+	Store     *session.Store
+	Broker    *events.Broker
+	Telemetry *telemetry.Store
+	Token     string
+	Version   string
+	Depth     int
 }
 
 type Server struct {
 	store      *session.Store
 	broker     *events.Broker
+	telemetry  *telemetry.Store
 	token      string
 	version    string
 	depth      int
@@ -50,12 +53,13 @@ func New(opts *Options) (*Server, error) {
 	}
 
 	return &Server{
-		store:   opts.Store,
-		broker:  opts.Broker,
-		token:   opts.Token,
-		version: opts.Version,
-		depth:   opts.Depth,
-		tmpl:    tmpl,
+		store:     opts.Store,
+		broker:    opts.Broker,
+		telemetry: opts.Telemetry,
+		token:     opts.Token,
+		version:   opts.Version,
+		depth:     opts.Depth,
+		tmpl:      tmpl,
 	}, nil
 }
 
@@ -86,5 +90,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/uncommitted-diff", s.handleUncommittedDiff)
 	mux.HandleFunc("GET /api/sessions/{id}/usage", s.handleUsage)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
+	mux.HandleFunc("POST /otlp/v1/metrics", s.handleOtlpMetrics)
 	return s.logRequests(s.checkHost(s.auth(mux)))
 }
