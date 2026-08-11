@@ -66,32 +66,33 @@ func NewPageBuilder(size int) *PageBuilder {
 	return &PageBuilder{Size: size}
 }
 
-func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *sessionFullResult, next []*sessionFullResult) {
+func (b *PageBuilder) build(diff, events, memory, plan, turns, uncommittedDiff string) (first *sessionGetResult, next []*sessionGetResult) {
 	// Check if everything fits in a single page
-	contentSize := len(turns) + len(events) + len(plan) + len(diff) + len(memory)
+	contentSize := len(turns) + len(events) + len(plan) + len(diff) + len(uncommittedDiff) + len(memory)
 	if b.Size <= 0 || contentSize <= b.Size {
 		slog.Info("PageBuilder.build: fits in a single page", "size", contentSize, "page_size", b.Size)
-		first = &sessionFullResult{
-			Diff:   diff,
-			Events: events,
-			Memory: memory,
-			Plan:   plan,
-			Turns:  turns,
+		first = &sessionGetResult{
+			Diff:            diff,
+			Events:          events,
+			Memory:          memory,
+			Plan:            plan,
+			Turns:           turns,
+			UncommittedDiff: uncommittedDiff,
 		}
 		return first, nil
 	}
 
 	// Check how many pages we need to build, round up
 	pageCount := math.Ceil(float64(contentSize) / float64(b.Size))
-	pages := make([]*sessionFullResult, int(pageCount))
+	pages := make([]*sessionGetResult, int(pageCount))
 	slog.Info("PageBuilder.build: building", "pageCount", pageCount, "size", b.Size)
 
 	for pageIndex := 0; pageIndex < int(pageCount); pageIndex++ {
-		page := &sessionFullResult{}
+		page := &sessionGetResult{}
 		pages[pageIndex] = page
 		size := b.Size
 
-		// drain turns, events, plan, diff, and memory into pages by priority
+		// drain turns, events, plan, diff, uncommitted diff, and memory into pages by priority
 		turnChunk := UTF8SafeSlice(turns, size)
 		page.Turns = turnChunk
 		turns = turns[len(turnChunk):]
@@ -123,6 +124,14 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns string) (first *se
 			continue
 		}
 		size = size - len(diffChunk)
+
+		uncommittedChunk := UTF8SafeSlice(uncommittedDiff, size)
+		page.UncommittedDiff = uncommittedChunk
+		uncommittedDiff = uncommittedDiff[len(uncommittedChunk):]
+		if len(uncommittedChunk) == size {
+			continue
+		}
+		size = size - len(uncommittedChunk)
 
 		memoryChunk := UTF8SafeSlice(memory, size)
 		page.Memory = memoryChunk

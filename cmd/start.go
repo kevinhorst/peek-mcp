@@ -182,15 +182,20 @@ var startCmd = &cobra.Command{
 				os.Exit(1)
 			}
 
-			controlAddr := fmt.Sprintf("127.0.0.1:%d", controlPort)
-			controlHTTP := &http.Server{Addr: controlAddr, Handler: controlServer.Handler()}
+			controlLn, err := listenLoopback(controlPort, controlPort+controlPortSpan-1)
+			if err != nil {
+				slog.Error("control server error", "err", err)
+				os.Exit(1)
+			}
+
+			controlHTTP := &http.Server{Handler: controlServer.Handler()}
 			go func() {
 				<-ctx.Done()
 				controlHTTP.Shutdown(context.Background())
 			}()
 			go func() {
-				slog.Info("control server listening", "addr", "http://"+controlAddr)
-				if err := controlHTTP.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				slog.Info("control server listening", "addr", "http://"+controlLn.Addr().String())
+				if err := controlHTTP.Serve(controlLn); !errors.Is(err, http.ErrServerClosed) {
 					slog.Error("control server error", "err", err)
 					os.Exit(1)
 				}
@@ -241,7 +246,7 @@ func init() {
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("state-dir", filepath.Join(defaultHome(".peek"), "state"), "State directory for diff pins/snapshots and plan revisions (empty disables persistence)")
 	flags.Int("state-retention-days", 90, "Days to keep per-session state before GC removes it (0 disables GC)")
-	flags.Int("control-port", 42422, "Control server port (dashboard + JSON API + SSE); 0 disables")
+	flags.Int("control-port", controlPortBase, "Control server start port; walks up to +57 if taken (dashboard + JSON API + SSE); 0 disables")
 	flags.String("control-token", "", "Optional bearer token protecting the control server")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 

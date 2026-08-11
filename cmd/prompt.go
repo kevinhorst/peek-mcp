@@ -12,13 +12,21 @@ import (
 type prompter struct {
 	scanner *bufio.Scanner
 	out     io.Writer
+	auto    bool
 }
 
 func newPrompter() *prompter {
 	return &prompter{scanner: bufio.NewScanner(os.Stdin), out: os.Stdout}
 }
 
+func autoPrompter() *prompter {
+	return &prompter{auto: true, out: os.Stdout}
+}
+
 func (p *prompter) Confirm(question string, defaultYes bool) bool {
+	if p.auto {
+		return true
+	}
 	hint := "y/N"
 	if defaultYes {
 		hint = "Y/n"
@@ -38,6 +46,9 @@ func (p *prompter) Confirm(question string, defaultYes bool) bool {
 }
 
 func (p *prompter) Choose(question string, options []string, defaultIdx int) int {
+	if p.auto {
+		return defaultIdx
+	}
 	fmt.Fprintln(p.out, question)
 	for i, opt := range options {
 		fmt.Fprintf(p.out, "  [%d] %s\n", i+1, opt)

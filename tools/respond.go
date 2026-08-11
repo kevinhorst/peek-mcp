@@ -14,20 +14,13 @@ const (
 )
 
 func respond(ctx context.Context, request mcp.CallToolRequest, response any) (*mcp.CallToolResult, error) {
-	if boolArgFromRequest("json", request) {
+	if boolArgFromRequest(request, "json", false) {
 		return respondWithStructured(response)
 	}
 	if isClaude(ctx) {
 		return respondWithText(response)
 	}
 	return respondWithStructured(response)
-}
-
-func respondForRequest(request mcp.CallToolRequest, response any) (*mcp.CallToolResult, error) {
-	if boolArgFromRequest("json", request) {
-		return respondWithStructured(response)
-	}
-	return respondWithText(response)
 }
 
 func respondWithStructured(response any) (*mcp.CallToolResult, error) {

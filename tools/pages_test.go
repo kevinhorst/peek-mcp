@@ -14,7 +14,7 @@ func TestBuild(t *testing.T) {
 	// single-page-all-segments
 	t.Run("single-page-all-segments", func(t *testing.T) {
 		b := NewPageBuilder(1000)
-		first, next := b.build("d", "e", "m", "p", "t")
+		first, next := b.build("d", "e", "m", "p", "t", "u")
 
 		assert.Nil(t, next)
 		assert.Equal(t, "t", first.Turns)
@@ -22,12 +22,13 @@ func TestBuild(t *testing.T) {
 		assert.Equal(t, "m", first.Memory)
 		assert.Equal(t, "p", first.Plan)
 		assert.Equal(t, "d", first.Diff)
+		assert.Equal(t, "u", first.UncommittedDiff)
 	})
 
 	// turns-before-events-before-plan
 	t.Run("turns-before-events-before-plan", func(t *testing.T) {
 		b := NewPageBuilder(5)
-		first, next := b.build("", "BBBBB", "", "", "AAAAA")
+		first, next := b.build("", "BBBBB", "", "", "AAAAA", "")
 
 		assert.Equal(t, "AAAAA", first.Turns)
 		assert.Empty(t, first.Events)
@@ -35,10 +36,37 @@ func TestBuild(t *testing.T) {
 		assert.Equal(t, "BBBBB", next[0].Events)
 	})
 
+	// drain-order-all-sections
+	t.Run("drain-order-all-sections", func(t *testing.T) {
+		b := NewPageBuilder(4)
+		first, next := b.build("dddd", "eeee", "mmmm", "pppp", "tttt", "uuuu")
+
+		pages := append([]*sessionGetResult{first}, next...)
+		require.Len(t, pages, 6)
+		assert.Equal(t, "tttt", pages[0].Turns)
+		assert.Equal(t, "eeee", pages[1].Events)
+		assert.Equal(t, "pppp", pages[2].Plan)
+		assert.Equal(t, "dddd", pages[3].Diff)
+		assert.Equal(t, "uuuu", pages[4].UncommittedDiff)
+		assert.Equal(t, "mmmm", pages[5].Memory)
+	})
+
+	// uncommitted-diff-before-memory
+	t.Run("uncommitted-diff-before-memory", func(t *testing.T) {
+		b := NewPageBuilder(6)
+		first, next := b.build("dddd", "", "mm", "", "", "uu")
+
+		pages := append([]*sessionGetResult{first}, next...)
+		require.Len(t, pages, 2)
+		assert.Equal(t, "dddd", pages[0].Diff)
+		assert.Equal(t, "uu", pages[0].UncommittedDiff)
+		assert.Equal(t, "mm", pages[1].Memory)
+	})
+
 	// memory-drains-last
 	t.Run("memory-drains-last", func(t *testing.T) {
 		b := NewPageBuilder(3)
-		first, next := b.build("", "", "MMMM", "", "TT")
+		first, next := b.build("", "", "MMMM", "", "TT", "")
 
 		assert.Equal(t, "TT", first.Turns)
 		assert.Equal(t, "M", first.Memory)
@@ -50,7 +78,7 @@ func TestBuild(t *testing.T) {
 	t.Run("utf8-boundary-respected", func(t *testing.T) {
 		turns := strings.Repeat("é", 10) // 20 bytes
 		b := NewPageBuilder(5)
-		first, next := b.build("", "", "", "", turns)
+		first, next := b.build("", "", "", "", turns, "")
 
 		assert.True(t, utf8.ValidString(first.Turns))
 		for _, page := range next {
