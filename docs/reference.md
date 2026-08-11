@@ -1,0 +1,125 @@
+[← peek-mcp](../README.md)
+
+# Operations reference
+
+Flags, environment variables, the control server, hot reload, the Claude Desktop bundle, and platform notes.
+
+## Flags
+
+```bash
+peek-mcp start --port 4242 --depth 20
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--transport` | `http` | Transport: `http` or `stdio` |
+| `--port` | `4242` | HTTP port (http transport only) |
+| `--depth` | `20` | Ring buffer depth per session (max turns kept) |
+| `--claude-home` | `~/.claude` | Override Claude Code session root |
+| `--codex-home` | `~/.codex` | Override Codex session root |
+| `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
+| `--poll-window` | `1h` | Only poll repos whose session was active within this window |
+| `--control-port` | `42442` | Control server start port; walks up to `42499` if taken (dashboard + JSON API + SSE); `0` disables |
+| `--control-token` | — | Optional bearer token protecting the control server |
+
+## Environment variables
+
+Every flag has a corresponding environment variable that is used when the flag is not explicitly set. This is useful for the Claude Desktop `.mcpb` bundle where flags cannot be changed at runtime.
+
+| Variable | Flag |
+|----------|------|
+| `PEEK_TRANSPORT` | `--transport` |
+| `PEEK_PORT` | `--port` |
+| `PEEK_DEPTH` | `--depth` |
+| `PEEK_CLAUDE_HOME` | `--claude-home` |
+| `PEEK_CODEX_HOME` | `--codex-home` |
+| `PEEK_POLL_INTERVAL` | `--poll-interval` |
+| `PEEK_POLL_WINDOW` | `--poll-window` |
+| `PEEK_CONTROL_PORT` | `--control-port` |
+| `PEEK_CONTROL_TOKEN` | `--control-token` |
+| `PEEK_LOG_LEVEL` | `--log-level` |
+
+## Control server (dashboard + JSON API)
+
+```bash
+peek-mcp start --control-port 42442
+```
+
+Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns, plan, and diffs update as agents work. If the start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. The same data is scriptable as JSON:
+
+```bash
+curl -s http://127.0.0.1:42442/api/sessions | jq
+curl -s "http://127.0.0.1:42442/api/sessions/<id>/diff?size=0" | jq -r .diff
+curl -N http://127.0.0.1:42442/api/events
+```
+
+The server is read-only, binds to loopback only, rejects non-local `Host` headers, and sends no CORS headers. With `--control-token <t>`, requests need `Authorization: Bearer <t>` — or open `http://127.0.0.1:42442/?token=<t>` once in the browser to set a session cookie.
+
+## Hot reload (live diff)
+
+To keep Claude Code grounded in your current work as you edit — a "hot reload" — peek-mcp keeps an up-to-date `git diff HEAD` for each active repo and writes it to `<gitDir>/peek-diff` (inside `.git/`, so it is never committed and resolves correctly inside linked worktrees). A `UserPromptSubmit` hook then injects that diff into context on every prompt. The hook needs only `git` and `cat` — no peek binary on `PATH`, no server call — so it works under both the HTTP and `.mcpb` deployments.
+
+Merge `hooks/settings.snippet.json` into your project `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "cat \"$(git rev-parse --git-path peek-diff)\" 2>/dev/null" } ] }
+    ]
+  }
+}
+```
+
+On Windows the hook works unchanged: Claude Code on Windows requires Git for Windows and runs hooks through its bash.
+
+## Installing in Claude Desktop (.mcpb)
+
+For one-click install on macOS — useful for distributing peek-mcp inside an organisation — peek-mcp ships as an [MCP Bundle](https://github.com/modelcontextprotocol/mcpb). The bundle is a self-contained `.mcpb` file with a universal (arm64 + amd64) macOS binary inside.
+
+Build the bundle (requires macOS, since it uses `lipo` to fuse architectures):
+
+```bash
+make build-mcpb
+# → dist/peek-mcp.mcpb
+```
+
+Install:
+
+1. Open Claude Desktop → **Settings → Extensions**.
+2. Click **Advanced settings**, find the **Extension Developer** section, click **Install Extension…**.
+3. Pick `dist/peek-mcp.mcpb` and follow the prompts. The configuration UI exposes ring-buffer depth, the Claude / Codex session roots, and the diff target branch.
+
+When launched this way, Claude Desktop runs `peek-mcp start --transport=stdio` directly — no HTTP server, no port to manage.
+
+If macOS Gatekeeper quarantines the unsigned binary on first run:
+
+```bash
+xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/peek-mcp
+```
+
+## Windows
+
+Download `peek-mcp-windows-amd64.exe` (or `-arm64.exe`) from the
+[latest release](https://github.com/kevinhorst/peek-mcp/releases/latest),
+rename it to `peek-mcp.exe`, and place it on your `PATH`.
+
+The binary is unsigned; on first run SmartScreen may warn. Choose
+**More info → Run anyway**, or unblock it in PowerShell:
+
+```powershell
+Unblock-File peek-mcp.exe
+```
+
+## Limitations
+
+- `session_diff` requires a local `git` binary (≥ 2.30, for `git diff --merge-base`) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository.
+- Codex CLI sessions do not currently expose token usage metadata.
+- The stdio transport is intended for Claude Desktop use via `.mcpb`. Running it manually requires the client to manage the process lifecycle.
+
+## Requirements
+
+- Go 1.26+
+- macOS, Linux, or Windows
+- Claude Code and/or Codex CLI installed (peek-mcp reads their output; it does not depend on them at runtime)
