@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"log/slog"
 	"math"
 	"sync"
@@ -145,8 +144,8 @@ func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEvent
 	contentSize := len(events) + len(revisions)
 	if b.Size <= 0 || contentSize <= b.Size {
 		first = &sessionEventsResult{
-			Events:    rawJsonSegment(events),
-			Revisions: rawJsonSegment(revisions),
+			Events:    events,
+			Revisions: revisions,
 		}
 		return first, nil
 	}
@@ -161,7 +160,7 @@ func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEvent
 		size := b.Size
 
 		eventChunk := UTF8SafeSlice(events, size)
-		page.Events = rawJsonSegment(eventChunk)
+		page.Events = eventChunk
 		events = events[len(eventChunk):]
 		if len(eventChunk) == size {
 			continue
@@ -169,26 +168,11 @@ func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEvent
 		size = size - len(eventChunk)
 
 		revisionChunk := UTF8SafeSlice(revisions, size)
-		page.Revisions = rawJsonSegment(revisionChunk)
+		page.Revisions = revisionChunk
 		revisions = revisions[len(revisionChunk):]
 	}
 
 	return pages[0], pages[1:]
-}
-
-func rawJsonSegment(segment string) json.RawMessage {
-	if segment == "" {
-		return nil
-	}
-	if json.Valid([]byte(segment)) {
-		return json.RawMessage(segment)
-	}
-
-	quoted, err := json.Marshal(segment)
-	if err != nil {
-		return nil
-	}
-	return quoted
 }
 
 func UTF8SafeSlice(s string, maxBytes int) string {

@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -88,14 +87,14 @@ func TestBuild(t *testing.T) {
 }
 
 func TestBuildEvents(t *testing.T) {
-	// single-page-complete-segments-raw-json
-	t.Run("single-page-complete-segments-raw-json", func(t *testing.T) {
+	// single-page-complete-strings
+	t.Run("single-page-complete-strings", func(t *testing.T) {
 		b := NewPageBuilder(1000)
 		first, next := b.buildEvents(`[{"kind":"skill_invoked"}]`, `[{"index":1}]`)
 
 		assert.Nil(t, next)
-		assert.Equal(t, `[{"kind":"skill_invoked"}]`, string(first.Events))
-		assert.Equal(t, `[{"index":1}]`, string(first.Revisions))
+		assert.Equal(t, `[{"kind":"skill_invoked"}]`, first.Events)
+		assert.Equal(t, `[{"index":1}]`, first.Revisions)
 	})
 
 	// events-before-revisions
@@ -103,20 +102,24 @@ func TestBuildEvents(t *testing.T) {
 		b := NewPageBuilder(5)
 		first, next := b.buildEvents("AAAAA", "BBBBB")
 
-		assert.Equal(t, `"AAAAA"`, string(first.Events))
+		assert.Equal(t, "AAAAA", first.Events)
 		assert.Empty(t, first.Revisions)
 		require.Len(t, next, 1)
-		assert.Equal(t, `"BBBBB"`, string(next[0].Revisions))
+		assert.Equal(t, "BBBBB", next[0].Revisions)
 	})
 
-	// fragments-ride-as-quoted-strings
-	t.Run("fragments-ride-as-quoted-strings", func(t *testing.T) {
+	// chunks-reassemble-to-original
+	t.Run("chunks-reassemble-to-original", func(t *testing.T) {
+		events := `[{"kind":"plan_rejected"}]`
 		b := NewPageBuilder(10)
-		first, next := b.buildEvents(`[{"kind":"plan_rejected"}]`, "")
+		first, next := b.buildEvents(events, "")
 
 		require.Len(t, next, 2)
-		assert.Equal(t, `"[{\"kind\":\""`, string(first.Events))
-		assert.False(t, json.Valid([]byte(`[{"kind":"`)))
+		reassembled := first.Events
+		for _, page := range next {
+			reassembled += page.Events
+		}
+		assert.Equal(t, events, reassembled)
 	})
 
 	// revisions-fill-remaining-space
@@ -124,10 +127,10 @@ func TestBuildEvents(t *testing.T) {
 		b := NewPageBuilder(3)
 		first, next := b.buildEvents("EE", "RRRR")
 
-		assert.Equal(t, `"EE"`, string(first.Events))
-		assert.Equal(t, `"R"`, string(first.Revisions))
+		assert.Equal(t, "EE", first.Events)
+		assert.Equal(t, "R", first.Revisions)
 		require.Len(t, next, 1)
-		assert.Equal(t, `"RRR"`, string(next[0].Revisions))
+		assert.Equal(t, "RRR", next[0].Revisions)
 	})
 
 	// utf8-boundary-respected
@@ -136,9 +139,9 @@ func TestBuildEvents(t *testing.T) {
 		b := NewPageBuilder(5)
 		first, next := b.buildEvents(events, "")
 
-		assert.True(t, utf8.Valid(first.Events))
+		assert.True(t, utf8.ValidString(first.Events))
 		for _, page := range next {
-			assert.True(t, utf8.Valid(page.Events))
+			assert.True(t, utf8.ValidString(page.Events))
 		}
 	})
 }

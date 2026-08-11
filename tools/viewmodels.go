@@ -19,8 +19,8 @@ type sessionGetResult struct {
 
 type sessionGetResultPage struct {
 	*sessionGetResult
-	RequestId string `json:"request_id,omitempty"`
 	HasMore   bool   `json:"has_more"`
+	RequestId string `json:"request_id,omitempty"`
 }
 
 func newSessionGetResultPage(result *sessionGetResult) *sessionGetResultPage {

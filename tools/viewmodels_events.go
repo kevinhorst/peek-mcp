@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,9 +40,9 @@ type sessionTimeView struct {
 type sessionEventsResult struct {
 	Counters      *session.Counters   `json:"counters,omitempty"`
 	Diff          string              `json:"diff,omitempty"`
-	Events        json.RawMessage     `json:"events,omitempty"`
+	Events        string              `json:"events,omitempty"`
 	PlanRevisions *planRevisionsView  `json:"plan_revisions,omitempty"`
-	Revisions     json.RawMessage     `json:"revisions,omitempty"`
+	Revisions     string              `json:"revisions,omitempty"`
 	Skills        []*skillStatView    `json:"skills,omitempty"`
 	Subagents     []*subagentStatView `json:"subagents,omitempty"`
 	Time          *sessionTimeView    `json:"time,omitempty"`
@@ -89,8 +88,8 @@ func newSessionTimeView(currentSession *session.Session) *sessionTimeView {
 
 type sessionEventsResultPage struct {
 	*sessionEventsResult
-	RequestId string `json:"request_id,omitempty"`
 	HasMore   bool   `json:"has_more"`
+	RequestId string `json:"request_id,omitempty"`
 }
 
 func newSessionEventsResultPage(result *sessionEventsResult) *sessionEventsResultPage {
