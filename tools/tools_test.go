@@ -67,7 +67,7 @@ func errorText(t *testing.T, result *mcp.CallToolResult) string {
 	return text.Text
 }
 
-func TestSessionGet_DefaultIncludes(t *testing.T) {
+func TestSessionGet_Defaults(t *testing.T) {
 	store := provideToolStore()
 	handler := sessionGetHandler(store, providePageStore())
 
@@ -83,13 +83,14 @@ func TestSessionGet_DefaultIncludes(t *testing.T) {
 	assert.Equal(t, false, payload["has_more"])
 }
 
-func TestSessionGet_IncludePlanOnly(t *testing.T) {
+func TestSessionGet_PlanOnly(t *testing.T) {
 	store := provideToolStore()
 	handler := sessionGetHandler(store, providePageStore())
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{
-		"agent":   "claude",
-		"include": []any{"plan"},
+		"agent": "claude",
+		"turns": false,
+		"diff":  false,
 	}))
 
 	assert.NoError(t, err)
@@ -100,13 +101,16 @@ func TestSessionGet_IncludePlanOnly(t *testing.T) {
 	assert.NotContains(t, payload, "diff_target")
 }
 
-func TestSessionGet_IncludeUncommittedDiff(t *testing.T) {
+func TestSessionGet_UncommittedDiff(t *testing.T) {
 	store := provideToolStore()
 	handler := sessionGetHandler(store, providePageStore())
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{
-		"agent":   "claude",
-		"include": []any{"uncommitted_diff"},
+		"agent":            "claude",
+		"turns":            false,
+		"plan":             false,
+		"diff":             false,
+		"uncommitted_diff": true,
 	}))
 
 	assert.NoError(t, err)
@@ -115,19 +119,6 @@ func TestSessionGet_IncludeUncommittedDiff(t *testing.T) {
 	assert.NotContains(t, payload, "turns")
 	assert.NotContains(t, payload, "plan")
 	assert.NotContains(t, payload, "diff")
-}
-
-func TestSessionGet_InvalidInclude(t *testing.T) {
-	store := provideToolStore()
-	handler := sessionGetHandler(store, providePageStore())
-
-	result, err := handler(context.Background(), requestWithArgs(map[string]any{
-		"agent":   "claude",
-		"include": []any{"bogus"},
-	}))
-
-	assert.NoError(t, err)
-	assert.Contains(t, errorText(t, result), "valid values are turns, plan, diff, uncommitted_diff")
 }
 
 func TestSessionGet_ById(t *testing.T) {
@@ -191,9 +182,10 @@ func TestSessionGet_TurnCount(t *testing.T) {
 	handler := sessionGetHandler(store, providePageStore())
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{
-		"id":      "s1",
-		"n":       float64(1),
-		"include": []any{"turns"},
+		"id":   "s1",
+		"n":    float64(1),
+		"plan": false,
+		"diff": false,
 	}))
 
 	assert.NoError(t, err)
@@ -211,8 +203,9 @@ func TestSessionGet_Pagination(t *testing.T) {
 	handler := sessionGetHandler(store, pageStore)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{
-		"id":      "s1",
-		"include": []any{"diff"},
+		"id":    "s1",
+		"turns": false,
+		"plan":  false,
 	}))
 
 	assert.NoError(t, err)

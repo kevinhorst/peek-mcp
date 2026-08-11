@@ -24,6 +24,15 @@ func intArgFromRequest(request mcp.CallToolRequest, name string) int {
 	return int(floatVal)
 }
 
+func boolArgFromRequest(request mcp.CallToolRequest, name string, fallback bool) bool {
+	value, ok := request.GetArguments()[name].(bool)
+	if !ok {
+		return fallback
+	}
+
+	return value
+}
+
 func clientNameFromRequest(ctx context.Context) string {
 	s := server.ClientSessionFromContext(ctx)
 	if s == nil {

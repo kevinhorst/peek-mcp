@@ -30,7 +30,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 	}
 
 	sessionGet := mcp.NewTool("session_get",
-		mcp.WithDescription("Returns session data (turns, plan, git diff, uncommitted diff) for a session. Defaults to the most recently active session when id and title are omitted. Select sections with include (default: turns, plan, diff). Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
+		mcp.WithDescription("Returns session data (turns, plan, git diff, uncommitted diff) for a session. Defaults to the most recently active session when id and title are omitted. Select sections with the turns/plan/diff/uncommitted_diff flags. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
 		mcp.WithString("id",
 			mcp.Description("Session ID (omit for most recent session)"),
 		),
@@ -43,9 +43,17 @@ func Register(server *server.MCPServer, store *session.Store) {
 		mcp.WithNumber("n",
 			mcp.Description("Number of turns to return (default 20). Only applies to the turns section."),
 		),
-		mcp.WithArray("include",
-			mcp.WithStringEnumItems([]string{"turns", "plan", "diff", "uncommitted_diff"}),
-			mcp.Description("Sections to return (default: turns, plan, diff). diff is the pre-computed merge-base diff against the inferred base branch (reported as diff_target); uncommitted_diff is the live `git diff HEAD` in the session's own working tree."),
+		mcp.WithBoolean("turns",
+			mcp.Description("Return the session turns (default true)."),
+		),
+		mcp.WithBoolean("plan",
+			mcp.Description("Return the session plan (default true)."),
+		),
+		mcp.WithBoolean("diff",
+			mcp.Description("Return the pre-computed merge-base git diff against the inferred base branch, reported as diff_target (default true)."),
+		),
+		mcp.WithBoolean("uncommitted_diff",
+			mcp.Description("Return the live uncommitted git diff (`git diff HEAD`) in the session's own working tree (default false)."),
 		),
 		mcp.WithString("request_id",
 			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
@@ -88,11 +96,6 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore) server.ToolHandle
 			return respond(ctx, result)
 		}
 
-		includes, err := includesFromRequest(request)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-
 		sess, err := resolveSession(s, request)
 		if err != nil {
 			if !errors.Is(err, errSessionSelectorMissing) {
@@ -110,7 +113,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore) server.ToolHandle
 		}
 
 		var turns, plan, diff, uncommitted string
-		if includes["turns"] {
+		if boolArgFromRequest(request, "turns", true) {
 			n := intArgFromRequest(request, "n")
 			if n <= 0 {
 				n = DefaultReturnedTurns
@@ -121,18 +124,19 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore) server.ToolHandle
 			}
 			turns = string(data)
 		}
-		if includes["plan"] {
+		withDiff := boolArgFromRequest(request, "diff", true)
+		if boolArgFromRequest(request, "plan", true) {
 			plan = sess.PlanContent
 		}
-		if includes["diff"] {
+		if withDiff {
 			diff = sess.DiffOutput
 		}
-		if includes["uncommitted_diff"] {
+		if boolArgFromRequest(request, "uncommitted_diff", false) {
 			uncommitted = sess.UncommittedDiff
 		}
 
 		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).build(turns, plan, diff, uncommitted)
-		if includes["diff"] {
+		if withDiff {
 			firstPage.DiffTarget = sess.DiffTarget
 		}
 
@@ -216,29 +220,4 @@ func resolveAgentFromRequest(s *session.Store, request mcp.CallToolRequest) (ses
 	raw, _ := args["agent"].(string)
 
 	return s.ResolveAgent(session.Agent(raw))
-}
-
-var validIncludes = map[string]bool{
-	"turns":            true,
-	"plan":             true,
-	"diff":             true,
-	"uncommitted_diff": true,
-}
-
-func includesFromRequest(request mcp.CallToolRequest) (map[string]bool, error) {
-	raw, ok := request.GetArguments()["include"].([]any)
-	if !ok || len(raw) == 0 {
-		return map[string]bool{"turns": true, "plan": true, "diff": true}, nil
-	}
-
-	includes := make(map[string]bool, len(raw))
-	for _, item := range raw {
-		value, _ := item.(string)
-		if !validIncludes[value] {
-			return nil, fmt.Errorf("invalid include value %v: valid values are turns, plan, diff, uncommitted_diff", item)
-		}
-		includes[value] = true
-	}
-
-	return includes, nil
 }
