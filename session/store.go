@@ -69,8 +69,8 @@ func (s *Store) ResolveAgent(agent Agent) (Agent, error) {
 }
 
 func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
-	if turn.IsSubagentSignal() {
-		s.addSubagentEvents(id, turn)
+	if turn.SubagentId != "" {
+		s.addSubagentTurn(id, turn)
 		return
 	}
 
@@ -97,8 +97,16 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 		session.FilePath = turn.FilePath
 	}
 
+	if turn.Role == RoleUser && strings.TrimSpace(turn.Text) != "" {
+		session.HandlePromptBoundary(turn.PromptId, turn.Timestamp)
+	}
+
 	for _, event := range turn.Events {
 		s.appendEvent(session, event)
+	}
+
+	for _, touch := range turn.FileTouches {
+		session.AddFileTouch(touch)
 	}
 
 	// update only plan content
@@ -136,19 +144,25 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	s.publish(events.TypeTurnAdded, id, agent)
 }
 
-func (s *Store) addSubagentEvents(id Id, turn *Turn) {
+func (s *Store) addSubagentTurn(id Id, turn *Turn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	session, ok := s.sessions[id]
 	if !ok {
-		slog.Debug("Store.addSubagentEvents: Unknown parent session, dropping events", "session", id)
+		slog.Debug("Store.addSubagentTurn: Unknown parent session, dropping turn", "session", id)
 		return
 	}
 
 	for _, event := range turn.Events {
 		s.appendEvent(session, event)
 	}
+
+	for _, touch := range turn.FileTouches {
+		session.AddFileTouch(touch)
+	}
+
+	session.AddSubagentTurn(turn)
 }
 
 func (s *Store) appendEvent(session *Session, event *Event) {
