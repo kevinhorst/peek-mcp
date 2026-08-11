@@ -97,7 +97,7 @@ The response is an envelope `{turns, events, total_usage, memory?}`: `events` ar
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
-**`session_events`** Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, plan revision history, and diff availability (`live` | `snapshot` | `none`). Turns are not included — use `session_full` for those. The `unsupported` array lists signals not detectable for the session's agent (Codex omits skills, memory, user answers, plan approval and subagent results).
+**`session_events`** Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, session time (`time` block: `started_at`, `last_active`, wall/idle/active seconds — idle is the sum of gaps ≥ 5 minutes between transcript timestamps; a `telemetry` sub-block with true active seconds and cost appears when telemetry export is enabled), touched files (`touched_files`: per-path read/write counts from Read/Write/Edit tool results, subagent touches included), plan revision history, and diff availability (`live` | `snapshot` | `none`). Turns are not included — use `session_full` for those. The `unsupported` array lists signals not detectable for the session's agent (Codex omits skills, memory, user answers, plan approval, subagent results, touched files, skill/subagent usage and telemetry).
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -105,6 +105,7 @@ The response is an envelope `{turns, events, total_usage, memory?}`: `events` ar
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
 | `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 | `revisions` | boolean | no | Include plan revision diffs (default false; they dominate response size) |
+| `breakdown` | boolean | no | Include per-skill and per-subagent time and token usage (default false; Claude sessions only). A skill window spans from its invocation to the next user prompt or next skill; skill usage counts main-loop tokens only — subagent tokens are listed per subagent and never enter the session's `usage` totals |
 | `json` | boolean | no | Return the response as structuredContent instead of a JSON text block (default false) |
 
 **`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
@@ -134,6 +135,10 @@ The response is an envelope `{turns, events, total_usage, memory?}`: `events` ar
 | Model | per assistant message | per turn context |
 | Token usage | summed per message | cumulative snapshots, kept-last; accurate totals (incl. in-flight turn) |
 | Tool calls | filtered out | filtered out |
+| Session time | wall/idle/active from transcript timestamps | wall/idle/active from transcript timestamps |
+| Touched files | per-path read/write counts from file-tool results | not available |
+| Skill/subagent usage | per-skill and per-subagent time + tokens via `breakdown` | not available |
+| Telemetry | OTLP receiver enriches `time` with active seconds + cost | not available |
 | Events | full: skills, plan lifecycle, permission denials, subagent spawn/result, user answers | permission denials (escalated exec), subagent spawns, plan revisions |
 | Plan revisions | recorded + persisted (initial + unified diff per change) | recorded (re-derived from the rollout) |
 | Memory | project auto-memory via `remember` | not available |
@@ -309,7 +314,26 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/
 
 - `session_diff` requires a local `git` binary (≥ 2.30) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository. The pinned SHA assumes benign history; force-pushes, rebases, and history rewrites of the base can make the pin unresolvable — the tool then serves the last snapshot with `source: snapshot`.
 - Diff snapshots and Claude plan revisions persist under `--state-dir` (default `~/.peek/state`, `0700` dirs). Events, counters, subagent data and token usage are re-derived from transcripts in memory and are not persisted. Set `--state-dir ""` to disable all on-disk state.
-- Codex parity gaps: no plan-approval detection (Codex approves plans silently), and skills, project memory and user answers are not represented in Codex transcripts — `session_events` lists these in its `unsupported` array. Codex token usage is now reported (kept-last cumulative snapshot).
+- Codex parity gaps: no plan-approval detection (Codex approves plans silently), and skills, project memory and user answers are not represented in Codex transcripts — `session_events` lists these in its `unsupported` array, along with touched files, skill/subagent usage and telemetry, which are Claude-only. Codex token usage is now reported (kept-last cumulative snapshot).
+
+## Telemetry
+
+peek-mcp can ingest Claude Code's OpenTelemetry export to enrich `session_events` with true active time and session cost. The control server exposes an OTLP receiver at `POST /otlp/v1/metrics` (protocol `http/json` only) and folds `claude_code.active_time.total` and `claude_code.cost.usage` per `session.id`; everything else is ignored, nothing is persisted.
+
+`peek-mcp setup` (Claude Code choice) offers a telemetry step that writes the export config into `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:42422/otlp"
+  }
+}
+```
+
+The endpoint base must match the control server port (`--control-port`, default 42422); Claude Code appends `/v1/metrics` per the OTLP spec. When the control server runs with `--control-token`, add `"OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer <token>"` — the setup step prompts for both. Metrics arrive at the default 60-second export interval, so the `telemetry` block appears in `session_events` about a minute after a session starts.
 - The stdio transport is intended for Claude Desktop use via `.mcpb`. Running it manually requires the client to manage the process lifecycle.
 
 ## Requirements
