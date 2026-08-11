@@ -17,7 +17,7 @@ I wanted to avoid any interruption in said workflow, so an approach where the ag
 
 ## The solution
 
-peek-mcp watches the session files that Claude Code and Codex write to disk automatically, parses them passively, and serves the last N turns via MCP. Any connected client calls `session_latest` or `session_full` and quickly gets the context it needs.
+peek-mcp watches the session files that Claude Code and Codex write to disk automatically, parses them passively, and serves the last N turns via MCP. Any connected client calls `session_get` and quickly gets the context it needs.
 
 ```
 Claude Code / Codex writes JSONL to disk (always, no configuration needed)
@@ -28,71 +28,32 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
                     |
         MCP server over streamable HTTP or stdio
                     |
-    Sonnet / GPT-5-mini calls session_full(n)
+    Sonnet / GPT-5-mini calls session_get(n)
 ```
 
 In addition to turns, peek-mcp passively watches two more sources:
 
-- **Plans** — Claude Code writes a plan file to `~/.claude/plans/` at the start of each task. peek-mcp reads and stores it alongside the session so `session_plan` and `session_full` can surface it without any extra prompting.
-- **Git diffs** — After each new turn, peek-mcp infers the session branch's base (reflog creation point, falling back to `origin/HEAD`, then local `main`/`master`, then `HEAD`) and runs `git diff --merge-base <base>` in the session's working directory. `session_diff` and `session_full` expose the result — no configuration needed; the resolved base is reported as `diff_target`.
+- **Plans** — Claude Code writes a plan file to `~/.claude/plans/` at the start of each task. peek-mcp reads and stores it alongside the session so `session_get` can surface it without any extra prompting.
+- **Git diffs** — After each new turn, peek-mcp infers the session branch's base (reflog creation point, falling back to `origin/HEAD`, then local `main`/`master`, then `HEAD`) and runs `git diff --merge-base <base>` in the session's working directory. `session_get` exposes the result via its `diff` section (`include: ["diff"]`) — no configuration needed; the resolved base is reported as `diff_target`.
 
 ## MCP Tools
 
-**`session_full`** Returns turns, plan, and git diff for a session in one call. Prefer this over calling `session_latest`, `session_plan`, and `session_diff` separately. Responses are paginated: if `has_more` is true, call again with the returned `request_id` to get the next page.
+**`session_get`** Returns session data (turns, plan, git diff, uncommitted diff) for a session in one call. Defaults to the most recently active session when `id` and `title` are omitted. Responses are paginated: if `has_more` is true, call again with the returned `request_id` to get the next page.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `n` | number | no | Number of turns to return (default 20) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
+| `agent` | string | no | Agent: `claude` or `codex`. Required when `id` and `title` are omitted and more than one agent is enabled |
+| `n` | number | no | Number of turns to return (default 20). Only applies to the `turns` section |
+| `include` | string[] | no | Sections to return: `turns`, `plan`, `diff`, `uncommitted_diff` (default: `turns`, `plan`, `diff`). `diff` is the pre-computed merge-base diff against the inferred base branch (reported as `diff_target`); `uncommitted_diff` is the live `git diff HEAD` in the session's own working tree |
 | `request_id` | string | no | Pagination request ID from a previous response |
-
-**`session_latest`** Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `n` | number | no | Number of turns to return (default 20) |
-| `agent` | string | yes | Agent: `claude` or `codex` |
 
 **`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, whether a plan or diff is available, the inferred diff base (`diff_target`), and session metadata (cwd, git branch, model, origin).
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `agent` | string | no | Agent: `claude` or `codex`. Lists all sessions when omitted |
-
-**`session_get`** Returns the last N turns from a specific session by ID or title.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
-| `n` | number | no | Number of turns to return (default 20) |
-
-**`session_plan`** Returns the current plan for a session. For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block. Returns an empty response if the session has no plan.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
-
-**`session_diff`** Returns the pre-computed git diff for a session, run with merge-base semantics against the automatically inferred base branch and refreshed on each new turn.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
-
-**`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 ## Supported agents
 
@@ -300,12 +261,12 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/
 
 1. Start peek-mcp in a terminal tab. It runs silently and watches for sessions.
 2. Run Claude Code with Opus on a task.
-3. Open Claude Chat (Sonnet) and ask: "Use session_full to review what was just built and flag any issues."
+3. Open Claude Chat (Sonnet) and ask: "Use session_get to review what was just built and flag any issues."
 4. Sonnet calls the tool, reads the last 20 turns, the current plan, and the git diff against `main`. Done in under 30 seconds.
 
 ## Limitations
 
-- `session_diff` requires a local `git` binary (≥ 2.30, for `git diff --merge-base`) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository.
+- The `diff` and `uncommitted_diff` sections of `session_get` require a local `git` binary (≥ 2.30, for `git diff --merge-base`) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository.
 - Codex CLI sessions do not currently expose token usage metadata.
 - The stdio transport is intended for Claude Desktop use via `.mcpb`. Running it manually requires the client to manage the process lifecycle.
 
