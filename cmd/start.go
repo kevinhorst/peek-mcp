@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -33,6 +34,7 @@ var startCmd = &cobra.Command{
 	Long:              `Start the peek-mcp MCP server with the given configuration.`,
 	CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	Run: func(cmd *cobra.Command, args []string) {
+		startedAt := time.Now()
 		applyEnvFallbacks(cmd)
 		warnMaxOutputTokens()
 		flags := cmd.Flags()
@@ -134,16 +136,47 @@ var startCmd = &cobra.Command{
 			server.WithToolCapabilities(true),
 			server.WithResourceCapabilities(false, true),
 		)
-		tools.Register(srv, store)
+		invocations := tools.NewInvocationCounter()
+		tools.Register(srv, store, invocations)
 
 		if controlPort > 0 {
-			controlServer, err := control.New(&control.Options{
-				Store:   store,
-				Broker:  broker,
-				Token:   controlToken,
-				Version: Version(),
-				Depth:   depth,
-			})
+			controlOpts := &control.Options{
+				Store:       store,
+				Broker:      broker,
+				Token:       controlToken,
+				Version:     Version(),
+				Depth:       depth,
+				StartedAt:   startedAt,
+				StateDir:    stateDir,
+				Invocations: invocations,
+				Config: control.Config{
+					Transport:          transport,
+					Port:               port,
+					Depth:              depth,
+					ClaudeHome:         claudeHome,
+					CodexHome:          codexHome,
+					PollInterval:       pollInterval.String(),
+					PollWindow:         pollWindow.String(),
+					StateDir:           stateDirPath,
+					StateRetentionDays: stateRetentionDays,
+					ControlPort:        controlPort,
+					TokenSet:           controlToken != "",
+					LogLevel:           logLevel,
+				},
+			}
+			if transport == "http" {
+				controlOpts.Restart = func() {
+					exe, err := os.Executable()
+					if err != nil {
+						slog.Error("restart: executable lookup failed", "err", err)
+						return
+					}
+					if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
+						slog.Error("restart: exec failed", "err", err)
+					}
+				}
+			}
+			controlServer, err := control.New(controlOpts)
 			if err != nil {
 				slog.Error("control server init error", "err", err)
 				os.Exit(1)
