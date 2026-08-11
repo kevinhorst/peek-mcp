@@ -24,6 +24,8 @@ const (
 	toolNameSkill           = "Skill"
 	toolNameWrite           = "Write"
 
+	syntheticModel = "<synthetic>"
+
 	contentTypeToolResult = "tool_result"
 	contentTypeToolUse    = "tool_use"
 
@@ -153,6 +155,11 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 	text := extractTextBlocks(message.Content)
 	events := p.eventsFromAssistantContent(entry, &message)
 
+	model := message.Model
+	if model == syntheticModel {
+		model = ""
+	}
+
 	var usage *session.Usage
 	if message.Usage != nil {
 		usage = &session.Usage{
@@ -163,17 +170,18 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 		}
 	}
 	turn := &session.Turn{
-		Events:    events,
-		Role:      session.RoleAssistant,
-		Text:      text,
-		Timestamp: entry.Timestamp,
-		RequestId: entry.RequestId,
-		Usage:     usage,
+		Events:     events,
+		Role:       session.RoleAssistant,
+		Text:       text,
+		Timestamp:  entry.Timestamp,
+		RequestId:  entry.RequestId,
+		StopReason: message.StopReason,
+		Usage:      usage,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
 			GitBranch: entry.GitBranch,
-			Model:     message.Model,
+			Model:     model,
 			Origin:    originFromEntry(entry),
 		},
 	}
@@ -601,10 +609,12 @@ func skillEvent(block *ContentBlock, entry *Entry) *session.Event {
 	}
 }
 
+const builtinCommandModel = "model"
+
 func slashCommandEvent(entry *Entry, text string) *session.Event {
 	name := textBetween(commandNameCloseTag, commandNameOpenTag, text)
 	name = strings.TrimPrefix(strings.TrimSpace(name), "/")
-	if name == "" {
+	if name == "" || name == builtinCommandModel {
 		return nil
 	}
 

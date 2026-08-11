@@ -53,6 +53,7 @@ func TestClaude_AssistantWithText(t *testing.T) {
 	assert.NotNil(t, turn.Usage)
 	assert.Equal(t, 100, turn.Usage.InputTokens)
 	assert.Equal(t, 50, turn.Usage.OutputTokens)
+	assert.Equal(t, "end_turn", turn.StopReason)
 }
 
 func TestClaude_AssistantThinkingOnly(t *testing.T) {
@@ -68,6 +69,16 @@ func TestClaude_AssistantThinkingOnly(t *testing.T) {
 	assert.Equal(t, "", turn.Text, "thinking-only should have empty text")
 	assert.Equal(t, session.Id("sess-1"), turn.Meta.SessionId)
 	assert.Equal(t, "claude-opus-4-6", turn.Meta.Model)
+	assert.Equal(t, "", turn.StopReason)
+}
+
+func TestClaude_SyntheticModelDropped(t *testing.T) {
+	p := NewParser()
+	line := []byte(`{"type":"assistant","requestId":"req-9","sessionId":"sess-1","timestamp":"2026-04-05T15:30:18.628Z","isSidechain":false,"message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"error placeholder"}]}}`)
+	turn := p.ParseLine(line)
+
+	assert.NotNil(t, turn)
+	assert.Equal(t, "", turn.Meta.Model)
 }
 
 func TestClaude_Skipped(t *testing.T) {

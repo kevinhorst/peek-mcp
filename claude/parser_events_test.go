@@ -40,6 +40,13 @@ func TestParseLine_SkillEvents(t *testing.T) {
 	assert.Equal(t, "latest", turn.Events[0].Skill.Args)
 	assert.Equal(t, session.SkillSourceSlash, turn.Events[0].Skill.Source)
 
+	// model-command-not-a-skill
+	p = NewParser()
+	line = []byte(`{"type":"user","promptId":"p2","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"user","content":"<command-name>model</command-name><command-args>claude-fable-5</command-args>"}}`)
+	turn = p.ParseLine(line)
+	require.NotNil(t, turn)
+	assert.Empty(t, turn.Events)
+
 	// skill-inside-sidechain-actor-set
 	p = NewParser()
 	line = []byte(`{"type":"assistant","sessionId":"s","agentId":"sub-ag","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Skill","input":{"skill":"jq"}}]}}`)
