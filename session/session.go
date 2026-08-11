@@ -43,6 +43,7 @@ type Session struct {
 	activeSkill     *SkillStat
 	currentPromptId string
 	planExitSeen    bool
+	usageRequestIds map[string]struct{}
 
 	Agent           Agent                       `json:"agent"`
 	Counters        Counters                    `json:"-"`
@@ -69,7 +70,6 @@ type Session struct {
 	TurnActive      *Turn                       `json:"-"`
 	TurnsFinished   *TurnBuffer
 	UncommittedDiff string `json:"-"`
-	usageRequestIds map[string]struct{}
 }
 
 func (s *Session) isAlterationPhase() bool {
@@ -269,9 +269,6 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 
 func (s *Session) CurrentUsage() *Usage {
 	total := s.TotalUsage
-	if s.TurnActive != nil {
-		total.Add(s.TurnActive.Usage)
-	}
 	return &total
 }
 
@@ -302,27 +299,27 @@ func (s *Session) Turns(number int) []*Turn {
 
 func (s *Session) Validate() error {
 	if s == nil {
-		return errors.New("session is nil")
+		return errors.New("Session.Validate: called on nil")
 	}
 
 	if s.Meta.SessionId == "" {
-		return errors.New("id must not be empty")
+		return errors.New("Session.Validate: id must not be empty")
 	}
 
 	if s.Agent != AgentClaude && s.Agent != AgentCodex {
-		return errors.New("agent must be \"claude\" or \"codex\"")
+		return errors.New("Session.Validate: agent must be \"claude\" or \"codex\"")
 	}
 
 	if s.LastActive.IsZero() {
-		return errors.New("last_active must not be zero")
+		return errors.New("Session.Validate: last_active must not be zero")
 	}
 
 	if s.TurnsFinished == nil {
-		return errors.New("turns must not be nil")
+		return errors.New("Session.Validate: turns must not be nil")
 	}
 
 	if s.Events == nil {
-		return errors.New("events must not be nil")
+		return errors.New("Session.Validate: events must not be nil")
 	}
 
 	return nil

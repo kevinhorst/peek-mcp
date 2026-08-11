@@ -521,26 +521,38 @@ func (s *Store) sortByLastActiveDesc(agents ...Agent) []*Session {
 }
 
 func resolveSubagentActor(event *Event, session *Session) {
-	if event.Kind != EventKindSubagentResult {
-		return
-	}
-	if event.Subagent == nil || event.Subagent.AgentId != "" {
+	if event.Subagent == nil {
 		return
 	}
 
-	for _, seen := range session.Events.All() {
-		if seen.Kind != EventKindSubagentSpawned {
-			continue
+	switch event.Kind {
+	case EventKindSubagentResult:
+		if event.Subagent.AgentId != "" {
+			return
 		}
-		if seen.Subagent == nil {
-			continue
+		for _, seen := range session.Events.All() {
+			if seen.Kind != EventKindSubagentSpawned || seen.Subagent == nil {
+				continue
+			}
+			if seen.Subagent.ToolUseId != event.Subagent.ToolUseId {
+				continue
+			}
+			event.Subagent.AgentId = seen.Subagent.AgentId
+			return
 		}
-		if seen.Subagent.ToolUseId != event.Subagent.ToolUseId {
-			continue
+	case EventKindSubagentSpawned:
+		if event.Subagent.AgentId == "" {
+			return
 		}
-
-		event.Subagent.AgentId = seen.Subagent.AgentId
-		return
+		for _, seen := range session.Events.All() {
+			if seen.Kind != EventKindSubagentResult || seen.Subagent == nil {
+				continue
+			}
+			if seen.Subagent.AgentId != "" || seen.Subagent.ToolUseId != event.Subagent.ToolUseId {
+				continue
+			}
+			seen.Subagent.AgentId = event.Subagent.AgentId
+		}
 	}
 }
 

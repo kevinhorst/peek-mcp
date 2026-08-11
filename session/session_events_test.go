@@ -50,16 +50,17 @@ func TestSession_AddEventCounters(t *testing.T) {
 }
 
 func TestSession_CurrentUsage(t *testing.T) {
-	// totals-plus-active-turn
-	t.Run("totals-plus-active-turn", func(t *testing.T) {
+	// active-turn-counted-once
+	t.Run("active-turn-counted-once", func(t *testing.T) {
 		s := provideCompleteSession()
-		s.TotalUsage = Usage{InputTokens: 100, OutputTokens: 40}
-		s.TurnActive = &Turn{Usage: &Usage{InputTokens: 10, OutputTokens: 5}}
+		s.AddTurn(provideUsageTurn("req-a", 10))
+		s.AddTurn(provideUsageTurn("req-b", 20))
 
 		usage := s.CurrentUsage()
-		assert.Equal(t, 110, usage.InputTokens)
-		assert.Equal(t, 45, usage.OutputTokens)
-		assert.Equal(t, 100, s.TotalUsage.InputTokens, "TotalUsage must not be mutated")
+		assert.NotNil(t, s.TurnActive)
+		assert.Equal(t, 2, usage.InputTokens)
+		assert.Equal(t, 30, usage.OutputTokens)
+		assert.Equal(t, 2, s.TotalUsage.InputTokens, "TotalUsage must not be mutated")
 	})
 
 	// no-active-turn

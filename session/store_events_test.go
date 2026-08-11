@@ -93,6 +93,43 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 		assert.Equal(t, "sub-9", result.Subagent.AgentId)
 	})
 
+	// subagent-spawn-backfills-earlier-result
+	t.Run("subagent-spawn-backfills-earlier-result", func(t *testing.T) {
+		s := NewStore(10, events.NewBroker())
+		// Parent session exists via a chat turn
+		chatTurn := &Turn{
+			Role:      RoleUser,
+			Text:      "start",
+			Timestamp: now,
+			Meta:      &Meta{SessionId: "p"},
+		}
+		s.AddTurnBySessionId("p", AgentClaude, chatTurn)
+		// Restart replay order: result from the parent transcript arrives first
+		resultTurn := &Turn{
+			Events: []*Event{{Kind: EventKindSubagentResult, Subagent: &SubagentPayload{ToolUseId: "tu"}}},
+			Meta:   &Meta{SessionId: "p"},
+		}
+		s.AddTurnBySessionId("p", AgentClaude, resultTurn)
+		// Spawned event from the deferred subagent meta pass arrives second
+		spawnedTurn := &Turn{
+			Events:     []*Event{{Actor: "sub-9", Kind: EventKindSubagentSpawned, Subagent: &SubagentPayload{AgentId: "sub-9", ToolUseId: "tu"}}},
+			SubagentId: "sub-9",
+			Meta:       &Meta{SessionId: "p"},
+		}
+		s.AddTurnBySessionId("p", AgentClaude, spawnedTurn)
+
+		sess, ok := s.GetById("p")
+		require.True(t, ok)
+		var result *Event
+		for _, event := range sess.Events.All() {
+			if event.Kind == EventKindSubagentResult {
+				result = event
+			}
+		}
+		require.NotNil(t, result)
+		assert.Equal(t, "sub-9", result.Subagent.AgentId)
+	})
+
 	// usage-signal-keep-last
 	t.Run("usage-signal-keep-last", func(t *testing.T) {
 		s := NewStore(10, events.NewBroker())
