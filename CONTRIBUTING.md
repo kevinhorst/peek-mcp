@@ -20,8 +20,7 @@ session.Store            — in-memory ring buffer, keyed by session ID
     │        │  plan_watcher.go — watches ~/.claude/plans/, writes Plan to store
     │        │  diff_watcher.go — runs git diff after each turn, writes Diff to store
     ▼
-tools.Register           — exposes session_full / session_latest / session_get /
-                           session_list / session_plan / session_diff via mcp-go
+tools.Register           — exposes session_get / session_list via mcp-go
     │
     ▼
 HTTP (streamable) or stdio transport
@@ -70,7 +69,7 @@ For distribution builds:
 make serve-http
 ```
 
-Builds and starts the HTTP server on `http://localhost:4242/mcp` with debug logging enabled. Open a Claude Code session in another terminal to generate traffic; `session_latest` will reflect it within seconds.
+Builds and starts the HTTP server on `http://localhost:4242/mcp` with debug logging enabled. Open a Claude Code session in another terminal to generate traffic; `session_get` will reflect it within seconds.
 
 To test the stdio transport:
 

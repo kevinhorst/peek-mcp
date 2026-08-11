@@ -54,3 +54,15 @@ func TestChoose_OutOfRange(t *testing.T) {
 	got := p.Choose("Pick one:", []string{"A", "B"}, 0)
 	assert.Equal(t, 0, got)
 }
+
+func TestConfirm_Auto(t *testing.T) {
+	p := autoPrompter()
+	assert.True(t, p.Confirm("Overwrite?", false))
+	assert.True(t, p.Confirm("Write?", true))
+}
+
+func TestChoose_Auto(t *testing.T) {
+	p := autoPrompter()
+	got := p.Choose("Pick one:", []string{"A", "B", "C"}, 2)
+	assert.Equal(t, 2, got)
+}

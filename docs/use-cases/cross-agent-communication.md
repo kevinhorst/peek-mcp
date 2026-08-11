@@ -18,9 +18,9 @@ Nothing beyond the [Quick start](../../README.md#quick-start). peek-mcp watches 
 
 1. Codex implements a change on the repo. In Claude Code, read the Codex session:
 
-   > Use `session_full` with `agent=codex` to see what Codex changed and review the diff.
+   > Use `session_get` with `agent=codex` to see what Codex changed and review the diff.
 
-2. `session_full` scoped to Codex returns one object — `turns` (a serialized array of the recent turns), the git `diff`, the resolved `diff_target`, and `plan` when the session has one:
+2. `session_get` scoped to Codex returns one object — `turns` (a serialized array of the recent turns), the git `diff`, the resolved `diff_target`, and `plan` when the session has one:
 
    ```json
    {

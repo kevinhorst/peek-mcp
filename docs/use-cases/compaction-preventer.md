@@ -22,18 +22,20 @@ Nothing beyond the [Quick start](../../README.md#quick-start). Give the old sess
 
    > Use `session_get` with title "Session tools consolidation" to load the last 30 turns and the plan, then continue the task.
 
-3. `session_get` resolves the title (exact match first, then substring) and returns the last N turns from that session as an array, each carrying the session's `meta` (cwd, branch, model):
+3. `session_get` resolves the title (exact match first, then substring) and returns the last N turns from that session, each carrying the session's `meta` (cwd, branch, model) — `turns` arrives as a serialized JSON array, shown parsed here for readability:
 
    ```json
-   [
-     { "role": "assistant", "text": "Now pages.go — rename plus the fourth stream: ...", "timestamp": "2026-08-11T14:00:24Z",
-       "meta": { "session_id": "1cfa5868-d178-4c48-bb6d-a851daba01ce", "git_branch": "claude/consolidate-session-tools-c165e5", "model": "claude-fable-5" } },
-     { "role": "assistant", "text": "Now tools.go — the consolidated Register and handler: ...", "timestamp": "2026-08-11T14:00:59Z",
-       "meta": { "session_id": "1cfa5868-d178-4c48-bb6d-a851daba01ce", "git_branch": "claude/consolidate-session-tools-c165e5", "model": "claude-fable-5" } }
-   ]
+   {
+     "turns": [
+       { "role": "assistant", "text": "Now pages.go — rename plus the fourth stream: ...", "timestamp": "2026-08-11T14:00:24Z",
+         "meta": { "session_id": "1cfa5868-d178-4c48-bb6d-a851daba01ce", "git_branch": "claude/consolidate-session-tools-c165e5", "model": "claude-fable-5" } },
+       { "role": "assistant", "text": "Now tools.go — the consolidated Register and handler: ...", "timestamp": "2026-08-11T14:00:59Z",
+         "meta": { "session_id": "1cfa5868-d178-4c48-bb6d-a851daba01ce", "git_branch": "claude/consolidate-session-tools-c165e5", "model": "claude-fable-5" } }
+     ]
+   }
    ```
 
-4. Pair it with `session_plan` (or use `session_full`) to pull the plan across too. The new session continues with real context — not a summary of it.
+4. The plan arrives in the same call (the `plan` section is on by default). The new session continues with real context — not a summary of it.
 
 ## What to expect
 

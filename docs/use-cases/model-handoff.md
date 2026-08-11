@@ -20,7 +20,7 @@ Nothing beyond the [Quick start](../../README.md#quick-start): start `peek-mcp`,
 
 2. In the cheaper client, point it at the most recent session:
 
-   > Use `session_full` to review what was just built and flag any issues.
+   > Use `session_get` to review what was just built and flag any issues.
 
 3. The model calls the tool. One call returns one object — the recent turns, the plan, and the git diff against the inferred base branch (`turns` arrives as a serialized JSON array, shown parsed here for readability):
 
@@ -44,6 +44,6 @@ The dashboard shows the same session a human would read alongside the model:
 
 ## What to expect
 
-- **One call is enough.** `session_full` bundles turns + plan + diff; prefer it over three separate calls. If `has_more` is true, call again with the returned `request_id` for the next page.
+- **One call is enough.** `session_get` returns turns + plan + diff by default; deselect sections with the boolean flags. If `has_more` is true, call again with the returned `request_id` for the next page.
 - **The diff is precomputed** against an inferred base branch, refreshed on each new turn — the reviewer sees committed work without running git.
 - **Omit `id`** to grab the most recent session, or pass `title` to target a specific one (see [tools](../tools.md)).

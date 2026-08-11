@@ -101,7 +101,14 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/
 
 ## Windows
 
-Download `peek-mcp-windows-amd64.exe` (or `-arm64.exe`) from the
+Download and run [peek-mcp-setup.exe](https://github.com/kevinhorst/peek-mcp/releases/latest)
+— a wizard that installs the binary, configures Claude Code and/or Codex CLI, lets you
+enable or disable the control server dashboard (default on), and optionally adds
+peek-mcp to your PATH. The finish page starts peek-mcp (a console window stays open)
+and opens the dashboard. Uninstalling removes the binary but leaves your agent
+configs untouched.
+
+For a manual install, download `peek-mcp-windows-amd64.exe` (or `-arm64.exe`) from the
 [latest release](https://github.com/kevinhorst/peek-mcp/releases/latest),
 rename it to `peek-mcp.exe`, and place it on your `PATH`.
 
@@ -114,7 +121,7 @@ Unblock-File peek-mcp.exe
 
 ## Limitations
 
-- `session_diff` requires a local `git` binary (≥ 2.30, for `git diff --merge-base`) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository.
+- The `diff` and `uncommitted_diff` sections of `session_get` require a local `git` binary (≥ 2.30, for `git diff --merge-base`) in `PATH` and run in the session's working directory. They produce no output if the directory is not a git repository.
 - Codex CLI sessions do not currently expose token usage metadata.
 - The stdio transport is intended for Claude Desktop use via `.mcpb`. Running it manually requires the client to manage the process lifecycle.
 

@@ -6,26 +6,27 @@ import (
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
-type sessionFullResult struct {
-	Turns      string `json:"turns,omitempty"`
-	Plan       string `json:"plan,omitempty"`
-	Diff       string `json:"diff,omitempty"`
-	DiffTarget string `json:"diff_target,omitempty"`
+type sessionGetResult struct {
+	Turns           string `json:"turns,omitempty"`
+	Plan            string `json:"plan,omitempty"`
+	Diff            string `json:"diff,omitempty"`
+	DiffTarget      string `json:"diff_target,omitempty"`
+	UncommittedDiff string `json:"uncommitted_diff,omitempty"`
 }
 
-type sessionFullResultPage struct {
-	*sessionFullResult
+type sessionGetResultPage struct {
+	*sessionGetResult
 	RequestId string `json:"request_id,omitempty"`
 	HasMore   bool   `json:"has_more"`
 }
 
-func newSessionFullResultPage(result *sessionFullResult) *sessionFullResultPage {
-	return &sessionFullResultPage{
-		sessionFullResult: result,
+func newSessionGetResultPage(result *sessionGetResult) *sessionGetResultPage {
+	return &sessionGetResultPage{
+		sessionGetResult: result,
 	}
 }
 
-func (p *sessionFullResultPage) WithRequestId(id string) {
+func (p *sessionGetResultPage) WithRequestId(id string) {
 	p.HasMore = true
 	p.RequestId = id
 }

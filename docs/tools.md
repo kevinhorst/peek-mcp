@@ -8,28 +8,23 @@ Full parameter reference for every tool peek-mcp exposes. For task-oriented walk
 
 - **Title matching** — a `title` is matched exact-first (case-insensitive), then falls back to substring match. When `agent` is provided, matching is scoped to that agent. For Codex, titles come from Codex's session index (the thread name).
 - **Pagination** — responses that carry turns or diffs are paginated by the client's capability. When a response has `has_more: true`, call the same tool again with the returned `request_id` to fetch the next page.
-- **Most-recent default** — tools that accept `id` use the most recently active session when `id` is omitted (an `agent` is then required so the lookup knows which side to read).
+- **Most-recent default** — `session_get` uses the most recently active session when `id` and `title` are omitted (an `agent` is then required when more than one agent is enabled, so the lookup knows which side to read).
 
-## `session_full`
+## `session_get`
 
-Returns turns, plan, and git diff for a session in one call. Prefer this over calling `session_latest`, `session_plan`, and `session_diff` separately.
+Returns session data (turns, plan, git diff, uncommitted diff) for a session in one call. Sections are selected with flat boolean flags. Turns are returned as the last N human/assistant turn pairs; tool calls and tool results are filtered out.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | no | Session ID (omit for most recent session) |
 | `title` | string | no | Session title (see [title matching](#common-semantics)) |
-| `n` | number | no | Number of turns to return (default 20) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
+| `agent` | string | no | Agent: `claude` or `codex`. Required when `id` and `title` are omitted and more than one agent is enabled |
+| `n` | number | no | Number of turns to return (default 20). Only applies to the turns section |
+| `turns` | boolean | no | Return the session turns (default `true`) |
+| `plan` | boolean | no | Return the session plan (default `true`). For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block |
+| `diff` | boolean | no | Return the pre-computed merge-base diff against the inferred base branch, reported as `diff_target` (default `true`) |
+| `uncommitted_diff` | boolean | no | Return the live `git diff HEAD` in the session's own working tree, refreshed as files are saved (default `false`) |
 | `request_id` | string | no | Pagination request ID from a previous response |
-
-## `session_latest`
-
-Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `n` | number | no | Number of turns to return (default 20) |
-| `agent` | string | yes | Agent: `claude` or `codex` |
 
 ## `session_list`
 
@@ -38,47 +33,6 @@ Lists all sessions. Returns session ID, agent, title, title source (`custom` \| 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `agent` | string | no | Agent: `claude` or `codex`. Lists all sessions when omitted |
-
-## `session_get`
-
-Returns the last N turns from a specific session by ID or title.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID |
-| `title` | string | no | Session title (see [title matching](#common-semantics)) |
-| `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
-| `n` | number | no | Number of turns to return (default 20) |
-
-## `session_plan`
-
-Returns the current plan for a session. For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block. Returns an empty response if the session has no plan.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title (see [title matching](#common-semantics)) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
-
-## `session_diff`
-
-Returns the pre-computed git diff for a session, run with merge-base semantics against the automatically inferred base branch and refreshed on each new turn. The resolved base is exposed as `diff_target`.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title (see [title matching](#common-semantics)) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
-
-## `session_uncommitted_diff`
-
-Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title (see [title matching](#common-semantics)) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
 
 ## Supported agents
 

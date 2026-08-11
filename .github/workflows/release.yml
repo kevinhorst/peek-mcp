@@ -55,6 +55,13 @@ jobs:
           make build-windows-amd64
           make build-windows-arm64
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: |
+            dist/peek-mcp-windows-amd64.exe
+            dist/peek-mcp-windows-arm64.exe
+
       - uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -65,3 +72,28 @@ jobs:
             dist/peek-mcp-windows-amd64.exe
             dist/peek-mcp-windows-arm64.exe
           generate_release_notes: true
+
+  installer:
+    name: Windows installer
+    runs-on: windows-latest
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-binaries
+          path: dist
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          iscc /DAppVersion=$version installer\windows\peek-mcp.iss
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/peek-mcp-setup.exe

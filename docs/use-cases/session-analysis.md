@@ -29,9 +29,9 @@ Nothing beyond the [Quick start](../../README.md#quick-start). A larger `--depth
    }
    ```
 
-2. For each candidate, pull the full picture with `session_full` — turns, plan, and the final diff:
+2. For each candidate, pull the full picture with `session_get` — turns, plan, and the final diff:
 
-   > Use `session_full` for id 9d46e048 and summarize what was asked, what the plan committed to, and how the final diff compares.
+   > Use `session_get` for id 9d46e048 and summarize what was asked, what the plan committed to, and how the final diff compares.
 
 3. The analyzing model extracts the patterns: where the plan and the diff diverged, which approaches were tried and rejected in the turns, which corrections repeated. Feed several sessions through the same loop for a batch retrospective.
 

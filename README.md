@@ -25,13 +25,13 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
                     |
         MCP server over streamable HTTP or stdio
                     |
-    Sonnet / GPT-5-mini calls session_full(n)
+    Sonnet / GPT-5-mini calls session_get(n)
 ```
 
 Alongside turns, peek-mcp passively watches two more sources:
 
-- **Plans** — Claude Code writes a plan file per task; peek-mcp stores it with the session so `session_plan` and `session_full` surface it. For Codex, the plan is the latest `proposed_plan` block.
-- **Git diffs** — after each new turn, peek-mcp infers the session branch's base and runs `git diff --merge-base <base>` in the session's working directory. `session_diff` and `session_full` expose the result; the resolved base is reported as `diff_target`.
+- **Plans** — Claude Code writes a plan file per task; peek-mcp stores it with the session so `session_get` surfaces it. For Codex, the plan is the latest `proposed_plan` block.
+- **Git diffs** — after each new turn, peek-mcp infers the session branch's base and runs `git diff --merge-base <base>` in the session's working directory. `session_get` exposes the result via its `diff` section; the resolved base is reported as `diff_target`.
 
 ## Quick start
 
@@ -47,6 +47,12 @@ Run the interactive setup wizard — it detects your environment and writes the 
 
 ```bash
 peek-mcp
+```
+
+Non-interactive (used by the Windows installer, works everywhere):
+
+```bash
+peek-mcp setup --claude --codex --control-server=false
 ```
 
 Or start the server directly:
@@ -82,17 +88,12 @@ args = ["start", "--transport=stdio"]
 
 ## Tools
 
-One call — `session_full` — usually does the job; it bundles turns, plan, and diff. The rest are there when you want one piece.
+One call — `session_get` — does the job: turns, plan, and diffs for a session, with flat boolean flags to select the sections you want. `session_list` is the roster.
 
 | Tool | Returns |
 |---|---|
-| `session_full` | turns + plan + diff for a session, in one call |
-| `session_latest` | last N turns from the most recently active session |
+| `session_get` | turns + plan + diff (+ uncommitted diff) for a session, sections selected by flags |
 | `session_list` | all sessions with metadata (branch, model, activity, diff base) |
-| `session_get` | last N turns from a session by id or title |
-| `session_plan` | the current plan for a session |
-| `session_diff` | the precomputed git diff against the inferred base branch |
-| `session_uncommitted_diff` | the live `git diff HEAD`, refreshed as files are saved |
 
 Full parameters, title-matching and pagination rules, supported agents, and the Claude/Codex parity table: [docs/tools.md](docs/tools.md).
 

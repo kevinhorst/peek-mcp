@@ -31,7 +31,7 @@ Nothing beyond the [Quick start](../../README.md#quick-start). Every worker writ
    }
    ```
 
-2. For any worker, pull progress with `session_get` (recent turns) and the produced code with `session_diff` (the change against its base branch).
+2. For any worker, pull progress with `session_get` — recent turns plus the produced code as the `diff` section (the change against its base branch), all in one call.
 
 3. The orchestrator decides per worker — let it run, redirect it, or stop it — from live state, then repeats.
 
@@ -42,5 +42,5 @@ The same fleet view a human would scan:
 ## What to expect
 
 - **`session_list` is the roster.** Filter by `agent` (`claude` or `codex`) to scope it; omit to list everything.
-- **`last_active` and `has_diff`** are the cheap progress signals — poll `session_list`, drill in with `session_get`/`session_diff` only where something changed.
+- **`last_active` and `has_diff`** are the cheap progress signals — poll `session_list`, drill in with `session_get` only where something changed.
 - **Sub-agent sessions are hidden** — the list shows real worker sessions, not the sidechains they spawn.

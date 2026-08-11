@@ -9,14 +9,14 @@ import (
 
 type PageStore struct {
 	mu               sync.Mutex
-	PagesByRequestId map[string]<-chan *sessionFullResult
+	PagesByRequestId map[string]<-chan *sessionGetResult
 }
 
-func (s *PageStore) add(requestId string, results []*sessionFullResult) {
+func (s *PageStore) add(requestId string, results []*sessionGetResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	queue := make(chan *sessionFullResult, len(results))
+	queue := make(chan *sessionGetResult, len(results))
 	for _, result := range results {
 		queue <- result
 	}
@@ -37,7 +37,7 @@ func (s *PageStore) hasNext(requestId string) bool {
 	return len(result) > 0
 }
 
-func (s *PageStore) next(requestId string) (*sessionFullResult, bool) {
+func (s *PageStore) next(requestId string) (*sessionGetResult, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -64,29 +64,27 @@ func NewPageBuilder(size int) *PageBuilder {
 	return &PageBuilder{Size: size}
 }
 
-func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult, next []*sessionFullResult) {
-	// Check if everything fits in a single page
-	contentSize := len(turns) + len(plan) + len(diff)
+func (b *PageBuilder) build(turns, plan, diff, uncommittedDiff string) (first *sessionGetResult, next []*sessionGetResult) {
+	contentSize := len(turns) + len(plan) + len(diff) + len(uncommittedDiff)
 	if b.Size <= 0 || contentSize <= b.Size {
 		slog.Info("PageBuilder.build: fits in a single page", "size", contentSize, "page_size", b.Size)
-		first = &sessionFullResult{
-			Turns: turns,
-			Plan:  plan,
-			Diff:  diff,
+		first = &sessionGetResult{
+			Turns:           turns,
+			Plan:            plan,
+			Diff:            diff,
+			UncommittedDiff: uncommittedDiff,
 		}
 		return first, nil
 	}
 
-	// Check how many pages we need to build, round up
 	pageCount := math.Ceil(float64(contentSize) / float64(b.Size))
-	pages := make([]*sessionFullResult, int(pageCount))
+	pages := make([]*sessionGetResult, int(pageCount))
 	slog.Info("PageBuilder.build: building", "pageCount", pageCount, "size", b.Size)
 
 	for i := 0; i < int(pageCount); i++ {
-		pages[i] = &sessionFullResult{}
+		pages[i] = &sessionGetResult{}
 		size := b.Size
 
-		// drain turns, plan and diff into pages by priority
 		turnChunk := UTF8SafeSlice(turns, size)
 		pages[i].Turns = turnChunk
 		turns = turns[len(turnChunk):]
@@ -106,6 +104,14 @@ func (b *PageBuilder) build(turns, plan, diff string) (first *sessionFullResult,
 		diffChunk := UTF8SafeSlice(diff, size)
 		pages[i].Diff = diffChunk
 		diff = diff[len(diffChunk):]
+		if len(diffChunk) == size {
+			continue
+		}
+		size = size - len(diffChunk)
+
+		uncommittedChunk := UTF8SafeSlice(uncommittedDiff, size)
+		pages[i].UncommittedDiff = uncommittedChunk
+		uncommittedDiff = uncommittedDiff[len(uncommittedChunk):]
 	}
 
 	return pages[0], pages[1:]
