@@ -468,8 +468,28 @@ func originFromEntry(entry *Entry) *session.Origin {
 	return &session.Origin{CliVersion: entry.Version}
 }
 
-func permissionDeniedEvent(entry *Entry, tool string) *session.Event {
-	payload := &session.PermissionPayload{Tool: tool}
+type deniedToolInput struct {
+	Command      string `json:"command"`
+	FilePath     string `json:"file_path"`
+	NotebookPath string `json:"notebook_path"`
+}
+
+func commandFromInput(pending *pendingToolUse) string {
+	var input deniedToolInput
+	if err := json.Unmarshal(pending.input, &input); err != nil {
+		return ""
+	}
+	if input.Command != "" {
+		return input.Command
+	}
+	if input.FilePath != "" {
+		return input.FilePath
+	}
+	return input.NotebookPath
+}
+
+func permissionDeniedEvent(entry *Entry, tool string, command string) *session.Event {
+	payload := &session.PermissionPayload{Command: command, Tool: tool}
 	return &session.Event{
 		Actor:      entry.AgentId,
 		Kind:       session.EventKindPermissionDenied,
@@ -604,7 +624,7 @@ func slashCommandEvent(entry *Entry, text string) *session.Event {
 
 func subagentResultEvent(block *ContentBlock, entry *Entry, isDenied bool, text string) *session.Event {
 	if isDenied {
-		return permissionDeniedEvent(entry, toolNameAgent)
+		return permissionDeniedEvent(entry, toolNameAgent, "")
 	}
 
 	content := resolvePersistedOutput(entry.SessionId, text, block.ToolUseId)
@@ -657,13 +677,13 @@ func toolResultEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse)
 		if !isDenied {
 			return nil
 		}
-		return permissionDeniedEvent(entry, pending.name)
+		return permissionDeniedEvent(entry, pending.name, commandFromInput(pending))
 	}
 }
 
 func userAnswerEvent(entry *Entry, isDenied bool, pending *pendingToolUse, text string) *session.Event {
 	if isDenied {
-		return permissionDeniedEvent(entry, toolNameAskUserQuestion)
+		return permissionDeniedEvent(entry, toolNameAskUserQuestion, "")
 	}
 
 	var input askUserQuestionInput

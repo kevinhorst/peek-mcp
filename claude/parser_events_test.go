@@ -113,6 +113,25 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
 	assert.Equal(t, "Edit", turn.Events[0].Permission.Tool)
+	assert.Empty(t, turn.Events[0].Permission.Command)
+
+	// bash-denied-command-captured
+	p = NewParser()
+	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-bash","name":"Bash","input":{"command":"rm -rf /tmp/x"}}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-bash","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
+	assert.Equal(t, "Bash", turn.Events[0].Permission.Tool)
+	assert.Equal(t, "rm -rf /tmp/x", turn.Events[0].Permission.Command)
+
+	// file-tool-denied-path-captured
+	p = NewParser()
+	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-edit","name":"Edit","input":{"file_path":"/etc/hosts","old_string":"a","new_string":"b"}}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-edit","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, "/etc/hosts", turn.Events[0].Permission.Command)
 
 	// ask-user-question-answered
 	p = NewParser()
@@ -167,6 +186,7 @@ func TestParseLine_SubagentResult(t *testing.T) {
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
 	assert.Equal(t, "Agent", turn.Events[0].Permission.Tool)
+	assert.Empty(t, turn.Events[0].Permission.Command)
 }
 
 func TestResolvePersistedOutput(t *testing.T) {
