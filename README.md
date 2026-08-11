@@ -1,23 +1,20 @@
 # peek-mcp
 
-A lightweight MCP server that reads Claude Code and Codex CLI sessions directly from disk and exposes them over HTTP or stdio, so a second model can evaluate what a primary agent produced without spending tokens on summarization.
+A lightweight MCP server that reads Claude Code and Codex CLI sessions directly from disk and serves them over MCP — so any other model or agent can see what an agent did, live, without spending tokens on summarization or copying context by hand.
 
-## The problem
+Agents already write their sessions to disk as JSONL. peek-mcp watches those files, parses them passively, and exposes the last N turns, the plan, and the git diff to any connected client. There is nothing to push and no workflow to interrupt — a second model just calls a tool and gets the context it needs.
 
-Opus finishes a task. I am quite often in the situation that I want to have a quick follow-up question or analysis on the output. If I then prompt Opus or another bigger model, it eats up valuable tokens and especially much more time than necessary. So I want to use Sonnet or GPT5-mini to review it quickly, but copying the context by hand is cumbersome.
+## Use cases
 
-As of 05.04.2026 , there seems to be no other way to do cross-session communication between different integrations than to either copy or prompt the model to read the respective session directory directly, which works, but is also slow.
-- update: 10.05.2026 - still nothing
-- update 07.06.2026 - Claude Code now has "Memory" (not to be confused with MEMORY.md), so it can reference previous sessions. Helpful, but not enough
+| Use case | You want to… |
+|---|---|
+| [Model handoff](docs/use-cases/model-handoff.md) | have a cheap model review what an expensive one built |
+| [Compaction preventer](docs/use-cases/compaction-preventer.md) | continue in a fresh session instead of compacting a full one |
+| [Agent orchestration](docs/use-cases/agent-orchestration.md) | supervise several worker sessions from one place |
+| [Cross-agent communication](docs/use-cases/cross-agent-communication.md) | let Claude Code and Codex read each other's work |
+| [Session analysis](docs/use-cases/session-analysis.md) | mine past sessions for retrospectives |
 
-There seem to be some MCP servers that kinda, maybe do what I need, but they did not quite fit my case, so I wrote my own, which is more tailored to my current workflow.
-Examples: TBD
-
-I wanted to avoid any interruption in said workflow, so an approach where the agent pushes to an MCP was ruled out. The session files are on disk, so I figured that should be a good starting point and took it from there. It is also an experiment for a codebase with heavy use of agentic development (but not vibe coding).
-
-## The solution
-
-peek-mcp watches the session files that Claude Code and Codex write to disk automatically, parses them passively, and serves the last N turns via MCP. Any connected client calls `session_latest` or `session_full` and quickly gets the context it needs.
+## How it works
 
 ```
 Claude Code / Codex writes JSONL to disk (always, no configuration needed)
@@ -31,279 +28,85 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
     Sonnet / GPT-5-mini calls session_full(n)
 ```
 
-In addition to turns, peek-mcp passively watches two more sources:
+Alongside turns, peek-mcp passively watches two more sources:
 
-- **Plans** — Claude Code writes a plan file to `~/.claude/plans/` at the start of each task. peek-mcp reads and stores it alongside the session so `session_plan` and `session_full` can surface it without any extra prompting.
-- **Git diffs** — After each new turn, peek-mcp infers the session branch's base (reflog creation point, falling back to `origin/HEAD`, then local `main`/`master`, then `HEAD`) and runs `git diff --merge-base <base>` in the session's working directory. `session_diff` and `session_full` expose the result — no configuration needed; the resolved base is reported as `diff_target`.
+- **Plans** — Claude Code writes a plan file per task; peek-mcp stores it with the session so `session_plan` and `session_full` surface it. For Codex, the plan is the latest `proposed_plan` block.
+- **Git diffs** — after each new turn, peek-mcp infers the session branch's base and runs `git diff --merge-base <base>` in the session's working directory. `session_diff` and `session_full` expose the result; the resolved base is reported as `diff_target`.
 
-## MCP Tools
+## Quick start
 
-**`session_full`** Returns turns, plan, and git diff for a session in one call. Prefer this over calling `session_latest`, `session_plan`, and `session_diff` separately. Responses are paginated: if `has_more` is true, call again with the returned `request_id` to get the next page.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `n` | number | no | Number of turns to return (default 20) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
-| `request_id` | string | no | Pagination request ID from a previous response |
-
-**`session_latest`** Returns the last N human/assistant turn pairs from the most recently active session. Tool calls and tool results are filtered out.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `n` | number | no | Number of turns to return (default 20) |
-| `agent` | string | yes | Agent: `claude` or `codex` |
-
-**`session_list`** Lists all sessions. Returns session ID, agent, title, title source (`custom` | `index` | `derived`), last activity timestamp, whether a plan or diff is available, the inferred diff base (`diff_target`), and session metadata (cwd, git branch, model, origin).
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `agent` | string | no | Agent: `claude` or `codex`. Lists all sessions when omitted |
-
-**`session_get`** Returns the last N turns from a specific session by ID or title.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `agent` | string | no | Agent: `claude` or `codex`. Scopes title matching when provided |
-| `n` | number | no | Number of turns to return (default 20) |
-
-**`session_plan`** Returns the current plan for a session. For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block. Returns an empty response if the session has no plan.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
-
-**`session_diff`** Returns the pre-computed git diff for a session, run with merge-base semantics against the automatically inferred base branch and refreshed on each new turn.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
-
-**`session_uncommitted_diff`** Returns the live uncommitted git diff (`git diff HEAD`) for a session, refreshed continuously as files are saved. Resolved in the session's own working tree, so it is correct inside linked git worktrees.
-
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | no | Session ID (omit for most recent session) |
-| `title` | string | no | Session title. Exact match first (case-insensitive); falls back to substring match. Scoped to `agent` when provided. For Codex, titles come from Codex's session index (thread name) |
-| `agent` | string | no | Agent: `claude` or `codex`. Required when id and title are omitted |
-
-## Supported agents
-
-| Agent | Session path |
-|-------|-------------|
-| Claude Code | `~/.claude/projects/<encoded-cwd>/*.jsonl` |
-| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
-
-On Windows the session roots resolve to `%USERPROFILE%\.claude` and `%USERPROFILE%\.codex`.
-
-### Agent parity
-
-| Capability | Claude Code | Codex |
-|---|---|---|
-| Title | explicit custom titles | session index thread names |
-| Plan | plan-mode plan file (watched live) | latest `proposed_plan` block |
-| Git metadata | branch per entry | branch, commit hash, repo URL from `session_meta` |
-| Client metadata | CLI version | originator, CLI version, source, fork lineage |
-| Model | per assistant message | per turn context |
-| Token usage | summed per message | cumulative snapshots parsed; accurate totals pending (usage_reporting concept) |
-| Tool calls | filtered out | filtered out |
-| Sub-agent sessions | hidden (sidechains) | hidden (sub-agent rollouts) |
-| Pagination | by client capability | by client capability |
-
-## Installation
+Install:
 
 ```bash
 go install github.com/kevinhorst/peek-mcp@latest
 ```
 
-Or build from source:
+Or grab a prebuilt binary from the [latest release](https://github.com/kevinhorst/peek-mcp/releases/latest) (Windows setup: see the [reference](docs/reference.md#windows)).
 
-```bash
-git clone https://github.com/kevinhorst/peek-mcp
-cd peek-mcp
-go build -o peek-mcp .
-```
-
-### Windows
-
-Download `peek-mcp-windows-amd64.exe` (or `-arm64.exe`) from the
-[latest release](https://github.com/kevinhorst/peek-mcp/releases/latest),
-rename it to `peek-mcp.exe`, and place it on your `PATH`.
-
-The binary is unsigned; on first run SmartScreen may warn. Choose
-**More info → Run anyway**, or unblock it in PowerShell:
-
-```powershell
-Unblock-File peek-mcp.exe
-```
-
-## Quick setup
+Run the interactive setup wizard — it detects your environment and writes the correct config for Claude Code, Codex CLI, or both, merging without destroying other keys:
 
 ```bash
 peek-mcp
 ```
 
-Running `peek-mcp` with no arguments launches an interactive wizard that writes the correct config for your environment (Claude Code, Codex CLI, or both). It detects existing configs and merges without destroying other keys.
-
-## Usage
+Or start the server directly:
 
 ```bash
 peek-mcp start
 ```
 
-Starts the MCP server on `http://localhost:4242/mcp` by default.
+This serves the MCP endpoint on `http://localhost:4242/mcp` by default.
+
+Connect it to a client:
 
 ```bash
-peek-mcp start --port 4242 --depth 20
-```
-
-### Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--transport` | `http` | Transport: `http` or `stdio` |
-| `--port` | `4242` | HTTP port (http transport only) |
-| `--depth` | `20` | Ring buffer depth per session (max turns kept) |
-| `--claude-home` | `~/.claude` | Override Claude Code session root |
-| `--codex-home` | `~/.codex` | Override Codex session root |
-| `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
-| `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
-| `--poll-window` | `1h` | Only poll repos whose session was active within this window |
-| `--control-port` | `42442` | Control server start port; walks up to `42499` if taken (dashboard + JSON API + SSE); `0` disables |
-| `--control-token` | — | Optional bearer token protecting the control server |
-
-### Environment variables
-
-Every flag has a corresponding environment variable that is used when the flag is not explicitly set. This is useful for the Claude Desktop `.mcpb` bundle where flags cannot be changed at runtime.
-
-| Variable | Flag |
-|----------|------|
-| `PEEK_TRANSPORT` | `--transport` |
-| `PEEK_PORT` | `--port` |
-| `PEEK_DEPTH` | `--depth` |
-| `PEEK_CLAUDE_HOME` | `--claude-home` |
-| `PEEK_CODEX_HOME` | `--codex-home` |
-| `PEEK_POLL_INTERVAL` | `--poll-interval` |
-| `PEEK_POLL_WINDOW` | `--poll-window` |
-| `PEEK_CONTROL_PORT` | `--control-port` |
-| `PEEK_CONTROL_TOKEN` | `--control-token` |
-| `PEEK_LOG_LEVEL` | `--log-level` |
-
-## Control server (dashboard + JSON API)
-
-```bash
-peek-mcp start --control-port 42442
-```
-
-Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns, plan, and diffs update as agents work. If the start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. The same data is scriptable as JSON:
-
-```bash
-curl -s http://127.0.0.1:42442/api/sessions | jq
-curl -s "http://127.0.0.1:42442/api/sessions/<id>/diff?size=0" | jq -r .diff
-curl -N http://127.0.0.1:42442/api/events
-```
-
-The server is read-only, binds to loopback only, rejects non-local `Host` headers, and sends no CORS headers. With `--control-token <t>`, requests need `Authorization: Bearer <t>` — or open `http://127.0.0.1:42442/?token=<t>` once in the browser to set a session cookie.
-
-## Connecting to Claude Chat
-
-```bash
+# Claude Chat
 claude mcp add peek-mcp http://localhost:4242/mcp --transport http
 ```
 
-## Connecting to Claude Code
-
-Add to `.claude/settings.json` in your project:
-
 ```json
+// Claude Code — .claude/settings.json
 {
   "mcpServers": {
-    "peek-mcp": {
-      "type": "http",
-      "url": "http://localhost:4242/mcp"
-    }
+    "peek-mcp": { "type": "http", "url": "http://localhost:4242/mcp" }
   }
 }
 ```
-
-## Connecting to Codex
-
-Add to `~/codex/config.toml`:
 
 ```toml
+# Codex — ~/codex/config.toml
 [mcp_servers.peek-mcp]
-command = "/Users/kevinpersonal/GolandProjects/peek-mcp/dist/peek-mcp"
-args = ["start", "--transport=stdio", "--depth=100", "--claude-home=/Users/kevinpersonal/.claude", "--codex-home=/Users/kevinpersonal/.codex"]
+command = "/absolute/path/to/peek-mcp"
+args = ["start", "--transport=stdio"]
 ```
 
-## Hot reload (live diff)
+## Tools
 
-To keep Claude Code grounded in your current work as you edit — a "hot reload" — peek-mcp keeps an up-to-date `git diff HEAD` for each active repo and writes it to `<gitDir>/peek-diff` (inside `.git/`, so it is never committed and resolves correctly inside linked worktrees). A `UserPromptSubmit` hook then injects that diff into context on every prompt. The hook needs only `git` and `cat` — no peek binary on `PATH`, no server call — so it works under both the HTTP and `.mcpb` deployments.
+One call — `session_full` — usually does the job; it bundles turns, plan, and diff. The rest are there when you want one piece.
 
-Merge `hooks/settings.snippet.json` into your project `.claude/settings.json`:
+| Tool | Returns |
+|---|---|
+| `session_full` | turns + plan + diff for a session, in one call |
+| `session_latest` | last N turns from the most recently active session |
+| `session_list` | all sessions with metadata (branch, model, activity, diff base) |
+| `session_get` | last N turns from a session by id or title |
+| `session_plan` | the current plan for a session |
+| `session_diff` | the precomputed git diff against the inferred base branch |
+| `session_uncommitted_diff` | the live `git diff HEAD`, refreshed as files are saved |
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "cat \"$(git rev-parse --git-path peek-diff)\" 2>/dev/null" } ] }
-    ]
-  }
-}
-```
+Full parameters, title-matching and pagination rules, supported agents, and the Claude/Codex parity table: [docs/tools.md](docs/tools.md).
 
-On Windows the hook works unchanged: Claude Code on Windows requires Git for Windows and runs hooks through its bash.
+## Dashboard
 
-## Installing in Claude Desktop (.mcpb)
+Run with `--control-port` and peek-mcp serves a live, read-only dashboard on loopback — session list, turns, plan, and diffs, updating as agents work. It doubles as a scriptable JSON API. See [docs/reference.md](docs/reference.md#control-server-dashboard--json-api).
 
-For one-click install on macOS — useful for distributing peek-mcp inside an organisation — peek-mcp ships as an [MCP Bundle](https://github.com/modelcontextprotocol/mcpb). The bundle is a self-contained `.mcpb` file with a universal (arm64 + amd64) macOS binary inside.
+![peek-mcp dashboard — session list](docs/assets/dashboard-sessions.png)
 
-Build the bundle (requires macOS, since it uses `lipo` to fuse architectures):
+## More
 
-```bash
-make build-mcpb
-# → dist/peek-mcp.mcpb
-```
-
-Install:
-
-1. Open Claude Desktop → **Settings → Extensions**.
-2. Click **Advanced settings**, find the **Extension Developer** section, click **Install Extension…**.
-3. Pick `dist/peek-mcp.mcpb` and follow the prompts. The configuration UI exposes ring-buffer depth, the Claude / Codex session roots, and the diff target branch.
-
-When launched this way, Claude Desktop runs `peek-mcp start --transport=stdio` directly — no HTTP server, no port to manage.
-
-If macOS Gatekeeper quarantines the unsigned binary on first run:
-
-```bash
-xattr -dr com.apple.quarantine ~/Library/Application\ Support/Claude/Extensions/peek-mcp
-```
-
-## Example workflow
-
-1. Start peek-mcp in a terminal tab. It runs silently and watches for sessions.
-2. Run Claude Code with Opus on a task.
-3. Open Claude Chat (Sonnet) and ask: "Use session_full to review what was just built and flag any issues."
-4. Sonnet calls the tool, reads the last 20 turns, the current plan, and the git diff against `main`. Done in under 30 seconds.
-
-## Limitations
-
-- `session_diff` requires a local `git` binary (≥ 2.30, for `git diff --merge-base`) in `PATH` and runs in the session's working directory. It produces no output if the directory is not a git repository.
-- Codex CLI sessions do not currently expose token usage metadata.
-- The stdio transport is intended for Claude Desktop use via `.mcpb`. Running it manually requires the client to manage the process lifecycle.
-
-## Requirements
-
-- Go 1.26+
-- macOS, Linux, or Windows
-- Claude Code and/or Codex CLI installed (peek-mcp reads their output; it does not depend on them at runtime)
+- [Tool reference](docs/tools.md) — every parameter, supported agents, agent parity
+- [Operations reference](docs/reference.md) — flags, env vars, control server, hot reload, `.mcpb`, Windows
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
