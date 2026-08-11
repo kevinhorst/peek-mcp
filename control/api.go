@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/tools"
 )
@@ -195,6 +196,34 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, usage)
+}
+
+func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
+	id := session.Id(r.PathValue("id"))
+	var agent session.Agent
+	var transcriptPath string
+	found := s.store.WithSession(id, func(sess *session.Session) {
+		agent = sess.Agent
+		transcriptPath = sess.FilePath
+	})
+	if !found {
+		respondNotFound("unknown session", w)
+		return
+	}
+	if agent != session.AgentClaude {
+		respondNotFound("memory is not available for codex sessions", w)
+		return
+	}
+	if transcriptPath == "" {
+		respondNotFound("transcript path unknown", w)
+		return
+	}
+	memory, err := claude.ReadMemory(transcriptPath)
+	if err != nil {
+		respondNotFound(err.Error(), w)
+		return
+	}
+	writeJSON(w, memory)
 }
 
 func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {

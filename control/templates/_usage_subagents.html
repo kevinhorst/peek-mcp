@@ -1,0 +1,9 @@
+{{if .Subagents}}
+<table class="usage-table">
+  <tr><th>Agent</th><th>Description</th><th>Started</th><th>Duration</th><th>Tokens</th><th>Cost</th></tr>
+  {{range .Subagents}}<tr><th>{{.Agent}}</th><td>{{.Description}}</td><td>{{ts .StartedAt}}</td><td>{{.Duration}}</td><td>{{.Tokens}}</td><td>{{.Cost}}</td></tr>
+  {{end}}
+</table>
+{{else}}
+<div class="empty">No subagents spawned yet.</div>
+{{end}}

@@ -2,6 +2,8 @@ package control
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -166,7 +168,8 @@ func TestSessionDetailPage(t *testing.T) {
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/plan"`)
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/usage"`)
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/events"`)
-	assert.Equal(t, 5, strings.Count(body, `<details class="section">`))
+	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/memory"`)
+	assert.Equal(t, 6, strings.Count(body, `<details class="section">`))
 	assert.Equal(t, 1, strings.Count(body, `<details class="section" open>`))
 
 	assert.Equal(t, http.StatusNotFound, get(server, "/sessions/unknown").Code)
@@ -192,6 +195,56 @@ func TestPlanFragment(t *testing.T) {
 	response = get(server, "/fragments/sessions/s2/plan")
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Contains(t, response.Body.String(), "No plan.")
+}
+
+func TestMemoryFragment(t *testing.T) {
+	// codex-unavailable
+	t.Run("codex-unavailable", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		response := get(server, "/fragments/sessions/s2/memory")
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), "memory is not available for codex sessions")
+	})
+
+	// no-path-unavailable
+	t.Run("no-path-unavailable", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		response := get(server, "/fragments/sessions/s1/memory")
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), "transcript path unknown")
+	})
+
+	// facts-rendered
+	t.Run("facts-rendered", func(t *testing.T) {
+		store, broker := newTestStore()
+		projectDir := t.TempDir()
+		memoryDir := filepath.Join(projectDir, "memory")
+		require.NoError(t, os.Mkdir(memoryDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(memoryDir, "MEMORY.md"), []byte("# Memory\n\n- [Likes Go](user_likes-go.md)"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(memoryDir, "user_likes-go.md"), []byte("---\nname: likes-go\nmetadata:\n  type: user\n---\n\nLikes Go."), 0o644))
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.FilePath = filepath.Join(projectDir, "x.jsonl")
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/fragments/sessions/s1/memory")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Contains(t, body, "<h1>Memory</h1>")
+		assert.Contains(t, body, "user_likes-go")
+		assert.Contains(t, body, `<span class="badge">user</span>`)
+		assert.Contains(t, body, "Likes Go.")
+	})
+
+	// not-found-404
+	t.Run("not-found-404", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		assert.Equal(t, http.StatusNotFound, get(server, "/fragments/sessions/unknown/memory").Code)
+	})
 }
 
 func TestDiffFragment(t *testing.T) {

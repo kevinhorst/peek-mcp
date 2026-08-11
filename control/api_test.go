@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/telemetry"
@@ -283,4 +284,36 @@ func TestSessionEvents(t *testing.T) {
 	assert.Equal(t, 1, resp.PlanRevisions)
 
 	assert.Equal(t, http.StatusNotFound, get(server, "/api/sessions/unknown/events").Code)
+}
+
+func TestMemoryAPI(t *testing.T) {
+	// claude-with-memory-200
+	t.Run("claude-with-memory-200", func(t *testing.T) {
+		store, broker := newTestStore()
+		projectDir := t.TempDir()
+		memoryDir := filepath.Join(projectDir, "memory")
+		require.NoError(t, os.Mkdir(memoryDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(memoryDir, "MEMORY.md"), []byte("# Memory"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(memoryDir, "user_fact.md"), []byte("---\ntype: user\n---\n\nA fact."), 0o644))
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.FilePath = filepath.Join(projectDir, "x.jsonl")
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/api/sessions/s1/memory")
+		require.Equal(t, http.StatusOK, response.Code)
+		memory := decode[claude.Memory](t, response)
+		assert.Equal(t, "# Memory", memory.Index)
+		require.Len(t, memory.Facts, 1)
+		assert.Equal(t, "user_fact", memory.Facts[0].Name)
+		assert.Equal(t, "user", memory.Facts[0].Type)
+	})
+
+	// codex-404
+	t.Run("codex-404", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		assert.Equal(t, http.StatusNotFound, get(server, "/api/sessions/s2/memory").Code)
+	})
 }

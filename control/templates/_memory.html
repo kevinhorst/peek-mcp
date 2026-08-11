@@ -1,0 +1,14 @@
+<div>
+{{if .Unavailable}}
+<div class="empty">{{.Unavailable}}</div>
+{{else}}
+{{if .IndexHTML}}<div class="md-body">{{.IndexHTML}}</div>{{end}}
+{{range .Facts}}
+<details class="section">
+  <summary>{{.Name}}{{if .Type}} <span class="badge">{{.Type}}</span>{{end}}</summary>
+  <pre>{{.Body}}</pre>
+</details>
+{{end}}
+{{if .Truncated}}<div class="meta">Truncated at 64 KiB.</div>{{end}}
+{{end}}
+</div>

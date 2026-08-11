@@ -13,16 +13,19 @@ import (
 )
 
 const (
-	usageDetailCost    = "cost"
-	usageDetailDenials = "denials"
-	usageDetailModels  = "models"
-	usageDetailPlans   = "plans"
-	usageDetailSkills  = "skills"
+	usageDetailCost      = "cost"
+	usageDetailDenials   = "denials"
+	usageDetailFiles     = "files"
+	usageDetailModels    = "models"
+	usageDetailPlans     = "plans"
+	usageDetailSkills    = "skills"
+	usageDetailSubagents = "subagents"
 )
 
 func usageDetailParam(r *http.Request) string {
 	switch detail := r.URL.Query().Get("detail"); detail {
-	case usageDetailCost, usageDetailDenials, usageDetailModels, usageDetailPlans, usageDetailSkills:
+	case usageDetailCost, usageDetailDenials, usageDetailFiles, usageDetailModels,
+		usageDetailPlans, usageDetailSkills, usageDetailSubagents:
 		return detail
 	}
 	return ""
@@ -201,6 +204,57 @@ func newSkillsData(id session.Id, sess *session.Session) *skillsData {
 			Cost:      cost.Total,
 		})
 	}
+	return data
+}
+
+type subagentRow struct {
+	Agent       string
+	Description string
+	StartedAt   time.Time
+	Duration    string
+	Tokens      int
+	Cost        string
+}
+
+type subagentsData struct {
+	Id        session.Id
+	Subagents []subagentRow
+}
+
+func newSubagentsData(id session.Id, sess *session.Session) *subagentsData {
+	data := &subagentsData{Id: id}
+	for _, stat := range sess.Subagents {
+		cost := newCostData(id, sess.Agent, sess.Meta.Model, &stat.Usage)
+		data.Subagents = append(data.Subagents, subagentRow{
+			Agent:       stat.AgentType,
+			Description: stat.Description,
+			StartedAt:   stat.FirstActive,
+			Duration:    stat.LastActive.Sub(stat.FirstActive).Round(time.Second).String(),
+			Tokens:      displayTotalTokens(&stat.Usage),
+			Cost:        cost.Total,
+		})
+	}
+	slices.SortFunc(data.Subagents, func(a, b subagentRow) int { return a.StartedAt.Compare(b.StartedAt) })
+	return data
+}
+
+type fileRow struct {
+	Path   string
+	Reads  int
+	Writes int
+}
+
+type filesData struct {
+	Id    session.Id
+	Files []fileRow
+}
+
+func newFilesData(sess *session.Session) *filesData {
+	data := &filesData{Id: sess.Meta.SessionId}
+	for path, counts := range sess.TouchedFiles {
+		data.Files = append(data.Files, fileRow{Path: path, Reads: counts.Reads, Writes: counts.Writes})
+	}
+	slices.SortFunc(data.Files, func(a, b fileRow) int { return strings.Compare(a.Path, b.Path) })
 	return data
 }
 

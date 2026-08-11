@@ -179,6 +179,142 @@ func TestUsageSkillsDetail(t *testing.T) {
 	})
 }
 
+func TestUsageSubagentsDetail(t *testing.T) {
+	// rows-rendered-with-cost
+	t.Run("rows-rendered-with-cost", func(t *testing.T) {
+		store, broker := newTestStore()
+		started := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.Meta.Model = "claude-fable-5"
+			sess.Subagents = map[string]*session.SubagentStat{
+				"a1": {
+					AgentType:   "Explore",
+					Description: "find things",
+					FirstActive: started,
+					LastActive:  started.Add(90 * time.Second),
+					Usage:       session.Usage{InputTokens: 10, OutputTokens: 20},
+				},
+			}
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/fragments/sessions/s1/usage?detail=subagents")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Contains(t, body, "<th>Explore</th>")
+		assert.Contains(t, body, "<td>find things</td>")
+		assert.Contains(t, body, "1m30s")
+		assert.Contains(t, body, "<td>30</td>")
+		assert.Contains(t, body, "$0.0")
+	})
+
+	// sorted-by-start
+	t.Run("sorted-by-start", func(t *testing.T) {
+		store, broker := newTestStore()
+		started := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.Subagents = map[string]*session.SubagentStat{
+				"a2": {AgentType: "later", FirstActive: started.Add(time.Minute), LastActive: started.Add(2 * time.Minute)},
+				"a1": {AgentType: "earlier", FirstActive: started, LastActive: started.Add(time.Minute)},
+			}
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/fragments/sessions/s1/usage?detail=subagents")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Less(t, strings.Index(body, "<th>earlier</th>"), strings.Index(body, "<th>later</th>"))
+	})
+
+	// empty-state
+	t.Run("empty-state", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		response := get(server, "/fragments/sessions/s1/usage?detail=subagents")
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), "No subagents spawned yet.")
+	})
+
+	// row-clickable
+	t.Run("row-clickable", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		response := get(server, "/fragments/sessions/s1/usage")
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), "usage?detail=subagents")
+	})
+}
+
+func TestUsageFilesDetail(t *testing.T) {
+	// rows-rendered
+	t.Run("rows-rendered", func(t *testing.T) {
+		store, broker := newTestStore()
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.AddFileTouch(&session.FileTouch{Path: "/b/second.go", Write: true})
+			sess.AddFileTouch(&session.FileTouch{Path: "/b/second.go", Write: true})
+			sess.AddFileTouch(&session.FileTouch{Path: "/a/first.go"})
+			sess.AddFileTouch(&session.FileTouch{Path: "/a/first.go"})
+			sess.AddFileTouch(&session.FileTouch{Path: "/a/first.go"})
+			sess.AddFileTouch(&session.FileTouch{Path: "/a/first.go", Write: true})
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/fragments/sessions/s1/usage?detail=files")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Contains(t, body, "<th>/a/first.go</th>")
+		assert.Contains(t, body, "<td>3</td>")
+		assert.Less(t, strings.Index(body, "/a/first.go"), strings.Index(body, "/b/second.go"))
+		assert.Contains(t, body, "<th>Touched files</th>")
+		assert.Contains(t, body, "<td>2</td>")
+	})
+
+	// empty-state
+	t.Run("empty-state", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		response := get(server, "/fragments/sessions/s1/usage?detail=files")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Contains(t, body, "No touched files.")
+		assert.Contains(t, body, "<td>0</td>")
+	})
+}
+
+func TestUsageTimeRows(t *testing.T) {
+	// rows-rendered
+	t.Run("rows-rendered", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+
+		response := get(server, "/fragments/sessions/s1/usage")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Contains(t, body, "<th>Session time</th>")
+		assert.Contains(t, body, "<td>1m0s</td>")
+		assert.Contains(t, body, "<th>Idle time</th>")
+		assert.Contains(t, body, "<th>Active time</th>")
+	})
+
+	// no-started-at-hidden
+	t.Run("no-started-at-hidden", func(t *testing.T) {
+		store, broker := newTestStore()
+		store.AddTurnBySessionId("s3", session.AgentClaude, &session.Turn{
+			Role: session.RoleUser,
+			Text: "untimed",
+			Meta: &session.Meta{SessionId: "s3"},
+		})
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/fragments/sessions/s3/usage")
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.NotContains(t, response.Body.String(), "<th>Session time</th>")
+	})
+}
+
 func TestUsageModelsDetail(t *testing.T) {
 	// rows-rendered
 	t.Run("rows-rendered", func(t *testing.T) {

@@ -1,0 +1,9 @@
+{{if .Files}}
+<table class="usage-table">
+  <tr><th>Path</th><th>Reads</th><th>Writes</th></tr>
+  {{range .Files}}<tr><th>{{.Path}}</th><td>{{.Reads}}</td><td>{{.Writes}}</td></tr>
+  {{end}}
+</table>
+{{else}}
+<div class="empty">No touched files.</div>
+{{end}}

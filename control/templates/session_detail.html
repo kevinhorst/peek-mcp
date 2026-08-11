@@ -43,4 +43,10 @@
     <div class="empty">Loading…</div>
   </div>
 </details>
+<details class="section">
+  <summary>Memory</summary>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/memory" hx-trigger="load" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
 {{template "foot" .}}

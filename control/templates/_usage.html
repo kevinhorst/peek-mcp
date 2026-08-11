@@ -1,6 +1,9 @@
 <div class="usage-panel" hx-get="/fragments/sessions/{{.Id}}/usage{{if .Detail}}?detail={{.Detail}}{{end}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
 <div class="usage-grid">
 <table class="usage-table">
+  {{if .SessionTime}}<tr><th>Session time</th><td>{{.SessionTime}}</td></tr>
+  <tr><th>Idle time</th><td>{{.IdleTime}}</td></tr>
+  <tr><th>Active time</th><td>{{.ActiveTime}}</td></tr>{{end}}
   <tr><th>Input tokens</th><td>{{.Usage.InputTokens}}</td></tr>
   <tr><th>Output tokens</th><td>{{.Usage.OutputTokens}}</td></tr>
   {{if .Usage.CacheCreationInputTokens}}<tr><th>Cache creation</th><td>{{.Usage.CacheCreationInputTokens}}</td></tr>{{end}}
@@ -14,7 +17,8 @@
   <tr><th>Plan rejections</th><td>{{.Counters.PlanRejections}}</td></tr>
   <tr class="usage-row" hx-get="/fragments/sessions/{{.Id}}/usage?detail=skills" hx-target="closest .usage-panel" hx-swap="outerHTML"><th>Skills invoked</th><td>{{.Counters.SkillsInvoked}}</td></tr>
   <tr class="usage-row" hx-get="/fragments/sessions/{{.Id}}/usage?detail=models" hx-target="closest .usage-panel" hx-swap="outerHTML"><th>Model changes</th><td>{{.Counters.ModelChanges}}</td></tr>
-  <tr><th>Subagents spawned</th><td>{{.Counters.SubagentsSpawned}}</td></tr>
+  <tr class="usage-row" hx-get="/fragments/sessions/{{.Id}}/usage?detail=subagents" hx-target="closest .usage-panel" hx-swap="outerHTML"><th>Subagents spawned</th><td>{{.Counters.SubagentsSpawned}}</td></tr>
+  <tr class="usage-row" hx-get="/fragments/sessions/{{.Id}}/usage?detail=files" hx-target="closest .usage-panel" hx-swap="outerHTML"><th>Touched files</th><td>{{.TouchedFiles}}</td></tr>
 </table>
 <div class="usage-detail">
 {{if eq .Detail "cost"}}{{template "_usage_cost.html" .Cost}}{{end}}
@@ -22,6 +26,8 @@
 {{if eq .Detail "models"}}{{template "_usage_models.html" .Models}}{{end}}
 {{if eq .Detail "plans"}}{{template "_usage_plans.html" .Plans}}{{end}}
 {{if eq .Detail "skills"}}{{template "_usage_skills.html" .Skills}}{{end}}
+{{if eq .Detail "subagents"}}{{template "_usage_subagents.html" .Subagents}}{{end}}
+{{if eq .Detail "files"}}{{template "_usage_files.html" .Files}}{{end}}
 </div>
 </div>
 </div>

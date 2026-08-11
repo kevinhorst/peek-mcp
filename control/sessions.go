@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/tools"
 )
@@ -21,6 +22,7 @@ const (
 	tmplDiff          = "_diff.html"
 	tmplUsage         = "_usage.html"
 	tmplEvents        = "_events.html"
+	tmplMemory        = "_memory.html"
 )
 
 const maxEventsFragment = 100
@@ -125,12 +127,18 @@ type usageData struct {
 	TotalTokens  int
 	CachePercent string
 	PlanVersions int
+	SessionTime  string
+	IdleTime     string
+	ActiveTime   string
 	Detail       string
 	Cost         *costData
 	Denials      *denialsData
 	Models       *modelsData
 	Plans        *planVersionsData
 	Skills       *skillsData
+	Subagents    *subagentsData
+	TouchedFiles int
+	Files        *filesData
 }
 
 type eventsData struct {
@@ -147,6 +155,13 @@ func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
 		data.TotalTokens = displayTotalTokens(&data.Usage)
 		data.CachePercent = cachePercent(sess.Agent, &data.Usage)
 		data.PlanVersions = len(sess.PlanRevisions)
+		data.TouchedFiles = len(sess.TouchedFiles)
+		if !sess.StartedAt.IsZero() {
+			wall := sess.LastActive.Sub(sess.StartedAt)
+			data.SessionTime = wall.Round(time.Second).String()
+			data.IdleTime = sess.Idle.Round(time.Second).String()
+			data.ActiveTime = (wall - sess.Idle).Round(time.Second).String()
+		}
 		switch data.Detail {
 		case usageDetailCost:
 			cost := newCostData(id, sess.Agent, sess.Meta.Model, sess.CurrentUsage())
@@ -159,6 +174,10 @@ func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
 			data.Plans = newPlanVersionsData(sess)
 		case usageDetailSkills:
 			data.Skills = newSkillsData(id, sess)
+		case usageDetailSubagents:
+			data.Subagents = newSubagentsData(id, sess)
+		case usageDetailFiles:
+			data.Files = newFilesData(sess)
 		}
 	}) {
 		respondNotFound("unknown session", w)
@@ -211,6 +230,60 @@ func (s *Server) handlePlanFragment(w http.ResponseWriter, r *http.Request) {
 		data.PlanHTML = html
 	}
 	s.renderFragment(w, tmplPlan, data)
+}
+
+type memoryFact struct {
+	Name string
+	Type string
+	Body string
+}
+
+type memoryData struct {
+	Id          session.Id
+	IndexHTML   any
+	Facts       []memoryFact
+	Truncated   bool
+	Unavailable string
+}
+
+func (s *Server) handleMemoryFragment(w http.ResponseWriter, r *http.Request) {
+	id := session.Id(r.PathValue("id"))
+	var agent session.Agent
+	var transcriptPath string
+	if !s.store.WithSession(id, func(sess *session.Session) {
+		agent = sess.Agent
+		transcriptPath = sess.FilePath
+	}) {
+		respondNotFound("unknown session", w)
+		return
+	}
+
+	data := memoryData{Id: id}
+	switch {
+	case agent != session.AgentClaude:
+		data.Unavailable = "memory is not available for codex sessions"
+	case transcriptPath == "":
+		data.Unavailable = "transcript path unknown"
+	default:
+		memory, err := claude.ReadMemory(transcriptPath)
+		if err != nil {
+			data.Unavailable = err.Error()
+			break
+		}
+		data.Truncated = memory.IsTruncated
+		if memory.Index != "" {
+			html, err := renderMarkdown([]byte(memory.Index))
+			if err != nil {
+				respondInternalServerError(err, w)
+				return
+			}
+			data.IndexHTML = html
+		}
+		for _, fact := range memory.Facts {
+			data.Facts = append(data.Facts, memoryFact{Name: fact.Name, Type: fact.Type, Body: fact.Body})
+		}
+	}
+	s.renderFragment(w, tmplMemory, data)
 }
 
 func (s *Server) handleDiffFragment(w http.ResponseWriter, r *http.Request) {
