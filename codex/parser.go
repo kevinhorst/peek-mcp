@@ -152,8 +152,9 @@ func (p *Parser) handleSubagentMeta(meta *SessionMeta, ts time.Time) *session.Tu
 	}
 
 	turn := &session.Turn{
-		Events: []*session.Event{event},
-		Meta:   &session.Meta{SessionId: p.sessionId},
+		Events:     []*session.Event{event},
+		SubagentId: p.subagentActor,
+		Meta:       &session.Meta{SessionId: p.sessionId},
 	}
 	return turn
 }
@@ -273,8 +274,9 @@ func (p *Parser) handleFunctionCallOutput(item *ResponseItem, ts time.Time) *ses
 	}
 
 	turn := &session.Turn{
-		Events: []*session.Event{event},
-		Meta:   &session.Meta{SessionId: p.sessionId},
+		Events:     []*session.Event{event},
+		SubagentId: p.subagentActor,
+		Meta:       &session.Meta{SessionId: p.sessionId},
 	}
 	return turn
 }

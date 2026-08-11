@@ -153,7 +153,7 @@ func TestCodex_SubagentSpawned(t *testing.T) {
 	turn := p.ParseLine(bytes.TrimSpace(data))
 
 	require.NotNil(t, turn, "sub-agent session_meta yields a spawned event turn")
-	require.True(t, turn.IsSubagentSignal())
+	require.NotEmpty(t, turn.SubagentId)
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, session.EventKindSubagentSpawned, turn.Events[0].Kind)
 	assert.Equal(t, "Hume", turn.Events[0].Actor)
