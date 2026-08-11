@@ -133,12 +133,15 @@ go build -o peek-mcp .
 
 ### Windows
 
-Download `peek-mcp-windows-amd64.exe` (or `-arm64.exe`) from the
-[latest release](https://github.com/kevinhorst/peek-mcp/releases/latest),
-rename it to `peek-mcp.exe`, and place it on your `PATH`.
+Download and run [peek-mcp-setup.exe](https://github.com/kevinhorst/peek-mcp/releases/latest)
+— a wizard that installs the binary, configures Claude Code and/or Codex CLI, lets you
+enable or disable the control server dashboard (default on), and optionally adds
+peek-mcp to your PATH. Uninstalling removes the binary but leaves your agent configs
+untouched.
 
-The binary is unsigned; on first run SmartScreen may warn. Choose
-**More info → Run anyway**, or unblock it in PowerShell:
+For a manual install, download `peek-mcp-windows-amd64.exe` (or `-arm64.exe`),
+rename it to `peek-mcp.exe`, and place it on your `PATH`. If SmartScreen warns,
+choose **More info → Run anyway**, or unblock it in PowerShell:
 
 ```powershell
 Unblock-File peek-mcp.exe
@@ -151,6 +154,12 @@ peek-mcp
 ```
 
 Running `peek-mcp` with no arguments launches an interactive wizard that writes the correct config for your environment (Claude Code, Codex CLI, or both). It detects existing configs and merges without destroying other keys.
+
+Non-interactive (used by the Windows installer, works everywhere):
+
+```bash
+peek-mcp setup --claude --codex --control-server=false
+```
 
 ## Usage
 
