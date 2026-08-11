@@ -32,9 +32,17 @@ Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; Value
 
 [Run]
 Filename: "{app}\peek-mcp.exe"; Parameters: "{code:SetupParams}"; StatusMsg: "Writing agent configuration..."; Flags: runhidden waituntilterminated; Check: WizardIsTaskSelected('claude') or WizardIsTaskSelected('codex')
-Filename: "http://127.0.0.1:42442"; Description: "Open the control server dashboard (needs a running agent session)"; Flags: shellexec postinstall skipifsilent unchecked
+Filename: "{app}\peek-mcp.exe"; Parameters: "{code:StartParams}"; Description: "Start peek-mcp now (keeps a console window open)"; Flags: nowait postinstall skipifsilent
+Filename: "http://127.0.0.1:42442"; Description: "Open the control server dashboard"; Flags: shellexec postinstall skipifsilent; Check: WizardIsTaskSelected('controlserver')
 
 [Code]
+function StartParams(Param: string): string;
+begin
+  Result := 'start';
+  if not WizardIsTaskSelected('controlserver') then
+    Result := Result + ' --control-port=0';
+end;
+
 function SetupParams(Param: string): string;
 begin
   Result := 'setup';

@@ -136,8 +136,9 @@ go build -o peek-mcp .
 Download and run [peek-mcp-setup.exe](https://github.com/kevinhorst/peek-mcp/releases/latest)
 — a wizard that installs the binary, configures Claude Code and/or Codex CLI, lets you
 enable or disable the control server dashboard (default on), and optionally adds
-peek-mcp to your PATH. Uninstalling removes the binary but leaves your agent configs
-untouched.
+peek-mcp to your PATH. The finish page starts peek-mcp (a console window stays open)
+and opens the dashboard. Uninstalling removes the binary but leaves your agent
+configs untouched.
 
 For a manual install, download `peek-mcp-windows-amd64.exe` (or `-arm64.exe`),
 rename it to `peek-mcp.exe`, and place it on your `PATH`. If SmartScreen warns,

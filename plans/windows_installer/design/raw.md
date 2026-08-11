@@ -546,3 +546,4 @@ None.
 |---|---|---|
 | — | initial | plan created |
 | 2026-08-11 | approval feedback | D1 resolved [USER]: SignPath Foundation, application pending — signing phase removed from scope, ships unsigned |
+| 2026-08-11 | Win 10 usage | Installer left nothing running — finish page gains "Start peek-mcp now" (default checked, visible console, honors the controlserver task via `--control-port=0`); dashboard-open checkbox now default checked and shown only when the controlserver task is selected (D9 premise changed) |
