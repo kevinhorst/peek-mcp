@@ -33,7 +33,7 @@ func counted(counter *InvocationCounter, name string, handler server.ToolHandler
 	}
 }
 
-func Register(server *server.MCPServer, store *session.Store, counter *InvocationCounter, telemetryStore *telemetry.Store) {
+func Register(server *server.MCPServer, store *session.Store, counter *InvocationCounter, telemetryStore *telemetry.Store, detector *telemetry.Detector) {
 	pageStore := &PageStore[*sessionGetResult]{
 		PagesByRequestId: make(map[string]<-chan *sessionGetResult),
 	}
@@ -118,7 +118,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 		),
 	)
 	sessionEvents.Meta = withMaxResultSize()
-	server.AddTool(sessionEvents, counted(counter, "session_events", sessionEventsHandler(store, eventsPageStore, telemetryStore)))
+	server.AddTool(sessionEvents, counted(counter, "session_events", sessionEventsHandler(detector, store, eventsPageStore, telemetryStore)))
 }
 
 func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]) server.ToolHandlerFunc {
@@ -278,7 +278,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 	}
 }
 
-func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsResult], telemetryStore *telemetry.Store) server.ToolHandlerFunc {
+func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageStore *PageStore[*sessionEventsResult], telemetryStore *telemetry.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
 
@@ -346,13 +346,8 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 		firstPage.Diff = diffAvailability(currentSession)
 		firstPage.PlanRevisions = newPlanRevisionsView(currentSession)
 		firstPage.Time = newSessionTimeView(currentSession)
-		if telemetryStore != nil && firstPage.Time != nil {
-			if stats, ok := telemetryStore.Get(string(currentSession.Meta.SessionId)); ok {
-				firstPage.Time.Telemetry = &telemetryTimeView{
-					ActiveSeconds: int(stats.ActiveSeconds),
-					CostUSD:       stats.CostUSD,
-				}
-			}
+		if firstPage.Time != nil {
+			firstPage.Time.Telemetry = newTelemetryTimeView(currentSession, detector, telemetryStore)
 		}
 		firstPage.TouchedFiles = newTouchedFileViews(currentSession)
 		if boolArgFromRequest(request, "breakdown", false) {

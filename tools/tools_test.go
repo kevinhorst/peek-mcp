@@ -247,7 +247,7 @@ func TestSessionEvents_JsonTypedUnpaginated(t *testing.T) {
 	s1, _ := store.GetById("s1")
 	s1.AddEvent(&session.Event{Kind: session.EventKindSkillInvoked, Skill: &session.SkillPayload{Skill: "jq"}})
 	pageStore := &PageStore[*sessionEventsResult]{PagesByRequestId: make(map[string]<-chan *sessionEventsResult)}
-	handler := sessionEventsHandler(store, pageStore, nil)
+	handler := sessionEventsHandler(nil, store, pageStore, nil)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true}))
 

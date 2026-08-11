@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/telemetry"
 )
 
 const maxEventSummaryChars = 200
@@ -24,8 +25,10 @@ type planRevisionsView struct {
 }
 
 type telemetryTimeView struct {
-	ActiveSeconds int     `json:"active_seconds"`
-	CostUSD       float64 `json:"cost_usd,omitempty"`
+	ActiveSeconds int                   `json:"active_seconds,omitempty"`
+	CostUSD       float64               `json:"cost_usd,omitempty"`
+	Detail        string                `json:"detail,omitempty"`
+	Status        telemetry.ExportState `json:"status"`
 }
 
 type sessionTimeView struct {
@@ -68,6 +71,29 @@ func newTouchedFileViews(currentSession *session.Session) []*touchedFileView {
 	}
 	sort.Slice(views, func(i, j int) bool { return views[i].Path < views[j].Path })
 	return views
+}
+
+func newTelemetryTimeView(currentSession *session.Session, detector *telemetry.Detector, telemetryStore *telemetry.Store) *telemetryTimeView {
+	if currentSession.Agent != session.AgentClaude {
+		return nil
+	}
+	if telemetryStore == nil {
+		return nil
+	}
+
+	if stats, ok := telemetryStore.Get(string(currentSession.Meta.SessionId)); ok {
+		return &telemetryTimeView{
+			ActiveSeconds: int(stats.ActiveSeconds),
+			CostUSD:       stats.CostUSD,
+			Status:        telemetry.ExportReceiving,
+		}
+	}
+
+	if detector == nil {
+		return nil
+	}
+	status := detector.Status()
+	return &telemetryTimeView{Detail: status.Detail, Status: status.State}
 }
 
 func newSessionTimeView(currentSession *session.Session) *sessionTimeView {
