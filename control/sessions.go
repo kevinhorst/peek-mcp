@@ -2,6 +2,7 @@ package control
 
 import (
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
@@ -12,11 +13,17 @@ const (
 	pageSessions      = "sessions"
 	tmplSessionsIndex = "sessions_index.html"
 	tmplSessionDetail = "session_detail.html"
+	tmplStats         = "stats.html"
+	tmplStatsFragment = "_stats.html"
 	tmplSessionList   = "_session_list.html"
 	tmplTurns         = "_turns.html"
 	tmplPlan          = "_plan.html"
 	tmplDiff          = "_diff.html"
+	tmplUsage         = "_usage.html"
+	tmplEvents        = "_events.html"
 )
+
+const maxEventsFragment = 100
 
 type indexPage struct {
 	Page  string
@@ -109,6 +116,47 @@ func (s *Server) handleSessionsFragment(w http.ResponseWriter, r *http.Request) 
 	data.HasNext = data.NextOffset < data.Total
 	data.RangeEnd = offset + len(data.Sessions)
 	s.renderFragment(w, tmplSessionList, data)
+}
+
+type usageData struct {
+	Id       session.Id
+	Counters session.Counters
+	Usage    session.Usage
+}
+
+type eventsData struct {
+	Id     session.Id
+	Events []*tools.EventEntry
+}
+
+func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
+	id := session.Id(r.PathValue("id"))
+	data := usageData{Id: id}
+	if !s.store.WithSession(id, func(sess *session.Session) {
+		data.Counters = sess.Counters
+		data.Usage = *sess.CurrentUsage()
+	}) {
+		respondNotFound("unknown session", w)
+		return
+	}
+	s.renderFragment(w, tmplUsage, data)
+}
+
+func (s *Server) handleEventsFragment(w http.ResponseWriter, r *http.Request) {
+	id := session.Id(r.PathValue("id"))
+	data := eventsData{Id: id}
+	if !s.store.WithSession(id, func(sess *session.Session) {
+		all := sess.Events.All()
+		slices.Reverse(all)
+		if len(all) > maxEventsFragment {
+			all = all[:maxEventsFragment]
+		}
+		data.Events = tools.NewEventEntries(all)
+	}) {
+		respondNotFound("unknown session", w)
+		return
+	}
+	s.renderFragment(w, tmplEvents, data)
 }
 
 func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {

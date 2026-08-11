@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/state"
+	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -178,4 +182,72 @@ func TestHealthz(t *testing.T) {
 	health := decode[healthzResponse](t, response)
 	assert.Equal(t, "ok", health.Status)
 	assert.Equal(t, "test", health.Version)
+}
+
+func TestStats(t *testing.T) {
+	store, broker := newTestStore()
+	stateDir := state.NewDir(t.TempDir())
+	require.NoError(t, stateDir.WriteDiffSnapshot("claude", "diff content", "s1"))
+	invocations := tools.NewInvocationCounter()
+	invocations.Inc("session_list")
+	server, err := New(&Options{
+		Store:       store,
+		Broker:      broker,
+		Token:       "secret123",
+		Version:     "test",
+		Depth:       10,
+		StartedAt:   time.Now().Add(-time.Minute),
+		StateDir:    stateDir,
+		Invocations: invocations,
+		Config:      Config{Transport: "http", ControlPort: 4243, TokenSet: true},
+	})
+	require.NoError(t, err)
+
+	response := get(server, "/api/stats", func(r *http.Request) { r.Header.Set("Authorization", "Bearer secret123") })
+	require.Equal(t, http.StatusOK, response.Code)
+	stats := decode[statsResponse](t, response)
+	assert.Equal(t, os.Getpid(), stats.PID)
+	assert.Equal(t, "test", stats.Version)
+	assert.NotEmpty(t, stats.Uptime)
+	assert.Positive(t, stats.Goroutines)
+	assert.Equal(t, sessionCounts{Claude: 1, Codex: 1, Total: 2}, stats.Sessions)
+	assert.Positive(t, stats.StateDiskBytes)
+	assert.Equal(t, map[string]int{"session_list": 1}, stats.Invocations)
+	assert.True(t, stats.Config.TokenSet)
+	assert.NotContains(t, response.Body.String(), "secret123")
+}
+
+func TestStats_WithoutStateDir(t *testing.T) {
+	server, _ := newTestServer(t, "")
+
+	response := get(server, "/api/stats")
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.NotContains(t, response.Body.String(), "state_disk_bytes")
+	assert.NotContains(t, response.Body.String(), "invocations")
+}
+
+func TestSessionEvents(t *testing.T) {
+	store, broker := newTestStore()
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Events: []*session.Event{{
+			Kind:      session.EventKindSkillInvoked,
+			Skill:     &session.SkillPayload{Skill: "peek", Source: session.SkillSourceSlash},
+			Timestamp: time.Now(),
+		}},
+		Meta: &session.Meta{SessionId: "s1"},
+	})
+	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+	require.NoError(t, err)
+
+	response := get(server, "/api/sessions/s1/events")
+	require.Equal(t, http.StatusOK, response.Code)
+	resp := decode[eventsResponse](t, response)
+	assert.Equal(t, 1, resp.Counters.SkillsInvoked)
+	require.Len(t, resp.Events, 1)
+	assert.Equal(t, session.EventKindSkillInvoked, resp.Events[0].Event)
+	assert.Equal(t, "peek", resp.Events[0].Summary)
+	assert.Equal(t, 10, resp.Usage.InputTokens)
+	assert.Equal(t, 1, resp.PlanRevisions)
+
+	assert.Equal(t, http.StatusNotFound, get(server, "/api/sessions/unknown/events").Code)
 }

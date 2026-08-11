@@ -1,0 +1,16 @@
+<div hx-get="/fragments/sessions/{{.Id}}/usage" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+<table>
+  <tr><th>Input tokens</th><td>{{.Usage.InputTokens}}</td></tr>
+  <tr><th>Output tokens</th><td>{{.Usage.OutputTokens}}</td></tr>
+  <tr><th>Cache creation</th><td>{{.Usage.CacheCreationInputTokens}}</td></tr>
+  <tr><th>Cache read</th><td>{{.Usage.CacheReadInputTokens}}</td></tr>
+  <tr><th>Cached input</th><td>{{.Usage.CachedInputTokens}}</td></tr>
+  <tr><th>Reasoning output</th><td>{{.Usage.ReasoningOutputTokens}}</td></tr>
+  <tr><th>Total tokens</th><td>{{.Usage.TotalTokens}}</td></tr>
+  <tr><th>Permission denials</th><td>{{.Counters.PermissionDenials}}</td></tr>
+  <tr><th>Plan alterations</th><td>{{.Counters.PlanAlterations}}</td></tr>
+  <tr><th>Plan rejections</th><td>{{.Counters.PlanRejections}}</td></tr>
+  <tr><th>Skills invoked</th><td>{{.Counters.SkillsInvoked}}</td></tr>
+  <tr><th>Subagents spawned</th><td>{{.Counters.SubagentsSpawned}}</td></tr>
+</table>
+</div>

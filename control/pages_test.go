@@ -13,6 +13,72 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestStatsPage(t *testing.T) {
+	server, _ := newTestServer(t, "")
+
+	response := get(server, "/stats")
+	require.Equal(t, http.StatusOK, response.Code)
+	body := response.Body.String()
+	assert.Contains(t, body, `href="/stats"`)
+	assert.Contains(t, body, `hx-get="/fragments/stats"`)
+}
+
+func TestStatsFragment(t *testing.T) {
+	store, broker := newTestStore()
+	server, err := New(&Options{
+		Store:   store,
+		Broker:  broker,
+		Version: "test",
+		Depth:   10,
+		Config:  Config{Transport: "http", ControlPort: 4243},
+	})
+	require.NoError(t, err)
+
+	response := get(server, "/fragments/stats")
+	require.Equal(t, http.StatusOK, response.Code)
+	body := response.Body.String()
+	assert.Contains(t, body, "<th>PID</th>")
+	assert.Contains(t, body, "<th>Transport</th>")
+	assert.Contains(t, body, "1 claude · 1 codex · 2 total")
+	assert.NotContains(t, body, "Restart")
+}
+
+func TestUsageFragment(t *testing.T) {
+	server, _ := newTestServer(t, "")
+
+	response := get(server, "/fragments/sessions/s1/usage")
+	require.Equal(t, http.StatusOK, response.Code)
+	body := response.Body.String()
+	assert.Contains(t, body, "<th>Input tokens</th><td>10</td>")
+	assert.Contains(t, body, "<th>Skills invoked</th><td>0</td>")
+
+	assert.Equal(t, http.StatusNotFound, get(server, "/fragments/sessions/unknown/usage").Code)
+}
+
+func TestEventsFragment(t *testing.T) {
+	store, broker := newTestStore()
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Events: []*session.Event{{
+			Kind:      session.EventKindSkillInvoked,
+			Skill:     &session.SkillPayload{Skill: "peek", Source: session.SkillSourceSlash},
+			Timestamp: time.Now(),
+		}},
+		Meta: &session.Meta{SessionId: "s1"},
+	})
+	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+	require.NoError(t, err)
+
+	response := get(server, "/fragments/sessions/s1/events")
+	require.Equal(t, http.StatusOK, response.Code)
+	body := response.Body.String()
+	assert.Contains(t, body, "skill_invoked")
+	assert.Contains(t, body, "peek")
+
+	response = get(server, "/fragments/sessions/s2/events")
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), "No events yet.")
+}
+
 func TestSessionsPage(t *testing.T) {
 	server, _ := newTestServer(t, "")
 
@@ -91,8 +157,10 @@ func TestSessionDetailPage(t *testing.T) {
 	assert.Contains(t, body, "Login simplification")
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/turns"`)
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/plan"`)
-	assert.Equal(t, 4, strings.Count(body, `<details class="section">`))
-	assert.NotContains(t, body, `<details class="section" open>`)
+	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/usage"`)
+	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/events"`)
+	assert.Equal(t, 5, strings.Count(body, `<details class="section">`))
+	assert.Equal(t, 1, strings.Count(body, `<details class="section" open>`))
 
 	assert.Equal(t, http.StatusNotFound, get(server, "/sessions/unknown").Code)
 }

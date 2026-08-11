@@ -1,0 +1,33 @@
+<div hx-get="/fragments/stats" hx-trigger="every 10s" hx-swap="outerHTML">
+<table>
+  <tr><th>PID</th><td>{{.PID}}</td></tr>
+  <tr><th>Version</th><td>{{.Version}}</td></tr>
+  <tr><th>Started</th><td>{{ts .StartedAt}} · up {{.Uptime}}</td></tr>
+  <tr><th>RAM</th><td>{{bytes .HeapAllocBytes}} heap · {{bytes .SysBytes}} from OS</td></tr>
+  <tr><th>Goroutines</th><td>{{.Goroutines}}</td></tr>
+  {{if .Config.StateDir}}<tr><th>State dir</th><td>{{.Config.StateDir}} · {{bytes .StateDiskBytes}}</td></tr>{{end}}
+  <tr><th>Sessions</th><td>{{.Sessions.Claude}} claude · {{.Sessions.Codex}} codex · {{.Sessions.Total}} total</td></tr>
+  <tr><th>SSE clients</th><td>{{.SSEClients}}</td></tr>
+</table>
+{{if .Invocations}}
+<h2>Tool invocations</h2>
+<table>
+  {{range $tool, $count := .Invocations}}<tr><th>{{$tool}}</th><td>{{$count}}</td></tr>{{end}}
+</table>
+{{end}}
+<h2>Config</h2>
+<table>
+  <tr><th>Transport</th><td>{{.Config.Transport}}</td></tr>
+  <tr><th>Port</th><td>{{.Config.Port}}</td></tr>
+  <tr><th>Depth</th><td>{{.Config.Depth}}</td></tr>
+  <tr><th>Claude home</th><td>{{.Config.ClaudeHome}}</td></tr>
+  <tr><th>Codex home</th><td>{{.Config.CodexHome}}</td></tr>
+  <tr><th>Poll interval</th><td>{{.Config.PollInterval}}</td></tr>
+  <tr><th>Poll window</th><td>{{.Config.PollWindow}}</td></tr>
+  <tr><th>State retention</th><td>{{.Config.StateRetentionDays}} days</td></tr>
+  <tr><th>Control port</th><td>{{.Config.ControlPort}}</td></tr>
+  <tr><th>Token</th><td>{{if .Config.TokenSet}}set{{else}}not set{{end}}</td></tr>
+  <tr><th>Log level</th><td>{{.Config.LogLevel}}</td></tr>
+</table>
+{{if .RestartAvailable}}<button hx-post="/api/restart" hx-confirm="Restart peek-mcp?">Restart</button>{{end}}
+</div>

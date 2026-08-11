@@ -7,6 +7,18 @@
   {{if .Summary.Model}}· {{.Summary.Model}}{{end}}
   · {{ts .Summary.LastActive}}
 </div>
+<details class="section" open>
+  <summary>Usage</summary>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/usage" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
+<details class="section">
+  <summary>Events</summary>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/events" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+    <div class="empty">Loading…</div>
+  </div>
+</details>
 <details class="section">
   <summary>Turns</summary>
   <div hx-get="/fragments/sessions/{{.Summary.Id}}/turns" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">

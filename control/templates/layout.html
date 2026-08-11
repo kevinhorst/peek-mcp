@@ -20,7 +20,7 @@
     document.getElementById('error-banner').style.display = 'none';
   });
   var source = new EventSource('/api/events');
-  ['session_created', 'turn_added', 'plan_updated', 'diff_updated', 'uncommitted_diff_updated'].forEach(function (type) {
+  ['session_created', 'turn_added', 'event_added', 'usage_updated', 'plan_updated', 'diff_updated', 'uncommitted_diff_updated'].forEach(function (type) {
     source.addEventListener(type, function () { htmx.trigger(document.body, 'peek-refresh'); });
   });
 </script>
@@ -29,6 +29,7 @@
 {{define "nav"}}
 <nav>
   <a href="/" {{if eq .Page "sessions"}}class="active"{{end}}>Sessions</a>
+  <a href="/stats" {{if eq .Page "stats"}}class="active"{{end}}>Stats</a>
 </nav>
 {{end}}
 

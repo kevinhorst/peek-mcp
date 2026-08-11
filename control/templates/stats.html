@@ -1,0 +1,7 @@
+{{template "head" .}}
+{{template "nav" .}}
+<h1>Peek</h1>
+<div hx-get="/fragments/stats" hx-trigger="load, every 10s" hx-swap="outerHTML">
+  <div class="empty">Loading…</div>
+</div>
+{{template "foot" .}}

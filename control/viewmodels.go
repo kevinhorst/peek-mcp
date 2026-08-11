@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/tools"
 )
 
 type sessionSummary struct {
@@ -49,9 +50,53 @@ type usageResponse struct {
 	TotalUsage session.Usage `json:"total_usage"`
 }
 
+type eventsResponse struct {
+	Counters      session.Counters    `json:"counters"`
+	Events        []*tools.EventEntry `json:"events"`
+	PlanRevisions int                 `json:"plan_revisions"`
+	Usage         session.Usage       `json:"usage"`
+}
+
 type healthzResponse struct {
 	Status  string `json:"status"`
 	Version string `json:"version"`
+}
+
+type Config struct {
+	Transport          string `json:"transport"`
+	Port               int    `json:"port"`
+	Depth              int    `json:"depth"`
+	ClaudeHome         string `json:"claude_home,omitempty"`
+	CodexHome          string `json:"codex_home,omitempty"`
+	PollInterval       string `json:"poll_interval"`
+	PollWindow         string `json:"poll_window"`
+	StateDir           string `json:"state_dir,omitempty"`
+	StateRetentionDays int    `json:"state_retention_days"`
+	ControlPort        int    `json:"control_port"`
+	TokenSet           bool   `json:"token_set"`
+	LogLevel           string `json:"log_level"`
+}
+
+type sessionCounts struct {
+	Claude int `json:"claude"`
+	Codex  int `json:"codex"`
+	Total  int `json:"total"`
+}
+
+type statsResponse struct {
+	PID              int            `json:"pid"`
+	Version          string         `json:"version"`
+	StartedAt        time.Time      `json:"started_at"`
+	Uptime           string         `json:"uptime"`
+	HeapAllocBytes   int64          `json:"heap_alloc_bytes"`
+	SysBytes         int64          `json:"sys_bytes"`
+	Goroutines       int            `json:"goroutines"`
+	StateDiskBytes   int64          `json:"state_disk_bytes,omitempty"`
+	Sessions         sessionCounts  `json:"sessions"`
+	Invocations      map[string]int `json:"invocations,omitempty"`
+	SSEClients       int64          `json:"sse_clients"`
+	Config           Config         `json:"config"`
+	RestartAvailable bool           `json:"restart_available"`
 }
 
 func newSessionSummary(sess *session.Session) sessionSummary {

@@ -196,3 +196,20 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, usage)
 }
+
+func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
+	var resp eventsResponse
+	found := s.store.WithSession(session.Id(r.PathValue("id")), func(sess *session.Session) {
+		resp = eventsResponse{
+			Counters:      sess.Counters,
+			Events:        tools.NewEventEntries(sess.Events.All()),
+			PlanRevisions: len(sess.PlanRevisions),
+			Usage:         *sess.CurrentUsage(),
+		}
+	})
+	if !found {
+		respondNotFound("unknown session", w)
+		return
+	}
+	writeJSON(w, resp)
+}

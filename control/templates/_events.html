@@ -1,0 +1,16 @@
+<div hx-get="/fragments/sessions/{{.Id}}/events" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Events}}
+{{range .Events}}
+<div class="card card-column">
+  <div class="card-row">
+    <span class="badge">{{.Event}}</span>
+    {{if .Actor}}<span class="meta">{{.Actor}}</span>{{end}}
+    <span class="meta">{{ts .Timestamp}}</span>
+  </div>
+  {{if .Summary}}<div class="snippet"><pre>{{.Summary}}</pre></div>{{end}}
+</div>
+{{end}}
+{{else}}
+<div class="empty">No events yet.</div>
+{{end}}
+</div>
