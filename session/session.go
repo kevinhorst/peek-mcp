@@ -32,6 +32,8 @@ const maxSubagentStats = 200
 
 const maxSkillStats = 100
 
+const StopReasonToolUse = "tool_use"
+
 type DiffSource string
 
 const (
@@ -83,6 +85,8 @@ func (s *Session) AddEvent(event *Event) {
 	s.Events.Push(event)
 
 	switch event.Kind {
+	case EventKindModelChanged:
+		s.Counters.ModelChanges++
 	case EventKindPermissionDenied:
 		s.Counters.PermissionDenials++
 	case EventKindPlanModeExit:
@@ -130,6 +134,7 @@ func (s *Session) AddFileTouch(touch *FileTouch) {
 type SkillStat struct {
 	Skill     string    `json:"skill"`
 	Args      string    `json:"args,omitempty"`
+	Model     string    `json:"model,omitempty"`
 	StartedAt time.Time `json:"started_at"`
 	EndedAt   time.Time `json:"ended_at,omitempty"`
 	Usage     Usage     `json:"usage"`
@@ -148,7 +153,7 @@ func (s *Session) CloseSkillWindow(timestamp time.Time) {
 	if s.activeSkill == nil {
 		return
 	}
-	if !timestamp.IsZero() {
+	if s.activeSkill.EndedAt.IsZero() && !timestamp.IsZero() {
 		s.activeSkill.EndedAt = timestamp
 	}
 	s.activeSkill = nil
@@ -242,8 +247,15 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 			if s.activeSkill != nil {
 				s.activeSkill.Usage.Add(nextTurn.Usage)
 				s.activeSkill.EndedAt = nextTurn.Timestamp
+				if s.activeSkill.Model == "" {
+					s.activeSkill.Model = nextTurn.Meta.Model
+				}
 			}
 		}
+	}
+
+	if nextTurn.StopReason != "" && nextTurn.StopReason != StopReasonToolUse {
+		s.CloseSkillWindow(nextTurn.Timestamp)
 	}
 
 	// first turn

@@ -39,6 +39,14 @@ func TestSession_AddEventCounters(t *testing.T) {
 		assert.Equal(t, 1, s.Counters.SubagentsSpawned)
 	})
 
+	// model-change-increments
+	t.Run("model-change-increments", func(t *testing.T) {
+		s := provideCompleteSession()
+		event := &Event{Kind: EventKindModelChanged}
+		s.AddEvent(event)
+		assert.Equal(t, 1, s.Counters.ModelChanges)
+	})
+
 	// mode-exit-sets-phase
 	t.Run("mode-exit-sets-phase", func(t *testing.T) {
 		s := provideCompleteSession()

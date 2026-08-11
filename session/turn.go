@@ -25,6 +25,7 @@ type Turn struct {
 	PlanContent  string       `json:"-"`                    // inline plan content from attachment
 	CustomTitle  string       `json:"-"`                    // title signal only, not serialized
 	PromptId     string       `json:"-"`                    // prompt submission id, not serialized
+	StopReason   string       `json:"-"`                    // assistant turn-end signal, not serialized
 	SubagentId   string       `json:"-"`                    // subagent signal: routes fold to per-agent stats
 	TitleSource  TitleSource  `json:"-"`
 }

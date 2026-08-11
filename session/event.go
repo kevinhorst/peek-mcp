@@ -9,6 +9,7 @@ import (
 type EventKind string
 
 const (
+	EventKindModelChanged     EventKind = "model_changed"
 	EventKindPermissionDenied EventKind = "permission_denied"
 	EventKindPlanApproved     EventKind = "plan_approved"
 	EventKindPlanModeEnter    EventKind = "plan_mode_enter"
@@ -28,6 +29,7 @@ const (
 )
 
 type Counters struct {
+	ModelChanges      int `json:"model_changes"`
 	PermissionDenials int `json:"permission_denials"`
 	PlanAlterations   int `json:"plan_alterations"`
 	PlanRejections    int `json:"plan_rejections"`
@@ -38,6 +40,7 @@ type Counters struct {
 type Event struct {
 	Actor      string             `json:"actor,omitempty"`
 	Kind       EventKind          `json:"kind"`
+	Model      *ModelPayload      `json:"model,omitempty"`
 	Permission *PermissionPayload `json:"permission,omitempty"`
 	Plan       *PlanPayload       `json:"plan,omitempty"`
 	Skill      *SkillPayload      `json:"skill,omitempty"`
@@ -57,6 +60,11 @@ func (e *Event) Validate() error {
 	}
 
 	return nil
+}
+
+type ModelPayload struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 type PermissionPayload struct {

@@ -116,4 +116,46 @@ func TestSession_SkillWindows(t *testing.T) {
 		s.CloseSkillWindow(base)
 		assert.Empty(t, s.Skills)
 	})
+
+	// stop-reason-closes-window
+	t.Run("stop-reason-closes-window", func(t *testing.T) {
+		s := provideCompleteSession()
+		s.AddEvent(skillEvent("fchange", base))
+		s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r1", StopReason: "end_turn", Usage: &Usage{OutputTokens: 7}, Timestamp: base.Add(time.Second), Meta: &Meta{SessionId: "sess-123"}})
+		s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r2", Usage: &Usage{OutputTokens: 9}, Timestamp: base.Add(time.Minute), Meta: &Meta{SessionId: "sess-123"}})
+
+		assert.Equal(t, base.Add(time.Second), s.Skills[0].EndedAt)
+		assert.Equal(t, 7, s.Skills[0].Usage.OutputTokens, "turns after the stop no longer attribute")
+	})
+
+	// tool-use-keeps-window-open
+	t.Run("tool-use-keeps-window-open", func(t *testing.T) {
+		s := provideCompleteSession()
+		s.AddEvent(skillEvent("fchange", base))
+		s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r1", StopReason: StopReasonToolUse, Usage: &Usage{OutputTokens: 7}, Timestamp: base.Add(time.Second), Meta: &Meta{SessionId: "sess-123"}})
+		s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r2", Usage: &Usage{OutputTokens: 9}, Timestamp: base.Add(time.Minute), Meta: &Meta{SessionId: "sess-123"}})
+
+		assert.Equal(t, 16, s.Skills[0].Usage.OutputTokens)
+		assert.Equal(t, base.Add(time.Minute), s.Skills[0].EndedAt)
+	})
+
+	// prompt-close-keeps-last-activity
+	t.Run("prompt-close-keeps-last-activity", func(t *testing.T) {
+		s := provideCompleteSession()
+		s.AddEvent(skillEvent("fchange", base))
+		s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r1", Usage: &Usage{OutputTokens: 7}, Timestamp: base.Add(time.Second), Meta: &Meta{SessionId: "sess-123"}})
+		s.HandlePromptBoundary("p2", base.Add(30*time.Minute))
+
+		assert.Equal(t, base.Add(time.Second), s.Skills[0].EndedAt, "idle gap before the next prompt never counts")
+	})
+
+	// model-captured-from-first-attributed-turn
+	t.Run("model-captured-from-first-attributed-turn", func(t *testing.T) {
+		s := provideCompleteSession()
+		s.AddEvent(skillEvent("fchange", base))
+		s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r1", Usage: &Usage{OutputTokens: 7}, Timestamp: base.Add(time.Second), Meta: &Meta{SessionId: "sess-123", Model: "claude-fable-5"}})
+		s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r2", Usage: &Usage{OutputTokens: 9}, Timestamp: base.Add(time.Minute), Meta: &Meta{SessionId: "sess-123", Model: "claude-opus-4"}})
+
+		assert.Equal(t, "claude-fable-5", s.Skills[0].Model)
+	})
 }

@@ -142,6 +142,16 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 		}
 	}
 
+	if turn.Meta.Model != "" && session.Meta.Model != "" && turn.Meta.Model != session.Meta.Model {
+		event := &Event{
+			Kind:      EventKindModelChanged,
+			Model:     &ModelPayload{From: session.Meta.Model, To: turn.Meta.Model},
+			Timestamp: turn.Timestamp,
+		}
+		s.appendEvent(session, event)
+		s.publish(events.TypeEventAdded, id, agent)
+	}
+
 	// update user or assistent turn
 	session.AddTurn(turn)
 

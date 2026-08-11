@@ -181,6 +181,26 @@ func TestAddTurnBySessionId_SkillWindowOrdering(t *testing.T) {
 		assert.True(t, sess.Skills[1].EndedAt.IsZero(), "second window stays open after its own prompt")
 	})
 
+	// model-change-emits-event-once
+	t.Run("model-change-emits-event-once", func(t *testing.T) {
+		s := NewStore(10, events.NewBroker())
+		assistantTurn := func(requestId, model string, ts time.Time) *Turn {
+			return &Turn{Role: RoleAssistant, RequestId: requestId, Timestamp: ts, Meta: &Meta{SessionId: "s1", Model: model}}
+		}
+		s.AddTurnBySessionId("s1", AgentClaude, assistantTurn("r1", "claude-opus-4-6", now))
+		s.AddTurnBySessionId("s1", AgentClaude, assistantTurn("r2", "claude-fable-5", now.Add(time.Minute)))
+		s.AddTurnBySessionId("s1", AgentClaude, assistantTurn("r3", "claude-fable-5", now.Add(2*time.Minute)))
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		all := sess.Events.All()
+		require.Len(t, all, 1, "first model set and repeats emit nothing")
+		assert.Equal(t, EventKindModelChanged, all[0].Kind)
+		assert.Equal(t, "claude-opus-4-6", all[0].Model.From)
+		assert.Equal(t, "claude-fable-5", all[0].Model.To)
+		assert.Equal(t, 1, sess.Counters.ModelChanges)
+	})
+
 	// subagent-turn-folds-touches-and-stats
 	t.Run("subagent-turn-folds-touches-and-stats", func(t *testing.T) {
 		s := NewStore(10, events.NewBroker())
