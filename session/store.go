@@ -100,6 +100,9 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 	for _, event := range turn.Events {
 		s.appendEvent(session, event)
 	}
+	if len(turn.Events) > 0 {
+		s.publish(events.TypeEventAdded, id, agent)
+	}
 
 	// update only plan content
 	if turn.PlanFilePath != "" {
@@ -115,6 +118,7 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 
 	if turn.IsUsageSignal() {
 		session.TotalUsage = *turn.Usage
+		s.publish(events.TypeUsageUpdated, id, agent)
 		return
 	}
 
@@ -148,6 +152,9 @@ func (s *Store) addSubagentEvents(id Id, turn *Turn) {
 
 	for _, event := range turn.Events {
 		s.appendEvent(session, event)
+	}
+	if len(turn.Events) > 0 {
+		s.publish(events.TypeEventAdded, id, session.Agent)
 	}
 }
 

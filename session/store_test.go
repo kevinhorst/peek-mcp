@@ -898,6 +898,38 @@ func TestPublish_UpdateUncommittedDiff(t *testing.T) {
 	assert.Equal(t, []events.Type{events.TypeUncommittedDiffUpdated}, drainTypes(ch))
 }
 
+func TestPublish_EventAdded(t *testing.T) {
+	broker := events.NewBroker()
+	ch, cancel := broker.Subscribe()
+	defer cancel()
+	s := NewStore(10, broker)
+
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		Events: []*Event{{Kind: EventKindPermissionDenied, Timestamp: time.Now()}},
+		Meta:   &Meta{SessionId: "s1"},
+	})
+	assert.Equal(t, []events.Type{events.TypeSessionCreated, events.TypeEventAdded}, drainTypes(ch))
+
+	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
+		Events: []*Event{{Actor: "sub-1", Kind: EventKindSubagentSpawned, Timestamp: time.Now()}},
+		Meta:   &Meta{SessionId: "s1"},
+	})
+	assert.Equal(t, []events.Type{events.TypeEventAdded}, drainTypes(ch))
+}
+
+func TestPublish_UsageUpdated(t *testing.T) {
+	broker := events.NewBroker()
+	ch, cancel := broker.Subscribe()
+	defer cancel()
+	s := NewStore(10, broker)
+
+	s.AddTurnBySessionId("s1", AgentCodex, &Turn{
+		Usage: &Usage{TotalTokens: 5},
+		Meta:  &Meta{SessionId: "s1"},
+	})
+	assert.Equal(t, []events.Type{events.TypeSessionCreated, events.TypeUsageUpdated}, drainTypes(ch))
+}
+
 func TestPublish_UpdatePlanForPath(t *testing.T) {
 	broker := events.NewBroker()
 	s := NewStore(10, broker)
