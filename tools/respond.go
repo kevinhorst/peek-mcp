@@ -13,14 +13,11 @@ const (
 	MaxResponseBytesCodex  = 0          // 0 = no pagination
 )
 
-func respond(ctx context.Context, request mcp.CallToolRequest, response any) (*mcp.CallToolResult, error) {
+func respond(request mcp.CallToolRequest, response any) (*mcp.CallToolResult, error) {
 	if boolArgFromRequest(request, "json", false) {
 		return respondWithStructured(response)
 	}
-	if isClaude(ctx) {
-		return respondWithText(response)
-	}
-	return respondWithStructured(response)
+	return respondWithText(response)
 }
 
 func respondWithStructured(response any) (*mcp.CallToolResult, error) {

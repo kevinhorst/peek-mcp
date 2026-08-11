@@ -79,9 +79,9 @@ func TestBuild(t *testing.T) {
 		b := NewPageBuilder(5)
 		first, next := b.build("", "", "", "", turns, "")
 
-		assert.True(t, utf8.ValidString(first.Turns))
+		assert.True(t, utf8.ValidString(first.Turns.(string)))
 		for _, page := range next {
-			assert.True(t, utf8.ValidString(page.Turns))
+			assert.True(t, utf8.ValidString(page.Turns.(string)))
 		}
 	})
 }
@@ -115,9 +115,9 @@ func TestBuildEvents(t *testing.T) {
 		first, next := b.buildEvents(events, "")
 
 		require.Len(t, next, 2)
-		reassembled := first.Events
+		reassembled := first.Events.(string)
 		for _, page := range next {
-			reassembled += page.Events
+			reassembled += page.Events.(string)
 		}
 		assert.Equal(t, events, reassembled)
 	})
@@ -139,9 +139,9 @@ func TestBuildEvents(t *testing.T) {
 		b := NewPageBuilder(5)
 		first, next := b.buildEvents(events, "")
 
-		assert.True(t, utf8.ValidString(first.Events))
+		assert.True(t, utf8.ValidString(first.Events.(string)))
 		for _, page := range next {
-			assert.True(t, utf8.ValidString(page.Events))
+			assert.True(t, utf8.ValidString(page.Events.(string)))
 		}
 	})
 }

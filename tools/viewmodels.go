@@ -9,11 +9,11 @@ import (
 type sessionGetResult struct {
 	Diff            string         `json:"diff,omitempty"`
 	DiffTarget      string         `json:"diff_target,omitempty"`
-	Events          string         `json:"events,omitempty"`
-	Memory          string         `json:"memory,omitempty"`
+	Events          any            `json:"events,omitempty"`
+	Memory          any            `json:"memory,omitempty"`
 	Plan            string         `json:"plan,omitempty"`
 	TotalUsage      *session.Usage `json:"total_usage,omitempty"`
-	Turns           string         `json:"turns,omitempty"`
+	Turns           any            `json:"turns,omitempty"`
 	UncommittedDiff string         `json:"uncommitted_diff,omitempty"`
 }
 

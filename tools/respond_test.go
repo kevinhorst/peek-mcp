@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -49,7 +48,7 @@ func TestRespond_JsonFlag(t *testing.T) {
 		t.Run(test._id, func(t *testing.T) {
 			response := &sessionGetResult{Plan: "content"}
 
-			result, err := respond(context.Background(), test.request, response)
+			result, err := respond(test.request, response)
 			assert.NoError(t, err)
 			assert.Equal(t, test._shouldBeStructure, result.StructuredContent != nil)
 		})

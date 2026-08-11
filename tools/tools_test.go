@@ -223,3 +223,41 @@ func TestSessionGet_Pagination(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, errorText(t, result), "not found or expired")
 }
+
+func TestSessionGet_JsonTypedUnpaginated(t *testing.T) {
+	store := provideToolStore()
+	s1, _ := store.GetById("s1")
+	s1.DiffOutput = strings.Repeat("d", MaxResponseBytesClaude*2)
+	handler := sessionGetHandler(store, providePageStore())
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true}))
+
+	assert.NoError(t, err)
+	require.False(t, result.IsError)
+	payload, ok := result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	turns, ok := payload.Turns.([]*session.Turn)
+	require.True(t, ok)
+	assert.Equal(t, "What does this do?", turns[0].Text)
+	assert.Equal(t, s1.DiffOutput, payload.Diff)
+}
+
+func TestSessionEvents_JsonTypedUnpaginated(t *testing.T) {
+	store := provideToolStore()
+	s1, _ := store.GetById("s1")
+	s1.AddEvent(&session.Event{Kind: session.EventKindSkillInvoked, Skill: &session.SkillPayload{Skill: "jq"}})
+	pageStore := &PageStore[*sessionEventsResult]{PagesByRequestId: make(map[string]<-chan *sessionEventsResult)}
+	handler := sessionEventsHandler(store, pageStore, nil)
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true}))
+
+	assert.NoError(t, err)
+	require.False(t, result.IsError)
+	payload, ok := result.StructuredContent.(*sessionEventsResult)
+	require.True(t, ok)
+	events, ok := payload.Events.([]*session.Event)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	assert.Equal(t, session.EventKindSkillInvoked, events[0].Kind)
+	assert.NotNil(t, payload.Counters)
+}

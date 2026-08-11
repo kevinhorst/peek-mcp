@@ -40,9 +40,9 @@ type sessionTimeView struct {
 type sessionEventsResult struct {
 	Counters      *session.Counters   `json:"counters,omitempty"`
 	Diff          string              `json:"diff,omitempty"`
-	Events        string              `json:"events,omitempty"`
+	Events        any                 `json:"events,omitempty"`
 	PlanRevisions *planRevisionsView  `json:"plan_revisions,omitempty"`
-	Revisions     string              `json:"revisions,omitempty"`
+	Revisions     any                 `json:"revisions,omitempty"`
 	Skills        []*skillStatView    `json:"skills,omitempty"`
 	Subagents     []*subagentStatView `json:"subagents,omitempty"`
 	Time          *sessionTimeView    `json:"time,omitempty"`

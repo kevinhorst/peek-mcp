@@ -72,10 +72,10 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns, uncommittedDiff s
 		slog.Info("PageBuilder.build: fits in a single page", "size", contentSize, "page_size", b.Size)
 		first = &sessionGetResult{
 			Diff:            diff,
-			Events:          events,
-			Memory:          memory,
+			Events:          emptyAsNil(events),
+			Memory:          emptyAsNil(memory),
 			Plan:            plan,
-			Turns:           turns,
+			Turns:           emptyAsNil(turns),
 			UncommittedDiff: uncommittedDiff,
 		}
 		return first, nil
@@ -93,7 +93,7 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns, uncommittedDiff s
 
 		// drain turns, events, plan, diff, uncommitted diff, and memory into pages by priority
 		turnChunk := UTF8SafeSlice(turns, size)
-		page.Turns = turnChunk
+		page.Turns = emptyAsNil(turnChunk)
 		turns = turns[len(turnChunk):]
 		if len(turnChunk) == size {
 			continue
@@ -101,7 +101,7 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns, uncommittedDiff s
 		size = size - len(turnChunk)
 
 		eventChunk := UTF8SafeSlice(events, size)
-		page.Events = eventChunk
+		page.Events = emptyAsNil(eventChunk)
 		events = events[len(eventChunk):]
 		if len(eventChunk) == size {
 			continue
@@ -133,7 +133,7 @@ func (b *PageBuilder) build(diff, events, memory, plan, turns, uncommittedDiff s
 		size = size - len(uncommittedChunk)
 
 		memoryChunk := UTF8SafeSlice(memory, size)
-		page.Memory = memoryChunk
+		page.Memory = emptyAsNil(memoryChunk)
 		memory = memory[len(memoryChunk):]
 	}
 
@@ -144,8 +144,8 @@ func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEvent
 	contentSize := len(events) + len(revisions)
 	if b.Size <= 0 || contentSize <= b.Size {
 		first = &sessionEventsResult{
-			Events:    events,
-			Revisions: revisions,
+			Events:    emptyAsNil(events),
+			Revisions: emptyAsNil(revisions),
 		}
 		return first, nil
 	}
@@ -160,7 +160,7 @@ func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEvent
 		size := b.Size
 
 		eventChunk := UTF8SafeSlice(events, size)
-		page.Events = eventChunk
+		page.Events = emptyAsNil(eventChunk)
 		events = events[len(eventChunk):]
 		if len(eventChunk) == size {
 			continue
@@ -168,11 +168,18 @@ func (b *PageBuilder) buildEvents(events, revisions string) (first *sessionEvent
 		size = size - len(eventChunk)
 
 		revisionChunk := UTF8SafeSlice(revisions, size)
-		page.Revisions = revisionChunk
+		page.Revisions = emptyAsNil(revisionChunk)
 		revisions = revisions[len(revisionChunk):]
 	}
 
 	return pages[0], pages[1:]
+}
+
+func emptyAsNil(segment string) any {
+	if segment == "" {
+		return nil
+	}
+	return segment
 }
 
 func UTF8SafeSlice(s string, maxBytes int) string {

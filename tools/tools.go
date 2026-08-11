@@ -77,7 +77,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 		),
 		mcp.WithBoolean("json",
-			mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
+			mcp.Description("Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default false: paginated JSON text block)"),
 		),
 	)
 	sessionGet.Meta = withMaxResultSize()
@@ -114,7 +114,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 		),
 		mcp.WithBoolean("json",
-			mcp.Description("Return the response as structuredContent instead of a JSON text block (default false)"),
+			mcp.Description("Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default false: paginated JSON text block)"),
 		),
 	)
 	sessionEvents.Meta = withMaxResultSize()
@@ -141,7 +141,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 				RequestId:        reqId,
 				HasMore:          pageStore.hasNext(reqId),
 			}
-			return respond(ctx, request, result)
+			return respond(request, result)
 		}
 
 		sess, err := resolveSession(s, request)
@@ -160,32 +160,66 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 			sess = found
 		}
 
-		var turns, events, plan, diff, uncommitted, memory string
-		if boolArgFromRequest(request, "turns", true) {
-			n := intArgFromRequest(request, "n")
-			if n <= 0 {
-				n = DefaultReturnedTurns
+		withTurns := boolArgFromRequest(request, "turns", true)
+		withEvents := boolArgFromRequest(request, "events", true)
+		withPlan := boolArgFromRequest(request, "plan", true)
+		withDiff := boolArgFromRequest(request, "diff", true)
+		withUncommitted := boolArgFromRequest(request, "uncommitted_diff", false)
+		withMemory := boolArgFromRequest(request, "remember", false)
+		n := intArgFromRequest(request, "n")
+		if n <= 0 {
+			n = DefaultReturnedTurns
+		}
+
+		if boolArgFromRequest(request, "json", false) {
+			result := &sessionGetResult{TotalUsage: sess.CurrentUsage()}
+			if withTurns {
+				if turns := sess.Turns(n); len(turns) > 0 {
+					result.Turns = turns
+				}
 			}
+			if withEvents {
+				if entries := NewEventEntries(sess.Events.All()); len(entries) > 0 {
+					result.Events = entries
+				}
+			}
+			if withPlan {
+				result.Plan = sess.PlanContent
+			}
+			if withDiff {
+				result.Diff = sess.DiffOutput
+				result.DiffTarget = sess.DiffTarget
+			}
+			if withUncommitted {
+				result.UncommittedDiff = sess.UncommittedDiff
+			}
+			if withMemory {
+				result.Memory = memoryBlock(sess)
+			}
+			return respondWithStructured(result)
+		}
+
+		var turns, events, plan, diff, uncommitted, memory string
+		if withTurns {
 			data, err := json.Marshal(sess.Turns(n))
 			if err != nil {
 				return nil, fmt.Errorf("marshaling turns: %w", err)
 			}
 			turns = string(data)
 		}
-		withDiff := boolArgFromRequest(request, "diff", true)
-		if boolArgFromRequest(request, "events", true) {
+		if withEvents {
 			events = marshalEventEntries(sess)
 		}
-		if boolArgFromRequest(request, "plan", true) {
+		if withPlan {
 			plan = sess.PlanContent
 		}
 		if withDiff {
 			diff = sess.DiffOutput
 		}
-		if boolArgFromRequest(request, "uncommitted_diff", false) {
+		if withUncommitted {
 			uncommitted = sess.UncommittedDiff
 		}
-		if boolArgFromRequest(request, "remember", false) {
+		if withMemory {
 			memory = marshalMemoryBlock(sess)
 		}
 
@@ -204,14 +238,14 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 
 		resultPage := newSessionGetResultPage(firstPage)
 		if len(nextPages) == 0 {
-			return respond(ctx, request, resultPage)
+			return respond(request, resultPage)
 		}
 
 		requestId := uuid.NewString()
 		pageStore.add(requestId, nextPages)
 
 		resultPage.WithRequestId(requestId)
-		return respond(ctx, request, resultPage)
+		return respond(request, resultPage)
 	}
 }
 
@@ -264,7 +298,7 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 				RequestId:           reqId,
 				HasMore:             pageStore.hasNext(reqId),
 			}
-			return respond(ctx, request, result)
+			return respond(request, result)
 		}
 
 		currentSession, err := resolveSession(s, request)
@@ -283,16 +317,30 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 			currentSession = found
 		}
 
-		events := marshalEvents(currentSession)
-		revisions := ""
-		if boolArgFromRequest(request, "revisions", false) {
-			revisions = marshalPlanRevisions(currentSession)
-		}
+		useJson := boolArgFromRequest(request, "json", false)
+		withRevisions := boolArgFromRequest(request, "revisions", false)
 
-		firstPage, nextPages := NewPageBuilder(maxResponseBytes(ctx)).buildEvents(
-			events,
-			revisions,
-		)
+		var firstPage *sessionEventsResult
+		var nextPages []*sessionEventsResult
+		if useJson {
+			firstPage = &sessionEventsResult{}
+			if all := currentSession.Events.All(); len(all) > 0 {
+				firstPage.Events = all
+			}
+			if withRevisions && len(currentSession.PlanRevisions) > 0 {
+				firstPage.Revisions = currentSession.PlanRevisions
+			}
+		} else {
+			events := marshalEvents(currentSession)
+			revisions := ""
+			if withRevisions {
+				revisions = marshalPlanRevisions(currentSession)
+			}
+			firstPage, nextPages = NewPageBuilder(maxResponseBytes(ctx)).buildEvents(
+				events,
+				revisions,
+			)
+		}
 		counters := currentSession.Counters
 		firstPage.Counters = &counters
 		firstPage.Diff = diffAvailability(currentSession)
@@ -314,16 +362,20 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 		firstPage.Unsupported = unsupportedSignals(currentSession.Agent)
 		firstPage.Usage = currentSession.CurrentUsage()
 
+		if useJson {
+			return respondWithStructured(firstPage)
+		}
+
 		resultPage := newSessionEventsResultPage(firstPage)
 		if len(nextPages) == 0 {
-			return respond(ctx, request, resultPage)
+			return respond(request, resultPage)
 		}
 
 		requestId := uuid.NewString()
 		pageStore.add(requestId, nextPages)
 
 		resultPage.WithRequestId(requestId)
-		return respond(ctx, request, resultPage)
+		return respond(request, resultPage)
 	}
 }
 
