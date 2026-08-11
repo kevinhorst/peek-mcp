@@ -106,7 +106,7 @@ peek-mcp currently supports Claude Code and Codex CLI. To add another agent:
 1. Create a new package (e.g. `myagent/`) with a `Parser` that implements the interface consumed by `watcher.New`.
 2. Add the watched directory path and a `watcher.New(...)` goroutine in `cmd/start.go`.
 3. Add a flag for the agent's home directory if the path is not fixed.
-4. Document the session path in the README's supported agents table.
+4. Document the session path in the supported agents table in `docs/tools.md`.
 
 ## Releasing
 
