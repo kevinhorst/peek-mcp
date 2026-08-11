@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -26,7 +27,7 @@ func withMaxResultSize() *mcp.Meta {
 	})
 }
 
-func Register(server *server.MCPServer, store *session.Store) {
+func Register(server *server.MCPServer, store *session.Store, telemetryStore *telemetry.Store) {
 	pageStore := &PageStore[*sessionFullResult]{
 		PagesByRequestId: make(map[string]<-chan *sessionFullResult),
 	}
@@ -170,7 +171,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 	server.AddTool(sessionUncommittedDiff, sessionUncommittedDiffHandler(store))
 
 	sessionEvents := mcp.NewTool("session_events",
-		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_full for those."),
+		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_full for those."),
 		mcp.WithString("id",
 			mcp.Description("Session ID (omit for most recent session)"),
 		),
@@ -183,6 +184,9 @@ func Register(server *server.MCPServer, store *session.Store) {
 		mcp.WithBoolean("revisions",
 			mcp.Description("Include plan revision diffs (default false; they dominate response size)"),
 		),
+		mcp.WithBoolean("breakdown",
+			mcp.Description("Include per-skill and per-subagent time and token usage (default false; Claude sessions only)"),
+		),
 		mcp.WithString("request_id",
 			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 		),
@@ -191,7 +195,7 @@ func Register(server *server.MCPServer, store *session.Store) {
 		),
 	)
 	sessionEvents.Meta = withMaxResultSize()
-	server.AddTool(sessionEvents, sessionEventsHandler(store, eventsPageStore))
+	server.AddTool(sessionEvents, sessionEventsHandler(store, eventsPageStore, telemetryStore))
 }
 
 func sessionFullHandler(s *session.Store, pageStore *PageStore[*sessionFullResult]) server.ToolHandlerFunc {
@@ -454,7 +458,7 @@ func sessionUncommittedDiffHandler(s *session.Store) server.ToolHandlerFunc {
 	}
 }
 
-func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsResult]) server.ToolHandlerFunc {
+func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsResult], telemetryStore *telemetry.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
 
@@ -507,6 +511,20 @@ func sessionEventsHandler(s *session.Store, pageStore *PageStore[*sessionEventsR
 		firstPage.Counters = &counters
 		firstPage.Diff = diffAvailability(currentSession)
 		firstPage.PlanRevisions = newPlanRevisionsView(currentSession)
+		firstPage.Time = newSessionTimeView(currentSession)
+		if telemetryStore != nil && firstPage.Time != nil {
+			if stats, ok := telemetryStore.Get(string(currentSession.Meta.SessionId)); ok {
+				firstPage.Time.Telemetry = &telemetryTimeView{
+					ActiveSeconds: int(stats.ActiveSeconds),
+					CostUSD:       stats.CostUSD,
+				}
+			}
+		}
+		firstPage.TouchedFiles = newTouchedFileViews(currentSession)
+		if boolArgFromRequest("breakdown", request) {
+			firstPage.Skills = newSkillStatViews(currentSession)
+			firstPage.Subagents = newSubagentStatViews(currentSession)
+		}
 		firstPage.Unsupported = unsupportedSignals(currentSession.Agent)
 		firstPage.Usage = currentSession.CurrentUsage()
 
@@ -570,7 +588,7 @@ func newPlanRevisionsView(currentSession *session.Session) *planRevisionsView {
 
 func unsupportedSignals(agent session.Agent) []string {
 	if agent == session.AgentCodex {
-		return []string{"skills", "memory", "user_answers", "plan_approval", "subagent_results"}
+		return []string{"skills", "memory", "user_answers", "plan_approval", "subagent_results", "touched_files", "skill_usage", "subagent_usage", "telemetry"}
 	}
 	return nil
 }
