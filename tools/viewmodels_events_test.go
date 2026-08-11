@@ -31,6 +31,13 @@ func TestSummarizeEvent(t *testing.T) {
 		event:     &session.Event{Kind: session.EventKindPermissionDenied, Permission: &session.PermissionPayload{Tool: "Edit"}},
 	})
 
+	// model-changed
+	tests = append(tests, &testCase{
+		_id:       "model-changed",
+		_expected: "claude-opus-4-6 -> claude-fable-5",
+		event:     &session.Event{Kind: session.EventKindModelChanged, Model: &session.ModelPayload{From: "claude-opus-4-6", To: "claude-fable-5"}},
+	})
+
 	// plan-approved-empty
 	tests = append(tests, &testCase{
 		_id:       "plan-approved-empty",

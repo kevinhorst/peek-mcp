@@ -213,6 +213,14 @@ func NewEventEntries(events []*session.Event) []*EventEntry {
 	return entries
 }
 
+func modelSummary(payload *session.ModelPayload) string {
+	if payload == nil {
+		return ""
+	}
+
+	return payload.From + " -> " + payload.To
+}
+
 func permissionSummary(payload *session.PermissionPayload) string {
 	if payload == nil {
 		return ""
@@ -260,6 +268,8 @@ func subagentSummary(payload *session.SubagentPayload) string {
 func summarizeEvent(event *session.Event) string {
 	summary := ""
 	switch event.Kind {
+	case session.EventKindModelChanged:
+		summary = modelSummary(event.Model)
 	case session.EventKindPermissionDenied:
 		summary = permissionSummary(event.Permission)
 	case session.EventKindPlanApproved, session.EventKindPlanModeEnter,
