@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -83,6 +84,14 @@ func scriptedPrompter(input string) *prompter {
 	return &prompter{scanner: bufio.NewScanner(strings.NewReader(input)), out: io.Discard}
 }
 
+func setTestHome(t *testing.T, home string) {
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+		return
+	}
+	t.Setenv("HOME", home)
+}
+
 func readTelemetryEnv(t *testing.T, home string) map[string]any {
 	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
 	require.NoError(t, err)
@@ -96,7 +105,7 @@ func TestSetupTelemetry(t *testing.T) {
 	// writes-all-env-keys-with-interval
 	t.Run("writes-all-env-keys-with-interval", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		setTestHome(t, home)
 
 		require.NoError(t, setupTelemetry(scriptedPrompter("\n"), true))
 
@@ -112,7 +121,7 @@ func TestSetupTelemetry(t *testing.T) {
 	// deletes-stale-headers-key
 	t.Run("deletes-stale-headers-key", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		setTestHome(t, home)
 		existing := `{"env": {"OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer old", "OTHER": "kept"}}`
 		require.NoError(t, os.MkdirAll(filepath.Join(home, ".claude"), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(existing), 0o644))
@@ -127,7 +136,7 @@ func TestSetupTelemetry(t *testing.T) {
 	// control-server-disabled-writes-nothing
 	t.Run("control-server-disabled-writes-nothing", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		setTestHome(t, home)
 
 		require.NoError(t, setupTelemetry(scriptedPrompter(""), false))
 
@@ -138,7 +147,7 @@ func TestSetupTelemetry(t *testing.T) {
 	// decline-writes-nothing
 	t.Run("decline-writes-nothing", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		setTestHome(t, home)
 
 		require.NoError(t, setupTelemetry(scriptedPrompter("n\n"), true))
 
