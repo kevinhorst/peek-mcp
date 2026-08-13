@@ -65,6 +65,36 @@ func TestDirReadWrite(t *testing.T) {
 		assert.False(t, versions[2].IsAlteration)
 	})
 
+	// telemetry-roundtrip
+	t.Run("telemetry-roundtrip", func(t *testing.T) {
+		dir := NewDir(t.TempDir())
+		require.NoError(t, dir.WriteTelemetry("claude", "s1", `{"active_seconds":1}`))
+
+		content, err := dir.ReadTelemetry("claude", "s1")
+		require.NoError(t, err)
+		assert.Equal(t, `{"active_seconds":1}`, content)
+	})
+
+	// telemetry-missing-file-errors
+	t.Run("telemetry-missing-file-errors", func(t *testing.T) {
+		dir := NewDir(t.TempDir())
+
+		_, err := dir.ReadTelemetry("claude", "s1")
+		assert.Error(t, err)
+	})
+
+	// telemetry-sanitized-components
+	t.Run("telemetry-sanitized-components", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteTelemetry("claude", "../escape", "{}"))
+
+		content, err := dir.ReadTelemetry("claude", "../escape")
+		require.NoError(t, err)
+		assert.Equal(t, "{}", content)
+		assert.NoFileExists(t, filepath.Join(filepath.Dir(root), "escape", "telemetry.json"))
+	})
+
 	// snapshot-5mb-truncation
 	t.Run("snapshot-5mb-truncation", func(t *testing.T) {
 		dir := NewDir(t.TempDir())

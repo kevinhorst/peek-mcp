@@ -19,6 +19,7 @@ const (
 	diffSnapshotFile = "diff.snapshot"
 	planDir          = "plan"
 	planLatestFile   = "latest.md"
+	telemetryFile    = "telemetry.json"
 
 	draftDiffSuffix = ".draft.diff"
 	diffSuffix      = ".diff"
@@ -164,6 +165,18 @@ func (d *Dir) ReadPlanVersions(agent, sessionId string) []*PlanVersion {
 
 	sort.Slice(versions, func(i, j int) bool { return versions[i].Index < versions[j].Index })
 	return versions
+}
+
+func (d *Dir) ReadTelemetry(agent, sessionId string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(d.sessionDir(agent, sessionId), telemetryFile))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (d *Dir) WriteTelemetry(agent, sessionId, content string) error {
+	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), telemetryFile), content)
 }
 
 func (d *Dir) WriteDiffBase(agent string, base DiffBase, sessionId string) error {
