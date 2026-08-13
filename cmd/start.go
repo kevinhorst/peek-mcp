@@ -98,6 +98,9 @@ var startCmd = &cobra.Command{
 			store.StateDir = stateDir
 			go runStateGc(ctx, stateDir, stateRetentionDays)
 		}
+		if telemetryStore != nil {
+			telemetryStore.StateDir = stateDir
+		}
 
 		if claudeHome != "" {
 			go func() {
