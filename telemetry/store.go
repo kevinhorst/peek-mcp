@@ -1,11 +1,17 @@
 package telemetry
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
+
+	"github.com/kevinhorst/peek-mcp/state"
 )
 
-const maxSessions = 1000
+const (
+	maxSessions = 1000
+	agentClaude = "claude"
+)
 
 type SessionStats struct {
 	ActiveSeconds float64
@@ -17,6 +23,13 @@ type Store struct {
 	mu       sync.RWMutex
 	now      func() time.Time
 	sessions map[string]*SessionStats
+	StateDir *state.Dir
+}
+
+type persistedStats struct {
+	ActiveSeconds float64   `json:"active_seconds"`
+	CostUSD       float64   `json:"cost_usd"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func NewStore() *Store {
@@ -57,6 +70,40 @@ func (s *Store) fold(sessionId, metricName string, value float64, isDelta bool) 
 	case metricCostUsage:
 		stats.CostUSD = foldValue(stats.CostUSD, value, isDelta)
 	}
+	s.persist(sessionId, stats)
+}
+
+func (s *Store) persist(sessionId string, stats *SessionStats) {
+	if s.StateDir == nil {
+		return
+	}
+
+	data, err := json.Marshal(persistedStats{
+		ActiveSeconds: stats.ActiveSeconds,
+		CostUSD:       stats.CostUSD,
+		UpdatedAt:     stats.UpdatedAt,
+	})
+	if err != nil {
+		return
+	}
+	_ = s.StateDir.WriteTelemetry(agentClaude, sessionId, string(data))
+}
+
+func ReadPersisted(dir *state.Dir, sessionId string) (SessionStats, bool) {
+	if dir == nil {
+		return SessionStats{}, false
+	}
+
+	content, err := dir.ReadTelemetry(agentClaude, sessionId)
+	if err != nil {
+		return SessionStats{}, false
+	}
+
+	var stored persistedStats
+	if err := json.Unmarshal([]byte(content), &stored); err != nil {
+		return SessionStats{}, false
+	}
+	return SessionStats{ActiveSeconds: stored.ActiveSeconds, CostUSD: stored.CostUSD, UpdatedAt: stored.UpdatedAt}, true
 }
 
 func (s *Store) evictOldest() {
