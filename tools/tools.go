@@ -347,7 +347,7 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 		firstPage.PlanRevisions = newPlanRevisionsView(currentSession)
 		firstPage.Time = newSessionTimeView(currentSession)
 		if firstPage.Time != nil {
-			firstPage.Time.Telemetry = newTelemetryTimeView(currentSession, detector, telemetryStore)
+			firstPage.Time.Telemetry = newTelemetryTimeView(currentSession, detector, telemetryStore, s.StateDir)
 		}
 		firstPage.TouchedFiles = newTouchedFileViews(currentSession)
 		if boolArgFromRequest(request, "breakdown", false) {

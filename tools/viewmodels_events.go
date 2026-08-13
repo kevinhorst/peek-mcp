@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/telemetry"
 )
 
@@ -73,18 +74,26 @@ func newTouchedFileViews(currentSession *session.Session) []*touchedFileView {
 	return views
 }
 
-func newTelemetryTimeView(currentSession *session.Session, detector *telemetry.Detector, telemetryStore *telemetry.Store) *telemetryTimeView {
+func newTelemetryTimeView(currentSession *session.Session, detector *telemetry.Detector, telemetryStore *telemetry.Store, stateDir *state.Dir) *telemetryTimeView {
 	if currentSession.Agent != session.AgentClaude {
 		return nil
 	}
-	if telemetryStore == nil {
-		return nil
+
+	if telemetryStore != nil {
+		if stats, ok := telemetryStore.Get(string(currentSession.Meta.SessionId)); ok {
+			return &telemetryTimeView{
+				ActiveSeconds: int(stats.ActiveSeconds),
+				CostUSD:       stats.CostUSD,
+				Status:        telemetry.ExportReceiving,
+			}
+		}
 	}
 
-	if stats, ok := telemetryStore.Get(string(currentSession.Meta.SessionId)); ok {
+	if stats, ok := telemetry.ReadPersisted(stateDir, string(currentSession.Meta.SessionId)); ok {
 		return &telemetryTimeView{
 			ActiveSeconds: int(stats.ActiveSeconds),
 			CostUSD:       stats.CostUSD,
+			Detail:        "persisted",
 			Status:        telemetry.ExportReceiving,
 		}
 	}
