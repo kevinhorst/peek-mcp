@@ -68,7 +68,7 @@ The server binds to loopback only, rejects non-local `Host` headers, and sends n
 
 ## Telemetry
 
-peek-mcp can ingest Claude Code's OpenTelemetry export to enrich `session_events` with true active time and session cost. The control server exposes an OTLP receiver at `POST /otlp/v1/metrics` (protocol `http/json` only) and folds `claude_code.active_time.total` and `claude_code.cost.usage` per `session.id`; everything else is ignored, nothing is persisted.
+peek-mcp can ingest Claude Code's OpenTelemetry export to enrich `session_events` with true active time, session cost, and permission decisions. The control server exposes an OTLP receiver at `POST /otlp/v1/metrics` and `POST /otlp/v1/logs` (protocol `http/json` only). Metrics: `claude_code.active_time.total` and `claude_code.cost.usage` are folded per `session.id`. Logs: `claude_code.tool_decision` events are folded into per-session permission stats — auto-allowed (source `config`, which also covers `bypassPermissions` mode), prompted once/always, hook-decided, rejected, aborted — and every non-auto decision is listed with its tool; the matching `claude_code.tool_result` event supplies the command (requires `OTEL_LOG_TOOL_DETAILS=1`). Everything else is ignored. Folded stats are persisted per session to the state dir (`telemetry.json`), so they survive peek restarts.
 
 `peek-mcp setup` (Claude Code choice) offers a telemetry step — one yes/no question — that writes the export config into `~/.claude/settings.json`:
 
@@ -77,14 +77,17 @@ peek-mcp can ingest Claude Code's OpenTelemetry export to enrich `session_events
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
     "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_LOG_TOOL_DETAILS": "1",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:42442/otlp",
-    "OTEL_METRIC_EXPORT_INTERVAL": "10000"
+    "OTEL_METRIC_EXPORT_INTERVAL": "10000",
+    "OTEL_LOGS_EXPORT_INTERVAL": "5000"
   }
 }
 ```
 
-The endpoint base must match the control server port (`--control-port`, default 42442); Claude Code appends `/v1/metrics` per the OTLP spec. When the control server is disabled in setup, the step just reports that telemetry stays disabled.
+The endpoint base must match the control server port (`--control-port`, default 42442); Claude Code appends `/v1/metrics` and `/v1/logs` per the OTLP spec. When the control server is disabled in setup, the step just reports that telemetry stays disabled.
 
 peek detects whether this export is configured: at startup, on the `/stats` page, and in the `session_events` `time.telemetry` block, the status reads `receiving` (metrics arrived for the session), `configured` (settings.json points at the actually bound control port with `http/json`), `misconfigured` (enabled but wrong endpoint/protocol/port — the detail says what was expected), or `not_configured` (no telemetry env in settings.json — it may still be enabled via shell env, which peek cannot see). The check compares against the port the server actually bound after any port walk.
 
