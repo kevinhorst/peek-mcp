@@ -9,18 +9,20 @@ import (
 type EventKind string
 
 const (
-	EventKindModelChanged     EventKind = "model_changed"
-	EventKindPermissionDenied EventKind = "permission_denied"
-	EventKindPlanApproved     EventKind = "plan_approved"
-	EventKindPlanModeEnter    EventKind = "plan_mode_enter"
-	EventKindPlanModeExit     EventKind = "plan_mode_exit"
-	EventKindPlanModeReenter  EventKind = "plan_mode_reenter"
-	EventKindPlanRejected     EventKind = "plan_rejected"
-	EventKindPlanRevised      EventKind = "plan_revised"
-	EventKindSkillInvoked     EventKind = "skill_invoked"
-	EventKindSubagentResult   EventKind = "subagent_result"
-	EventKindSubagentSpawned  EventKind = "subagent_spawned"
-	EventKindUserAnswer       EventKind = "user_answer"
+	EventKindModelChanged          EventKind = "model_changed"
+	EventKindPermissionDenied      EventKind = "permission_denied"
+	EventKindPermissionGranted     EventKind = "permission_granted"
+	EventKindPermissionModeChanged EventKind = "permission_mode_changed"
+	EventKindPlanApproved          EventKind = "plan_approved"
+	EventKindPlanModeEnter         EventKind = "plan_mode_enter"
+	EventKindPlanModeExit          EventKind = "plan_mode_exit"
+	EventKindPlanModeReenter       EventKind = "plan_mode_reenter"
+	EventKindPlanRejected          EventKind = "plan_rejected"
+	EventKindPlanRevised           EventKind = "plan_revised"
+	EventKindSkillInvoked          EventKind = "skill_invoked"
+	EventKindSubagentResult        EventKind = "subagent_result"
+	EventKindSubagentSpawned       EventKind = "subagent_spawned"
+	EventKindUserAnswer            EventKind = "user_answer"
 )
 
 const (
@@ -29,24 +31,27 @@ const (
 )
 
 type Counters struct {
-	ModelChanges      int `json:"model_changes"`
-	PermissionDenials int `json:"permission_denials"`
-	PlanAlterations   int `json:"plan_alterations"`
-	PlanRejections    int `json:"plan_rejections"`
-	SkillsInvoked     int `json:"skills_invoked"`
-	SubagentsSpawned  int `json:"subagents_spawned"`
+	ModelChanges          int `json:"model_changes"`
+	PermissionDenials     int `json:"permission_denials"`
+	PermissionGrants      int `json:"permission_grants"`
+	PermissionModeChanges int `json:"permission_mode_changes"`
+	PlanAlterations       int `json:"plan_alterations"`
+	PlanRejections        int `json:"plan_rejections"`
+	SkillsInvoked         int `json:"skills_invoked"`
+	SubagentsSpawned      int `json:"subagents_spawned"`
 }
 
 type Event struct {
-	Actor      string             `json:"actor,omitempty"`
-	Kind       EventKind          `json:"kind"`
-	Model      *ModelPayload      `json:"model,omitempty"`
-	Permission *PermissionPayload `json:"permission,omitempty"`
-	Plan       *PlanPayload       `json:"plan,omitempty"`
-	Skill      *SkillPayload      `json:"skill,omitempty"`
-	Subagent   *SubagentPayload   `json:"subagent,omitempty"`
-	Timestamp  time.Time          `json:"timestamp"`
-	UserAnswer *UserAnswerPayload `json:"user_answer,omitempty"`
+	Actor          string                 `json:"actor,omitempty"`
+	Kind           EventKind              `json:"kind"`
+	Model          *ModelPayload          `json:"model,omitempty"`
+	Permission     *PermissionPayload     `json:"permission,omitempty"`
+	PermissionMode *PermissionModePayload `json:"permission_mode,omitempty"`
+	Plan           *PlanPayload           `json:"plan,omitempty"`
+	Skill          *SkillPayload          `json:"skill,omitempty"`
+	Subagent       *SubagentPayload       `json:"subagent,omitempty"`
+	Timestamp      time.Time              `json:"timestamp"`
+	UserAnswer     *UserAnswerPayload     `json:"user_answer,omitempty"`
 }
 
 func (e *Event) Validate() error {
@@ -64,6 +69,11 @@ func (e *Event) Validate() error {
 
 type ModelPayload struct {
 	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type PermissionModePayload struct {
+	From string `json:"from,omitempty"`
 	To   string `json:"to"`
 }
 

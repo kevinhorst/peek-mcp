@@ -89,6 +89,10 @@ func (s *Session) AddEvent(event *Event) {
 		s.Counters.ModelChanges++
 	case EventKindPermissionDenied:
 		s.Counters.PermissionDenials++
+	case EventKindPermissionGranted:
+		s.Counters.PermissionGrants++
+	case EventKindPermissionModeChanged:
+		s.Counters.PermissionModeChanges++
 	case EventKindPlanModeExit:
 		s.planExitSeen = true
 	case EventKindPlanRejected:
