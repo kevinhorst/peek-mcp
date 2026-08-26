@@ -33,11 +33,16 @@ func TestParseLine_PermissionEvents(t *testing.T) {
 	assert.Equal(t, "rm -rf /tmp/x", turn.Events[0].Permission.Command)
 	assert.Equal(t, "cleanup", turn.Events[0].Permission.Justification)
 
-	// escalated-granted-no-event
+	// escalated-granted-event
 	p = seededParser(t)
 	assert.Nil(t, p.ParseLine([]byte(escalatedCallLine)))
 	turn = p.ParseLine([]byte(`{"timestamp":"2026-03-29T23:45:24.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"ok, done"}}`))
-	assert.Nil(t, turn, "grants stay implicit")
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.EventKindPermissionGranted, turn.Events[0].Kind)
+	assert.Equal(t, "exec_command", turn.Events[0].Permission.Tool)
+	assert.Equal(t, "rm -rf /tmp/x", turn.Events[0].Permission.Command)
+	assert.Equal(t, "cleanup", turn.Events[0].Permission.Justification)
 
 	// non-escalated-failure-no-event
 	p = seededParser(t)

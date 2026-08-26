@@ -257,8 +257,9 @@ func (p *Parser) handleFunctionCallOutput(item *ResponseItem, ts time.Time) *ses
 		output = string(item.Output)
 	}
 
-	if !strings.Contains(output, rejectedByUserMarker) {
-		return nil
+	kind := session.EventKindPermissionGranted
+	if strings.Contains(output, rejectedByUserMarker) {
+		kind = session.EventKindPermissionDenied
 	}
 
 	payload := &session.PermissionPayload{
@@ -268,7 +269,7 @@ func (p *Parser) handleFunctionCallOutput(item *ResponseItem, ts time.Time) *ses
 	}
 	event := &session.Event{
 		Actor:      p.subagentActor,
-		Kind:       session.EventKindPermissionDenied,
+		Kind:       kind,
 		Permission: payload,
 		Timestamp:  ts,
 	}
