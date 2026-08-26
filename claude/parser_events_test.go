@@ -165,6 +165,41 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	assert.Nil(t, turn)
 }
 
+func TestParseLine_PermissionMode(t *testing.T) {
+	// first-non-default-mode-emits
+	p := NewParser()
+	turn := p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"permissionMode":"bypassPermissions","promptId":"p1","message":{"role":"user","content":[{"type":"text","text":"go"}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.EventKindPermissionModeChanged, turn.Events[0].Kind)
+	assert.Empty(t, turn.Events[0].PermissionMode.From)
+	assert.Equal(t, "bypassPermissions", turn.Events[0].PermissionMode.To)
+
+	// initial-default-mode-silent
+	p = NewParser()
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"permissionMode":"default","promptId":"p1","message":{"role":"user","content":[{"type":"text","text":"go"}]}}`))
+	require.NotNil(t, turn)
+	assert.Empty(t, turn.Events)
+
+	// mode-change-emits-from-to
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:01:00.000Z","isSidechain":false,"permissionMode":"acceptEdits","promptId":"p2","message":{"role":"user","content":[{"type":"text","text":"next"}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.EventKindPermissionModeChanged, turn.Events[0].Kind)
+	assert.Equal(t, "default", turn.Events[0].PermissionMode.From)
+	assert.Equal(t, "acceptEdits", turn.Events[0].PermissionMode.To)
+
+	// unchanged-mode-silent
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:02:00.000Z","isSidechain":false,"permissionMode":"acceptEdits","promptId":"p3","message":{"role":"user","content":[{"type":"text","text":"more"}]}}`))
+	require.NotNil(t, turn)
+	assert.Empty(t, turn.Events)
+
+	// entry-without-mode-silent
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:03:00.000Z","isSidechain":false,"promptId":"p4","message":{"role":"user","content":[{"type":"text","text":"again"}]}}`))
+	require.NotNil(t, turn)
+	assert.Empty(t, turn.Events)
+}
+
 func TestParseLine_SubagentResult(t *testing.T) {
 	// agent-result-captured
 	p := NewParser()

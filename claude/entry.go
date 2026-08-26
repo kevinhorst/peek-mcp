@@ -23,6 +23,7 @@ type Entry struct {
 	IsSidechain       bool            `json:"isSidechain"`
 	Message           json.RawMessage `json:"message"`
 	AttachmentRaw     json.RawMessage `json:"attachment"`
+	PermissionMode    string          `json:"permissionMode"`
 	PromptId          string          `json:"promptId"`
 	RequestId         string          `json:"requestId"`
 	SessionId         session.Id      `json:"sessionId"`

@@ -54,7 +54,8 @@ type askUserQuestionInput struct {
 }
 
 type Parser struct {
-	pendingTools map[string]*pendingToolUse
+	pendingTools   map[string]*pendingToolUse
+	permissionMode string
 }
 
 func NewParser() *Parser {
@@ -106,6 +107,9 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 	}
 
 	events, touches := p.eventsFromUserContent(entry, &message)
+	if event := p.permissionModeEvent(entry); event != nil {
+		events = append(events, event)
+	}
 
 	text := extractTextBlocks(message.Content)
 	if event := slashCommandEvent(entry, text); event != nil {
@@ -494,6 +498,31 @@ func commandFromInput(pending *pendingToolUse) string {
 		return input.FilePath
 	}
 	return input.NotebookPath
+}
+
+const permissionModeDefault = "default"
+
+// permissionModeEvent tracks the permissionMode field across main-chain user
+// entries; the first observed non-default mode also emits, so a session that
+// starts in bypassPermissions is visible.
+func (p *Parser) permissionModeEvent(entry *Entry) *session.Event {
+	mode := entry.PermissionMode
+	if mode == "" || mode == p.permissionMode {
+		return nil
+	}
+
+	from := p.permissionMode
+	p.permissionMode = mode
+	if from == "" && mode == permissionModeDefault {
+		return nil
+	}
+
+	return &session.Event{
+		Actor:          entry.AgentId,
+		Kind:           session.EventKindPermissionModeChanged,
+		PermissionMode: &session.PermissionModePayload{From: from, To: mode},
+		Timestamp:      entry.Timestamp,
+	}
 }
 
 func permissionDeniedEvent(entry *Entry, tool string, command string) *session.Event {
