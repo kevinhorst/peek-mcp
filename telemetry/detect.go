@@ -11,6 +11,7 @@ import (
 
 const (
 	envEnableTelemetry = "CLAUDE_CODE_ENABLE_TELEMETRY"
+	envLogsExporter    = "OTEL_LOGS_EXPORTER"
 	envMetricsExporter = "OTEL_METRICS_EXPORTER"
 	envOtlpEndpoint    = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	envOtlpProtocol    = "OTEL_EXPORTER_OTLP_PROTOCOL"
@@ -74,6 +75,11 @@ func (d *Detector) Status() ExportStatus {
 	exporter := envString(settings.Env, envMetricsExporter)
 	if !strings.Contains(exporter, "otlp") {
 		problems = append(problems, fmt.Sprintf("metrics exporter %q (want otlp)", exporter))
+	}
+
+	logsExporter := envString(settings.Env, envLogsExporter)
+	if !strings.Contains(logsExporter, "otlp") {
+		problems = append(problems, fmt.Sprintf("logs exporter %q (want otlp; permission decisions need it)", logsExporter))
 	}
 
 	if problem := d.endpointProblem(envString(settings.Env, envOtlpEndpoint)); problem != "" {

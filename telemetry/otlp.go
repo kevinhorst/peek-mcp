@@ -3,6 +3,7 @@ package telemetry
 import (
 	"encoding/json"
 	"strconv"
+	"time"
 )
 
 const (
@@ -12,6 +13,24 @@ const (
 	temporalityDelta = 1
 
 	sessionIdAttribute = "session.id"
+
+	eventNamePrefix   = "claude_code."
+	eventToolDecision = "claude_code.tool_decision"
+	eventToolResult   = "claude_code.tool_result"
+
+	attrEventName      = "event.name"
+	attrToolName       = "tool_name"
+	attrToolUseId      = "tool_use_id"
+	attrDecision       = "decision"
+	attrDecisionSource = "source"
+	attrToolInput      = "tool_input"
+
+	sourceConfig        = "config"
+	sourceHook          = "hook"
+	sourceUserTemporary = "user_temporary"
+	sourceUserPermanent = "user_permanent"
+	sourceUserReject    = "user_reject"
+	sourceUserAbort     = "user_abort"
 )
 
 type exportMetricsRequest struct {
@@ -84,6 +103,107 @@ func (s *Store) ingestMetric(m *metric) {
 		}
 		s.fold(sessionId, m.Name, pointValue(point), isDelta)
 	}
+}
+
+type exportLogsRequest struct {
+	ResourceLogs []resourceLogs `json:"resourceLogs"`
+}
+
+type resourceLogs struct {
+	ScopeLogs []scopeLogs `json:"scopeLogs"`
+}
+
+type scopeLogs struct {
+	LogRecords []logRecord `json:"logRecords"`
+}
+
+type logRecord struct {
+	Attributes   []keyValue `json:"attributes"`
+	Body         anyValue   `json:"body"`
+	TimeUnixNano string     `json:"timeUnixNano"`
+}
+
+func (s *Store) IngestLogs(body []byte) error {
+	var request exportLogsRequest
+	if err := json.Unmarshal(body, &request); err != nil {
+		return err
+	}
+
+	for _, resource := range request.ResourceLogs {
+		for _, scope := range resource.ScopeLogs {
+			for index := range scope.LogRecords {
+				s.ingestLogRecord(&scope.LogRecords[index])
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Store) ingestLogRecord(record *logRecord) {
+	sessionId := attributeValue(record.Attributes, sessionIdAttribute)
+	if sessionId == "" {
+		return
+	}
+
+	switch logEventName(record) {
+	case eventToolDecision:
+		s.foldDecision(sessionId, PermissionDecision{
+			Decision:  attributeValue(record.Attributes, attrDecision),
+			Source:    attributeValue(record.Attributes, attrDecisionSource),
+			Timestamp: timeFromUnixNano(record.TimeUnixNano),
+			Tool:      attributeValue(record.Attributes, attrToolName),
+			ToolUseId: attributeValue(record.Attributes, attrToolUseId),
+		})
+	case eventToolResult:
+		command := commandFromToolInput(attributeValue(record.Attributes, attrToolInput))
+		s.enrichCommand(sessionId, attributeValue(record.Attributes, attrToolUseId), command)
+	}
+}
+
+// logEventName returns the prefixed event name; Claude Code emits it in the
+// record body and repeats it unprefixed in the event.name attribute.
+func logEventName(record *logRecord) string {
+	if name := record.Body.StringValue; name != "" {
+		return name
+	}
+	if name := attributeValue(record.Attributes, attrEventName); name != "" {
+		return eventNamePrefix + name
+	}
+	return ""
+}
+
+// toolInput mirrors the fields peek extracts from denied tool inputs on the
+// transcript side (claude.deniedToolInput).
+type toolInput struct {
+	Command      string `json:"command"`
+	FilePath     string `json:"file_path"`
+	NotebookPath string `json:"notebook_path"`
+}
+
+func commandFromToolInput(encoded string) string {
+	if encoded == "" {
+		return ""
+	}
+
+	var input toolInput
+	if err := json.Unmarshal([]byte(encoded), &input); err != nil {
+		return ""
+	}
+	if input.Command != "" {
+		return input.Command
+	}
+	if input.FilePath != "" {
+		return input.FilePath
+	}
+	return input.NotebookPath
+}
+
+func timeFromUnixNano(value string) time.Time {
+	nanos, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || nanos <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, nanos).UTC()
 }
 
 func attributeValue(attributes []keyValue, key string) string {

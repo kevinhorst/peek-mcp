@@ -22,9 +22,12 @@ func TestDetector_Status(t *testing.T) {
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
     "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_LOG_TOOL_DETAILS": "1",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:42442/otlp",
-    "OTEL_METRIC_EXPORT_INTERVAL": "10000"
+    "OTEL_METRIC_EXPORT_INTERVAL": "10000",
+    "OTEL_LOGS_EXPORT_INTERVAL": "5000"
   }
 }`
 
@@ -75,6 +78,7 @@ func TestDetector_Status(t *testing.T) {
 		settings: `{"env": {
 			"CLAUDE_CODE_ENABLE_TELEMETRY": "true",
 			"OTEL_METRICS_EXPORTER": "otlp",
+			"OTEL_LOGS_EXPORTER": "otlp",
 			"OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
 			"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:42442/otlp"
 		}}`,
@@ -87,6 +91,7 @@ func TestDetector_Status(t *testing.T) {
 		settings: `{"env": {
 			"CLAUDE_CODE_ENABLE_TELEMETRY": "1",
 			"OTEL_METRICS_EXPORTER": "otlp",
+			"OTEL_LOGS_EXPORTER": "otlp",
 			"OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
 			"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:42442/otlp/"
 		}}`,
@@ -127,6 +132,19 @@ func TestDetector_Status(t *testing.T) {
 			"CLAUDE_CODE_ENABLE_TELEMETRY": "1",
 			"OTEL_METRICS_EXPORTER": "otlp",
 			"OTEL_EXPORTER_OTLP_PROTOCOL": "http/json"
+		}}`,
+	})
+
+	// missing-logs-exporter-misconfigured
+	tests = append(tests, &testCase{
+		_id:             "missing-logs-exporter-misconfigured",
+		_detailContains: `logs exporter "" (want otlp`,
+		_state:          ExportMisconfigured,
+		settings: `{"env": {
+			"CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+			"OTEL_METRICS_EXPORTER": "otlp",
+			"OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+			"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:42442/otlp"
 		}}`,
 	})
 
