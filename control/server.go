@@ -143,5 +143,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/config/{key}", s.handleConfigSet)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 	mux.HandleFunc("POST /otlp/v1/metrics", s.handleOtlpMetrics)
+	mux.HandleFunc("POST /otlp/v1/logs", s.handleOtlpLogs)
 	return s.logRequests(s.checkHost(s.auth(mux)))
 }

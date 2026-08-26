@@ -78,3 +78,48 @@ func TestHandleOtlpMetrics(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, response.Code)
 	})
 }
+
+const otlpLogsTestPayload = `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"timeUnixNano":"1787749325706000000","body":{"stringValue":"claude_code.tool_decision"},"attributes":[{"key":"session.id","value":{"stringValue":"s1"}},{"key":"decision","value":{"stringValue":"accept"}},{"key":"source","value":{"stringValue":"config"}},{"key":"tool_name","value":{"stringValue":"Bash"}}]}]}]}]}`
+
+func postOtlpLogs(server *Server, body, contentType string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4243/otlp/v1/logs", strings.NewReader(body))
+	request.Header.Set("Content-Type", contentType)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestHandleOtlpLogs(t *testing.T) {
+	// valid-payload-folded
+	t.Run("valid-payload-folded", func(t *testing.T) {
+		server, telemetryStore := newTelemetryTestServer(t, "")
+		response := postOtlpLogs(server, otlpLogsTestPayload, "application/json")
+
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Equal(t, "{}", response.Body.String())
+		stats, ok := telemetryStore.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 1, stats.Permissions.AutoAllowed)
+	})
+
+	// protobuf-content-type-rejected
+	t.Run("protobuf-content-type-rejected", func(t *testing.T) {
+		server, _ := newTelemetryTestServer(t, "")
+		response := postOtlpLogs(server, otlpLogsTestPayload, "application/x-protobuf")
+		assert.Equal(t, http.StatusUnsupportedMediaType, response.Code)
+	})
+
+	// invalid-payload-bad-request
+	t.Run("invalid-payload-bad-request", func(t *testing.T) {
+		server, _ := newTelemetryTestServer(t, "")
+		response := postOtlpLogs(server, "{not json", "application/json")
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+	})
+
+	// telemetry-disabled-not-found
+	t.Run("telemetry-disabled-not-found", func(t *testing.T) {
+		server, _ := newTestServer(t, "")
+		response := postOtlpLogs(server, otlpLogsTestPayload, "application/json")
+		assert.Equal(t, http.StatusNotFound, response.Code)
+	})
+}
