@@ -170,7 +170,10 @@ func setupClaudeCode(p *prompter, controlServer bool) error {
 	return nil
 }
 
-const defaultMetricExportIntervalMs = "10000"
+const (
+	defaultMetricExportIntervalMs = "10000"
+	defaultLogsExportIntervalMs   = "5000"
+)
 
 func setupTelemetry(p *prompter, controlServer bool) error {
 	fmt.Println("Enabling Claude Code telemetry export to peek-mcp...")
@@ -209,9 +212,12 @@ func setupTelemetry(p *prompter, controlServer bool) error {
 
 	env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "1"
 	env["OTEL_METRICS_EXPORTER"] = "otlp"
+	env["OTEL_LOGS_EXPORTER"] = "otlp"
+	env["OTEL_LOG_TOOL_DETAILS"] = "1"
 	env["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/json"
 	env["OTEL_EXPORTER_OTLP_ENDPOINT"] = fmt.Sprintf("http://127.0.0.1:%d/otlp", controlPortBase)
 	env["OTEL_METRIC_EXPORT_INTERVAL"] = defaultMetricExportIntervalMs
+	env["OTEL_LOGS_EXPORT_INTERVAL"] = defaultLogsExportIntervalMs
 	delete(env, "OTEL_EXPORTER_OTLP_HEADERS")
 	cfg["env"] = env
 
