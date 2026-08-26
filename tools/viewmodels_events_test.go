@@ -5,7 +5,10 @@ import (
 	"testing"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/state"
+	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSummarizeEvent(t *testing.T) {
@@ -29,6 +32,27 @@ func TestSummarizeEvent(t *testing.T) {
 		_id:       "permission-denied-no-command",
 		_expected: "Edit",
 		event:     &session.Event{Kind: session.EventKindPermissionDenied, Permission: &session.PermissionPayload{Tool: "Edit"}},
+	})
+
+	// permission-granted
+	tests = append(tests, &testCase{
+		_id:       "permission-granted",
+		_expected: "exec_command: make build",
+		event:     &session.Event{Kind: session.EventKindPermissionGranted, Permission: &session.PermissionPayload{Tool: "exec_command", Command: "make build"}},
+	})
+
+	// permission-mode-changed
+	tests = append(tests, &testCase{
+		_id:       "permission-mode-changed",
+		_expected: "default -> bypassPermissions",
+		event:     &session.Event{Kind: session.EventKindPermissionModeChanged, PermissionMode: &session.PermissionModePayload{From: "default", To: "bypassPermissions"}},
+	})
+
+	// permission-mode-initial
+	tests = append(tests, &testCase{
+		_id:       "permission-mode-initial",
+		_expected: "bypassPermissions",
+		event:     &session.Event{Kind: session.EventKindPermissionModeChanged, PermissionMode: &session.PermissionModePayload{To: "bypassPermissions"}},
 	})
 
 	// model-changed
@@ -121,4 +145,54 @@ func TestSummarizeEvent(t *testing.T) {
 			assert.Equal(t, test._expected, summarizeEvent(test.event))
 		})
 	}
+}
+
+const promptedDecisionLogs = `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"timeUnixNano":"1787749325706000000","body":{"stringValue":"claude_code.tool_decision"},"attributes":[{"key":"session.id","value":{"stringValue":"s1"}},{"key":"decision","value":{"stringValue":"accept"}},{"key":"source","value":{"stringValue":"user_temporary"}},{"key":"tool_name","value":{"stringValue":"Bash"}},{"key":"tool_use_id","value":{"stringValue":"tu1"}}]}]}]}]}`
+
+func TestNewPermissionsView(t *testing.T) {
+	claudeSession := func() *session.Session {
+		return &session.Session{Agent: session.AgentClaude, Meta: session.Meta{SessionId: "s1"}}
+	}
+
+	// live-store-served
+	t.Run("live-store-served", func(t *testing.T) {
+		store := telemetry.NewStore()
+		require.NoError(t, store.IngestLogs([]byte(promptedDecisionLogs)))
+
+		view := newPermissionsView(claudeSession(), store, nil)
+
+		require.NotNil(t, view)
+		assert.Equal(t, 1, view.PromptedOnce)
+		require.Len(t, view.Requests, 1)
+		assert.Equal(t, "Bash", view.Requests[0].Tool)
+		assert.Empty(t, view.Detail)
+	})
+
+	// persisted-fallback
+	t.Run("persisted-fallback", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		writer := telemetry.NewStore()
+		writer.StateDir = dir
+		require.NoError(t, writer.IngestLogs([]byte(promptedDecisionLogs)))
+
+		view := newPermissionsView(claudeSession(), telemetry.NewStore(), dir)
+
+		require.NotNil(t, view)
+		assert.Equal(t, 1, view.PromptedOnce)
+		assert.Equal(t, "persisted", view.Detail)
+	})
+
+	// no-data-nil
+	t.Run("no-data-nil", func(t *testing.T) {
+		assert.Nil(t, newPermissionsView(claudeSession(), telemetry.NewStore(), nil))
+	})
+
+	// codex-session-nil
+	t.Run("codex-session-nil", func(t *testing.T) {
+		store := telemetry.NewStore()
+		require.NoError(t, store.IngestLogs([]byte(promptedDecisionLogs)))
+		codexSession := &session.Session{Agent: session.AgentCodex, Meta: session.Meta{SessionId: "s1"}}
+
+		assert.Nil(t, newPermissionsView(codexSession, store, nil))
+	})
 }

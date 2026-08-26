@@ -94,7 +94,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 	server.AddTool(sessionList, counted(counter, "session_list", sessionListHandler(store)))
 
 	sessionEvents := mcp.NewTool("session_events",
-		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials, skill invocations, subagent spawns/results, user answers) plus derived counters, token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_get for those."),
+		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials/grants, permission-mode changes, skill invocations, subagent spawns/results, user answers) plus derived counters, telemetry-based permission decisions (auto-allowed vs. prompted vs. rejected, with the prompted commands), token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_get for those."),
 		mcp.WithString("id",
 			mcp.Description("Session ID (omit for most recent session)"),
 		),
@@ -349,6 +349,7 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 		if firstPage.Time != nil {
 			firstPage.Time.Telemetry = newTelemetryTimeView(currentSession, detector, telemetryStore, s.StateDir)
 		}
+		firstPage.Permissions = newPermissionsView(currentSession, telemetryStore, s.StateDir)
 		firstPage.TouchedFiles = newTouchedFileViews(currentSession)
 		if boolArgFromRequest(request, "breakdown", false) {
 			firstPage.Skills = newSkillStatViews(currentSession)
@@ -421,7 +422,7 @@ func newPlanRevisionsView(currentSession *session.Session) *planRevisionsView {
 
 func unsupportedSignals(agent session.Agent) []string {
 	if agent == session.AgentCodex {
-		return []string{"skills", "memory", "user_answers", "plan_approval", "subagent_results", "touched_files", "skill_usage", "subagent_usage", "telemetry"}
+		return []string{"skills", "memory", "user_answers", "plan_approval", "subagent_results", "touched_files", "skill_usage", "subagent_usage", "telemetry", "permissions"}
 	}
 	return nil
 }

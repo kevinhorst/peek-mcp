@@ -45,6 +45,7 @@ type sessionEventsResult struct {
 	Counters      *session.Counters   `json:"counters,omitempty"`
 	Diff          string              `json:"diff,omitempty"`
 	Events        any                 `json:"events,omitempty"`
+	Permissions   *permissionsView    `json:"permissions,omitempty"`
 	PlanRevisions *planRevisionsView  `json:"plan_revisions,omitempty"`
 	Revisions     any                 `json:"revisions,omitempty"`
 	Skills        []*skillStatView    `json:"skills,omitempty"`
@@ -72,6 +73,48 @@ func newTouchedFileViews(currentSession *session.Session) []*touchedFileView {
 	}
 	sort.Slice(views, func(i, j int) bool { return views[i].Path < views[j].Path })
 	return views
+}
+
+type permissionsView struct {
+	AutoAllowed    int                            `json:"auto_allowed"`
+	HookDecided    int                            `json:"hook_decided,omitempty"`
+	PromptedOnce   int                            `json:"prompted_once"`
+	PromptedAlways int                            `json:"prompted_always"`
+	Rejected       int                            `json:"rejected"`
+	Aborted        int                            `json:"aborted,omitempty"`
+	Requests       []telemetry.PermissionDecision `json:"requests,omitempty"`
+	Detail         string                         `json:"detail,omitempty"`
+}
+
+func newPermissionsView(currentSession *session.Session, telemetryStore *telemetry.Store, stateDir *state.Dir) *permissionsView {
+	if currentSession.Agent != session.AgentClaude {
+		return nil
+	}
+
+	sessionId := string(currentSession.Meta.SessionId)
+	if telemetryStore != nil {
+		if stats, ok := telemetryStore.Get(sessionId); ok && !stats.Permissions.IsZero() {
+			return permissionsViewFromStats(&stats.Permissions, "")
+		}
+	}
+
+	if stats, ok := telemetry.ReadPersisted(stateDir, sessionId); ok && !stats.Permissions.IsZero() {
+		return permissionsViewFromStats(&stats.Permissions, "persisted")
+	}
+	return nil
+}
+
+func permissionsViewFromStats(stats *telemetry.PermissionStats, detail string) *permissionsView {
+	return &permissionsView{
+		AutoAllowed:    stats.AutoAllowed,
+		HookDecided:    stats.HookDecided,
+		PromptedOnce:   stats.PromptedOnce,
+		PromptedAlways: stats.PromptedAlways,
+		Rejected:       stats.Rejected,
+		Aborted:        stats.Aborted,
+		Requests:       stats.Requests,
+		Detail:         detail,
+	}
 }
 
 func newTelemetryTimeView(currentSession *session.Session, detector *telemetry.Detector, telemetryStore *telemetry.Store, stateDir *state.Dir) *telemetryTimeView {
@@ -242,6 +285,18 @@ func permissionSummary(payload *session.PermissionPayload) string {
 	return payload.Tool + ": " + payload.Command
 }
 
+func permissionModeSummary(payload *session.PermissionModePayload) string {
+	if payload == nil {
+		return ""
+	}
+
+	if payload.From == "" {
+		return payload.To
+	}
+
+	return payload.From + " -> " + payload.To
+}
+
 func planRevisionSummary(payload *session.PlanPayload) string {
 	if payload == nil {
 		return ""
@@ -279,8 +334,10 @@ func summarizeEvent(event *session.Event) string {
 	switch event.Kind {
 	case session.EventKindModelChanged:
 		summary = modelSummary(event.Model)
-	case session.EventKindPermissionDenied:
+	case session.EventKindPermissionDenied, session.EventKindPermissionGranted:
 		summary = permissionSummary(event.Permission)
+	case session.EventKindPermissionModeChanged:
+		summary = permissionModeSummary(event.PermissionMode)
 	case session.EventKindPlanApproved, session.EventKindPlanModeEnter,
 		session.EventKindPlanModeExit, session.EventKindPlanModeReenter,
 		session.EventKindPlanRejected:

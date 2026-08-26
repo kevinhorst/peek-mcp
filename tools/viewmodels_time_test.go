@@ -61,6 +61,7 @@ func TestNewTelemetryTimeView(t *testing.T) {
 	configuredSettings := `{"env": {
 		"CLAUDE_CODE_ENABLE_TELEMETRY": "1",
 		"OTEL_METRICS_EXPORTER": "otlp",
+		"OTEL_LOGS_EXPORTER": "otlp",
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:42442/otlp"
 	}}`
