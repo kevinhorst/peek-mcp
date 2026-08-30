@@ -187,6 +187,10 @@ func TestSession_AddSubagentTurn_Transcript(t *testing.T) {
 	// sorted-ids
 	s.AddSubagentTurn(&Turn{SubagentId: "ag0", Role: RoleUser, Text: "x", Timestamp: timestamp, Meta: meta})
 	assert.Equal(t, []string{"ag0", "ag1"}, s.SubagentIds())
+
+	// model-captured-from-turn-meta
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleAssistant, Text: "y", RequestId: "req-s2", Timestamp: timestamp, Meta: &Meta{SessionId: Id("sess-123"), Model: "claude-haiku-4-5-20251001"}})
+	assert.Equal(t, "claude-haiku-4-5-20251001", s.Subagents["ag1"].Model)
 }
 
 func TestSession_AddTurn_UsageDedupByRequestId(t *testing.T) {

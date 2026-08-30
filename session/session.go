@@ -188,6 +188,7 @@ type SubagentStat struct {
 	Description string      `json:"description,omitempty"`
 	FirstActive time.Time   `json:"first_active"`
 	LastActive  time.Time   `json:"last_active"`
+	Model       string      `json:"model,omitempty"`
 	TurnActive  *Turn       `json:"-"`
 	Turns       *TurnBuffer `json:"-"`
 	Usage       Usage       `json:"usage"`
@@ -209,6 +210,10 @@ func (s *Session) AddSubagentTurn(turn *Turn) {
 
 	if turn.Role != "" {
 		stat.TurnActive = appendTurn(stat.TurnActive, stat.Turns, turn)
+	}
+
+	if turn.Meta != nil && turn.Meta.Model != "" {
+		stat.Model = turn.Meta.Model
 	}
 
 	if !turn.Timestamp.IsZero() {
