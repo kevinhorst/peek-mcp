@@ -56,6 +56,7 @@ type Session struct {
 	DiffTarget      string                      `json:"diff_target,omitempty"`
 	Events          *EventBuffer                `json:"-"`
 	FilePath        string                      `json:"-"`
+	HasDiffSnapshot bool                        `json:"-"`
 	Idle            time.Duration               `json:"-"`
 	LastActive      time.Time                   `json:"last_active"`
 	Meta            Meta                        `json:"meta"`
