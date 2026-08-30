@@ -24,6 +24,7 @@ peek-mcp start --port 4242 --depth 20
 | `--state-retention-days` | `90` | Days to keep per-session state before GC removes it (0 disables GC) |
 | `--control-port` | `42442` | Control server start port; walks up to `42499` if taken (dashboard + JSON API + SSE); `0` disables |
 | `--control-token` | — | Optional bearer token protecting the control server |
+| `--back-link` | — | URL of an external dashboard the control server nav links back to (empty hides the link) |
 
 ## Environment variables
 
@@ -42,11 +43,12 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_STATE_RETENTION_DAYS` | `--state-retention-days` |
 | `PEEK_CONTROL_PORT` | `--control-port` |
 | `PEEK_CONTROL_TOKEN` | `--control-token` |
+| `PEEK_BACK_LINK` | `--back-link` |
 | `PEEK_LOG_LEVEL` | `--log-level` |
 
 ## Config file
 
-A global config file at `~/.peek/config.json` is shared by every peek instance and read once at startup. Precedence: explicit flag > `PEEK_*` environment variable > config file > default. Only the safe tuning keys are persistable: `depth`, `poll_interval`, `poll_window`, `state_retention_days`, `log_level`. The file is written by the dashboard's config editor (`/stats` page, `POST /api/config/{key}`); edits apply on the next restart — http-transport instances can restart from the dashboard, stdio instances are restarted by their MCP client. Keys pinned by a flag or environment variable show an "overridden" badge in the editor and win over the file after restart.
+A global config file at `~/.peek/config.json` is shared by every peek instance and read once at startup. Precedence: explicit flag > `PEEK_*` environment variable > config file > default. Only the safe tuning keys are persistable: `back_link`, `depth`, `poll_interval`, `poll_window`, `state_retention_days`, `log_level`. The file is written by the dashboard's config editor (`/stats` page, `POST /api/config/{key}`); edits apply on the next restart — http-transport instances can restart from the dashboard, stdio instances are restarted by their MCP client. Keys pinned by a flag or environment variable show an "overridden" badge in the editor and win over the file after restart.
 
 ## Control server (dashboard + JSON API)
 
