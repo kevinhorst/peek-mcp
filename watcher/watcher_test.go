@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/kevinhorst/peek-mcp/codex"
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
@@ -22,14 +24,52 @@ func appendLine(t *testing.T, path, line string) {
 	require.NoError(t, err)
 }
 
+func TestWalkAndWatch_Horizon(t *testing.T) {
+	dir := t.TempDir()
+	oldFile := filepath.Join(dir, "rollout-old.jsonl")
+	freshFile := filepath.Join(dir, "rollout-fresh.jsonl")
+	appendLine(t, oldFile, `{"timestamp":"2026-07-11T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-old","cwd":"/project"}}`)
+	appendLine(t, freshFile, `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-fresh","cwd":"/project"}}`)
+	stale := time.Now().Add(-48 * time.Hour)
+	require.NoError(t, os.Chtimes(oldFile, stale, stale))
+
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	newParser := func() Parser { return codex.NewParser() }
+	w := New(session.AgentCodex, dir, 24*time.Hour, newParser, store)
+	fsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer fsWatcher.Close()
+
+	// old-file-skipped-at-startup
+	w.walkAndWatch(fsWatcher, dir)
+	_, ok := store.GetById("sess-old")
+	assert.False(t, ok)
+	_, ok = store.GetById("sess-fresh")
+	assert.True(t, ok)
+
+	// write-event-ingests-skipped-file-fully
+	appendLine(t, oldFile, `{"timestamp":"2026-08-30T21:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"resumed"}]}}`)
+	require.NoError(t, w.readNewLines(oldFile))
+	resumed, ok := store.GetById("sess-old")
+	assert.True(t, ok)
+	assert.Len(t, resumed.Turns(10), 1)
+
+	// zero-horizon-ingests-everything
+	allStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	allWatcher := New(session.AgentCodex, dir, 0, newParser, allStore)
+	allWatcher.walkAndWatch(fsWatcher, dir)
+	_, ok = allStore.GetById("sess-old")
+	assert.True(t, ok)
+}
+
 func TestReadNewLines_PerFileParserState(t *testing.T) {
 	dir := t.TempDir()
 	fileA := filepath.Join(dir, "rollout-a.jsonl")
 	fileB := filepath.Join(dir, "rollout-b.jsonl")
 
-	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
-	w := New(session.AgentCodex, dir, newParser, store)
+	w := New(session.AgentCodex, dir, 0, newParser, store)
 
 	// session A starts and produces a turn
 	appendLine(t, fileA, `{"timestamp":"2026-07-11T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-a","cwd":"/project"}}`)

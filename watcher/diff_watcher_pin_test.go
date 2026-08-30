@@ -53,7 +53,7 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 	// pin-survives-target-advance
 	t.Run("pin-survives-target-advance", func(t *testing.T) {
 		dir := buildFeatureRepo(t)
-		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, state.NewDir(t.TempDir()))
 
@@ -81,7 +81,7 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 	// pin-survives-branch-merge
 	t.Run("pin-survives-branch-merge", func(t *testing.T) {
 		dir := buildFeatureRepo(t)
-		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, state.NewDir(t.TempDir()))
 
@@ -104,7 +104,7 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 	// failure-flips-to-snapshot
 	t.Run("failure-flips-to-snapshot", func(t *testing.T) {
 		dir := buildFeatureRepo(t)
-		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, state.NewDir(t.TempDir()))
 
@@ -127,7 +127,7 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 		gitRun(t, dir, "commit", "-m", "tracked")
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("v1\nextra\n"), 0o644))
 
-		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		stateDir := state.NewDir(t.TempDir())
 		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, stateDir)
@@ -151,7 +151,7 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 	// snapshot-written-on-change-only
 	t.Run("snapshot-written-on-change-only", func(t *testing.T) {
 		dir := buildFeatureRepo(t)
-		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		stateDir := state.NewDir(t.TempDir())
 		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, stateDir)

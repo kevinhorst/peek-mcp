@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/kevinhorst/peek-mcp/session"
@@ -20,6 +21,18 @@ import (
 const (
 	jsonlSuffix = ".jsonl"
 )
+
+func isBeforeCutoff(entry fs.DirEntry, cutoff time.Time) bool {
+	if cutoff.IsZero() {
+		return false
+	}
+
+	info, err := entry.Info()
+	if err != nil {
+		return false
+	}
+	return info.ModTime().Before(cutoff)
+}
 
 const (
 	agentFilePrefix  = "agent-"
@@ -42,18 +55,20 @@ type Watcher struct {
 	agent     session.Agent
 	agentDir  string
 	files     map[string]*watchedFile
+	horizon   time.Duration
 	mu        sync.Mutex
 	newParser func() Parser
 	store     *session.Store
 }
 
-func New(agent session.Agent, agentDir string, newParser func() Parser, store *session.Store) *Watcher {
+func New(agent session.Agent, agentDir string, horizon time.Duration, newParser func() Parser, store *session.Store) *Watcher {
 	return &Watcher{
 		agent:     agent,
 		agentDir:  agentDir,
+		files:     make(map[string]*watchedFile),
+		horizon:   horizon,
 		newParser: newParser,
 		store:     store,
-		files:     make(map[string]*watchedFile),
 	}
 }
 
@@ -66,6 +81,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 
 	// Add root directories and backfill existing files
 	w.walkAndWatch(watcher, w.agentDir)
+	w.store.SeedDiffCache()
 
 	for {
 		select {
@@ -120,6 +136,10 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 	}
 
 	var subagentPaths []string
+	cutoff := time.Time{}
+	if w.horizon > 0 {
+		cutoff = time.Now().Add(-w.horizon)
+	}
 
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -131,6 +151,9 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 			if err != nil {
 				return err
 			}
+			return nil
+		}
+		if isBeforeCutoff(entry, cutoff) {
 			return nil
 		}
 		if isSubagentPath(path) {
