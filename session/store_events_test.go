@@ -1,6 +1,9 @@
 package session
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +18,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// events-appended
 	t.Run("events-appended", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		turn := &Turn{
 			Events:    []*Event{{Kind: EventKindSkillInvoked, Skill: &SkillPayload{Skill: "jq"}}},
 			Role:      RoleUser,
@@ -33,7 +36,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// event-only-turn-no-chat-turn
 	t.Run("event-only-turn-no-chat-turn", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		turn := &Turn{
 			Events: []*Event{{Kind: EventKindPlanModeEnter}},
 			Meta:   &Meta{SessionId: "s1"},
@@ -48,7 +51,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// subagent-events-drop-unknown-parent
 	t.Run("subagent-events-drop-unknown-parent", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		turn := &Turn{
 			Events:     []*Event{{Actor: "sub-1", Kind: EventKindSubagentSpawned, Subagent: &SubagentPayload{AgentId: "sub-1"}}},
 			SubagentId: "sub-1",
@@ -62,7 +65,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// subagent-result-resolves-agent-id
 	t.Run("subagent-result-resolves-agent-id", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		// Parent session exists via a chat turn
 		chatTurn := &Turn{
 			Role:      RoleUser,
@@ -95,7 +98,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// subagent-spawn-backfills-earlier-result
 	t.Run("subagent-spawn-backfills-earlier-result", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		// Parent session exists via a chat turn
 		chatTurn := &Turn{
 			Role:      RoleUser,
@@ -132,7 +135,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 
 	// usage-signal-keep-last
 	t.Run("usage-signal-keep-last", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		firstSnapshot := &Turn{
 			Usage: &Usage{InputTokens: 100, TotalTokens: 100},
 			Meta:  &Meta{SessionId: "c"},
@@ -155,7 +158,7 @@ func TestAddTurnBySessionId_SkillWindowOrdering(t *testing.T) {
 
 	// slash-command-prompt-close-then-open
 	t.Run("slash-command-prompt-close-then-open", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		first := &Turn{
 			Events:    []*Event{{Kind: EventKindSkillInvoked, Skill: &SkillPayload{Skill: "first", Source: SkillSourceSlash}, Timestamp: now}},
 			Role:      RoleUser,
@@ -183,7 +186,7 @@ func TestAddTurnBySessionId_SkillWindowOrdering(t *testing.T) {
 
 	// model-change-emits-event-once
 	t.Run("model-change-emits-event-once", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		assistantTurn := func(requestId, model string, ts time.Time) *Turn {
 			return &Turn{Role: RoleAssistant, RequestId: requestId, Timestamp: ts, Meta: &Meta{SessionId: "s1", Model: model}}
 		}
@@ -203,7 +206,7 @@ func TestAddTurnBySessionId_SkillWindowOrdering(t *testing.T) {
 
 	// subagent-turn-folds-touches-and-stats
 	t.Run("subagent-turn-folds-touches-and-stats", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		chatTurn := &Turn{Role: RoleUser, Text: "start", Timestamp: now, Meta: &Meta{SessionId: "p"}}
 		s.AddTurnBySessionId("p", AgentClaude, chatTurn)
 		subTurn := &Turn{
@@ -227,7 +230,7 @@ func TestAddTurnBySessionId_SkillWindowOrdering(t *testing.T) {
 func TestPlanRevisions(t *testing.T) {
 	// initial-version-recorded
 	t.Run("initial-version-recorded", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		s.setPlanContent("# Plan v1", sess, time.Time{})
 
@@ -238,7 +241,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// change-appends-diff-and-event
 	t.Run("change-appends-diff-and-event", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		sess.planExitSeen = true
 		s.setPlanContent("# Plan v1\n", sess, time.Time{})
@@ -254,7 +257,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// revision-timestamp-from-transcript-entry
 	t.Run("revision-timestamp-from-transcript-entry", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		entryTime := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
 		s.setPlanContent("# Plan v1", sess, entryTime)
@@ -265,7 +268,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// identical-content-no-revision
 	t.Run("identical-content-no-revision", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		s.setPlanContent("# Plan", sess, time.Time{})
 		s.setPlanContent("# Plan", sess, time.Time{})
@@ -275,7 +278,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// codex-second-block-is-alteration
 	t.Run("codex-second-block-is-alteration", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentCodex)
 		s.setPlanContent("# Plan v1\n", sess, time.Time{})
 		s.setPlanContent("# Plan v2\n", sess, time.Time{})
@@ -286,7 +289,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// claude-pre-exit-is-draft
 	t.Run("claude-pre-exit-is-draft", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentClaude)
 		s.setPlanContent("# Plan v1\n", sess, time.Time{})
 		s.setPlanContent("# Plan v2\n", sess, time.Time{})
@@ -298,7 +301,7 @@ func TestPlanRevisions(t *testing.T) {
 
 	// cap-50-keeps-counting
 	t.Run("cap-50-keeps-counting", func(t *testing.T) {
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		sess := s.getOrCreate("s1", AgentCodex)
 		for index := 0; index < 60; index++ {
 			content := "# Plan v" + string(rune('A'+index%26)) + string(rune('a'+index%23)) + "\n"
@@ -318,15 +321,21 @@ func TestHydrateFromState(t *testing.T) {
 		require.NoError(t, dir.WriteDiffBase("claude", base, "s1"))
 		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff body", "s1"))
 
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		s.StateDir = dir
 		sess := s.getOrCreate("s1", AgentClaude)
 
 		assert.Equal(t, "abc1234", sess.DiffBase)
 		assert.Equal(t, "main", sess.DiffTarget)
-		assert.Equal(t, "diff body", sess.DiffOutput)
+		assert.Empty(t, sess.DiffOutput)
+		assert.True(t, sess.HasDiffSnapshot)
 		assert.Equal(t, DiffSourceSnapshot, sess.DiffSource)
 		assert.False(t, sess.DiffCapturedAt.IsZero())
+
+		content, target, ok := s.LoadDiff("s1")
+		assert.True(t, ok)
+		assert.Equal(t, "main", target)
+		assert.Equal(t, "diff body", content)
 	})
 
 	// plan-revisions-restored-with-alteration-count
@@ -340,7 +349,7 @@ func TestHydrateFromState(t *testing.T) {
 		require.NoError(t, dir.WritePlanVersion("claude", "s1", draft))
 		require.NoError(t, dir.WritePlanLatest("claude", "# latest", "s1"))
 
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		s.StateDir = dir
 		sess := s.getOrCreate("s1", AgentClaude)
 
@@ -360,11 +369,149 @@ func TestHydrateFromState(t *testing.T) {
 		require.NoError(t, dir.WritePlanVersion("claude", "s1", version))
 		require.NoError(t, dir.WritePlanLatest("claude", "# X", "s1"))
 
-		s := NewStore(10, events.NewBroker())
+		s := NewStore(10, 25, events.NewBroker())
 		s.StateDir = dir
 		sess := s.getOrCreate("s1", AgentClaude)
 		s.setPlanContent("# X", sess, time.Time{})
 
 		assert.Len(t, sess.PlanRevisions, 1, "replayed identical content produces no phantom revision")
 	})
+}
+
+func TestLoadDiff(t *testing.T) {
+	// live-diff-from-memory
+	t.Run("live-diff-from-memory", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.getOrCreate("s1", AgentClaude)
+		s.UpdateDiff("s1", "main", "live diff")
+
+		content, target, ok := s.LoadDiff("s1")
+		assert.True(t, ok)
+		assert.Equal(t, "main", target)
+		assert.Equal(t, "live diff", content)
+	})
+
+	// snapshot-read-from-disk-and-cached
+	t.Run("snapshot-read-from-disk-and-cached", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "snapshot diff", "s1"))
+
+		s := NewStore(10, 25, events.NewBroker())
+		s.StateDir = dir
+		s.getOrCreate("s1", AgentClaude)
+
+		content, _, ok := s.LoadDiff("s1")
+		assert.True(t, ok)
+		assert.Equal(t, "snapshot diff", content)
+
+		cached, isCached := s.snapshots.get("s1")
+		assert.True(t, isCached)
+		assert.Equal(t, "snapshot diff", cached)
+	})
+
+	// no-snapshot-not-ok
+	t.Run("no-snapshot-not-ok", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.StateDir = state.NewDir(t.TempDir())
+		s.getOrCreate("s1", AgentClaude)
+
+		_, _, ok := s.LoadDiff("s1")
+		assert.False(t, ok)
+	})
+
+	// snapshot-deleted-after-hydration-not-ok
+	t.Run("snapshot-deleted-after-hydration-not-ok", func(t *testing.T) {
+		root := t.TempDir()
+		dir := state.NewDir(root)
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "snapshot diff", "s1"))
+
+		s := NewStore(10, 25, events.NewBroker())
+		s.StateDir = dir
+		s.getOrCreate("s1", AgentClaude)
+		require.NoError(t, os.Remove(filepath.Join(root, "claude", "s1", "diff.snapshot")))
+
+		_, _, ok := s.LoadDiff("s1")
+		assert.False(t, ok)
+	})
+
+	// zero-capacity-read-through
+	t.Run("zero-capacity-read-through", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "snapshot diff", "s1"))
+
+		s := NewStore(10, 0, events.NewBroker())
+		s.StateDir = dir
+		s.getOrCreate("s1", AgentClaude)
+
+		content, _, ok := s.LoadDiff("s1")
+		assert.True(t, ok)
+		assert.Equal(t, "snapshot diff", content)
+
+		_, isCached := s.snapshots.get("s1")
+		assert.False(t, isCached)
+	})
+
+	// unknown-session-not-ok
+	t.Run("unknown-session-not-ok", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+
+		_, _, ok := s.LoadDiff("missing")
+		assert.False(t, ok)
+	})
+}
+
+func TestSeedDiffCache(t *testing.T) {
+	// seeds-most-recently-active
+	t.Run("seeds-most-recently-active", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff old", "old"))
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff mid", "mid"))
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff new", "new"))
+
+		s := NewStore(10, 2, events.NewBroker())
+		s.StateDir = dir
+		now := time.Now()
+		s.getOrCreate("old", AgentClaude).LastActive = now.Add(-3 * time.Hour)
+		s.getOrCreate("mid", AgentClaude).LastActive = now.Add(-2 * time.Hour)
+		s.getOrCreate("new", AgentClaude).LastActive = now.Add(-1 * time.Hour)
+
+		s.SeedDiffCache()
+
+		_, ok := s.snapshots.get("old")
+		assert.False(t, ok)
+		_, ok = s.snapshots.get("mid")
+		assert.True(t, ok)
+		_, ok = s.snapshots.get("new")
+		assert.True(t, ok)
+	})
+
+	// skips-sessions-without-snapshots
+	t.Run("skips-sessions-without-snapshots", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff one", "s1"))
+
+		s := NewStore(10, 2, events.NewBroker())
+		s.StateDir = dir
+		s.getOrCreate("s1", AgentClaude)
+		s.getOrCreate("s2", AgentClaude)
+
+		s.SeedDiffCache()
+
+		_, ok := s.snapshots.get("s1")
+		assert.True(t, ok)
+		_, ok = s.snapshots.get("s2")
+		assert.False(t, ok)
+	})
+}
+
+func TestUpdateUncommittedDiff_Truncation(t *testing.T) {
+	s := NewStore(10, 25, events.NewBroker())
+	s.getOrCreate("s1", AgentClaude)
+	oversized := strings.Repeat("z", state.MaxSnapshotBytes+1024)
+
+	s.UpdateUncommittedDiff("s1", oversized)
+
+	sess, _ := s.GetById("s1")
+	assert.Contains(t, sess.UncommittedDiff, "snapshot truncated at 5 MB")
+	assert.Less(t, len(sess.UncommittedDiff), len(oversized))
 }

@@ -69,6 +69,9 @@ func (w *DiffWatcher) Run(ctx context.Context) error {
 			if !ok || sess.Meta.CWD == "" {
 				continue
 			}
+			if !w.isWithinWindow(sess) {
+				continue
+			}
 			if _, loaded := w.running.LoadOrStore(id, struct{}{}); loaded {
 				continue
 			}
@@ -78,6 +81,13 @@ func (w *DiffWatcher) Run(ctx context.Context) error {
 			w.pollAll(ctx)
 		}
 	}
+}
+
+func (w *DiffWatcher) isWithinWindow(sess *session.Session) bool {
+	if w.window <= 0 {
+		return true
+	}
+	return time.Since(sess.LastActive) <= w.window
 }
 
 // refresh recomputes the working-tree diff against the session's pinned base,
@@ -167,7 +177,10 @@ func (w *DiffWatcher) persistSnapshot(output, previous string, sess *session.Ses
 	id := string(sess.Meta.SessionId)
 	if err := w.stateDir.WriteDiffSnapshot(agent, output, id); err != nil {
 		slog.Warn("DiffWatcher.persistSnapshot: Failed to write snapshot", "session", id, "err", err)
+		return
 	}
+
+	w.store.MarkSnapshotPersisted(sess.Meta.SessionId, output)
 }
 
 func (w *DiffWatcher) diffBase(ctx context.Context, cwd string) string {
@@ -200,7 +213,7 @@ func (w *DiffWatcher) pollAll(ctx context.Context) {
 		if cwd == "" || seen[cwd] {
 			continue
 		}
-		if w.window > 0 && time.Since(sess.LastActive) > w.window {
+		if !w.isWithinWindow(sess) {
 			continue
 		}
 		seen[cwd] = true
@@ -240,9 +253,10 @@ func (w *DiffWatcher) pollRepo(ctx context.Context, cwd string) {
 		slog.Warn("DiffWatcher: write peek-diff failed", "gitDir", gitDir, "err", err)
 	}
 
+	truncated := state.Truncate(output)
 	for _, sess := range w.store.List() {
 		if sess.Meta.CWD == cwd {
-			w.store.UpdateUncommittedDiff(sess.Meta.SessionId, output)
+			w.store.UpdateUncommittedDiff(sess.Meta.SessionId, truncated)
 		}
 	}
 	slog.Debug("DiffWatcher: refreshed uncommitted diff", "cwd", cwd, "bytes", len(output))

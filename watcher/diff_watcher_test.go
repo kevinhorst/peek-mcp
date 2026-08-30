@@ -155,7 +155,7 @@ func TestDiffWatcher_DiffBase(t *testing.T) {
 	gitRun(t, dir, "branch", "develop")
 	gitRun(t, dir, "checkout", "-b", "feature", "develop")
 
-	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 	w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, nil)
 	ctx := context.Background()
 
@@ -185,7 +185,7 @@ func TestDiffWatcher_Refresh(t *testing.T) {
 	gitRun(t, dir, "checkout", "feature")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "feature.txt"), []byte("committed\nuncommitted\n"), 0o644))
 
-	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 	turn := &session.Turn{
 		Meta:      &session.Meta{SessionId: "sess-1", CWD: dir},
 		Role:      session.RoleUser,
@@ -203,4 +203,21 @@ func TestDiffWatcher_Refresh(t *testing.T) {
 	assert.Contains(t, sess.DiffOutput, "+committed")
 	assert.Contains(t, sess.DiffOutput, "+uncommitted")
 	assert.NotContains(t, sess.DiffOutput, "upstream")
+}
+
+func TestDiffWatcher_IsWithinWindow(t *testing.T) {
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	w := NewDiffWatcher(store, events.NewBroker(), time.Second, time.Hour, nil)
+
+	// stale-session-outside-window
+	stale := &session.Session{LastActive: time.Now().Add(-2 * time.Hour)}
+	assert.False(t, w.isWithinWindow(stale))
+
+	// recent-session-within-window
+	recent := &session.Session{LastActive: time.Now()}
+	assert.True(t, w.isWithinWindow(recent))
+
+	// zero-window-admits-all
+	unbounded := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, nil)
+	assert.True(t, unbounded.isWithinWindow(stale))
 }

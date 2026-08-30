@@ -18,7 +18,7 @@ func provideIndexWatcher(t *testing.T, indexContent string) (*CodexIndexWatcher,
 		require.NoError(t, os.WriteFile(indexPath, []byte(indexContent), 0644))
 	}
 
-	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
 	return NewCodexIndexWatcher(codexHome, store), store
 }
 

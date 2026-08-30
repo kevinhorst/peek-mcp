@@ -33,15 +33,17 @@ type Store struct {
 	enabledAgents  []Agent
 	plainTitleById map[Id]string
 	sessions       map[Id]*Session
+	snapshots      *snapshotCache
 }
 
-func NewStore(depth int, broker *events.Broker, agents ...Agent) *Store {
+func NewStore(depth, diffCacheSessions int, broker *events.Broker, agents ...Agent) *Store {
 	return &Store{
 		sessions:       make(map[Id]*Session),
 		plainTitleById: make(map[Id]string),
 		depth:          depth,
 		enabledAgents:  agents,
 		broker:         broker,
+		snapshots:      newSnapshotCache(diffCacheSessions),
 	}
 }
 
@@ -276,11 +278,86 @@ func (s *Store) MarkDiffSnapshot(id Id) {
 	if !ok {
 		return
 	}
-	if session.DiffOutput == "" {
+	if session.DiffOutput == "" && !session.HasDiffSnapshot {
 		return
 	}
 
 	session.DiffSource = DiffSourceSnapshot
+}
+
+func (s *Store) MarkSnapshotPersisted(id Id, output string) {
+	s.mu.Lock()
+	if session, ok := s.sessions[id]; ok {
+		session.HasDiffSnapshot = true
+	}
+	s.mu.Unlock()
+
+	s.snapshots.put(id, state.Truncate(output))
+}
+
+func (s *Store) LoadDiff(id Id) (content, target string, ok bool) {
+	s.mu.RLock()
+	session, exists := s.sessions[id]
+	if !exists {
+		s.mu.RUnlock()
+		return "", "", false
+	}
+
+	isLive := session.DiffSource == DiffSourceLive && session.DiffOutput != ""
+	content = session.DiffOutput
+	target = session.DiffTarget
+	hasSnapshot := session.HasDiffSnapshot
+	agent := string(session.Agent)
+	s.mu.RUnlock()
+
+	if isLive {
+		return content, target, true
+	}
+	if !hasSnapshot || s.StateDir == nil {
+		return "", target, false
+	}
+	if snapshot, isCached := s.snapshots.get(id); isCached {
+		return snapshot, target, true
+	}
+
+	snapshot, _, found := s.StateDir.ReadDiffSnapshot(agent, string(id))
+	if !found {
+		return "", target, false
+	}
+
+	s.snapshots.put(id, snapshot)
+	return snapshot, target, true
+}
+
+func (s *Store) SeedDiffCache() {
+	if s.StateDir == nil || s.snapshots.capacity <= 0 {
+		return
+	}
+
+	s.mu.RLock()
+	candidates := make([]*Session, 0)
+	for _, session := range s.sessions {
+		if session.HasDiffSnapshot {
+			candidates = append(candidates, session)
+		}
+	}
+	s.mu.RUnlock()
+
+	sortSessionsByLastActiveDesc(candidates)
+	if len(candidates) > s.snapshots.capacity {
+		candidates = candidates[:s.snapshots.capacity]
+	}
+
+	for index := len(candidates) - 1; index >= 0; index-- {
+		session := candidates[index]
+		id := session.Meta.SessionId
+		snapshot, _, found := s.StateDir.ReadDiffSnapshot(string(session.Agent), string(id))
+		if !found {
+			continue
+		}
+
+		s.snapshots.put(id, snapshot)
+	}
 }
 
 func (s *Store) PinDiffBase(id Id, sha, target string) {
@@ -297,7 +374,7 @@ func (s *Store) UpdateUncommittedDiff(id Id, output string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if session, ok := s.sessions[id]; ok {
-		session.UncommittedDiff = output
+		session.UncommittedDiff = state.Truncate(output)
 		s.publish(events.TypeUncommittedDiffUpdated, id, session.Agent)
 	}
 }
@@ -448,8 +525,8 @@ func (s *Store) hydrateFromState(session *Session) {
 		session.DiffTarget = base.Target
 	}
 
-	if snapshot, capturedAt, ok := s.StateDir.ReadDiffSnapshot(agent, id); ok {
-		session.DiffOutput = snapshot
+	if capturedAt, ok := s.StateDir.StatDiffSnapshot(agent, id); ok {
+		session.HasDiffSnapshot = true
 		session.DiffSource = DiffSourceSnapshot
 		session.DiffCapturedAt = capturedAt
 	}

@@ -321,21 +321,35 @@ func (s *Server) handleMemoryFragment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDiffFragment(w http.ResponseWriter, r *http.Request) {
-	s.serveDiffFragment(w, r, "diff", func(sess *session.Session) (string, string) {
-		return sess.DiffOutput, sess.DiffTarget
+	s.serveDiffFragment(w, r, "diff", func(id session.Id) (string, string, bool) {
+		var target string
+		found := s.store.WithSession(id, func(sess *session.Session) {
+			target = sess.DiffTarget
+		})
+		if !found {
+			return "", "", false
+		}
+
+		content, loadedTarget, ok := s.store.LoadDiff(id)
+		if ok {
+			target = loadedTarget
+		}
+		return content, target, true
 	})
 }
 
 func (s *Server) handleUncommittedDiffFragment(w http.ResponseWriter, r *http.Request) {
-	s.serveDiffFragment(w, r, "uncommitted-diff", func(sess *session.Session) (string, string) {
-		return sess.UncommittedDiff, ""
+	s.serveDiffFragment(w, r, "uncommitted-diff", func(id session.Id) (string, string, bool) {
+		var diff string
+		found := s.store.WithSession(id, func(sess *session.Session) { diff = sess.UncommittedDiff })
+		return diff, "", found
 	})
 }
 
-func (s *Server) serveDiffFragment(w http.ResponseWriter, r *http.Request, kind string, extract func(*session.Session) (string, string)) {
+func (s *Server) serveDiffFragment(w http.ResponseWriter, r *http.Request, kind string, load func(session.Id) (string, string, bool)) {
 	id := session.Id(r.PathValue("id"))
-	var diff, target string
-	if !s.store.WithSession(id, func(sess *session.Session) { diff, target = extract(sess) }) {
+	diff, target, found := load(id)
+	if !found {
 		respondNotFound("unknown session", w)
 		return
 	}

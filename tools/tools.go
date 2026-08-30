@@ -224,8 +224,9 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 				result.Plan = sess.PlanContent
 			}
 			if withDiff {
-				result.Diff = sess.DiffOutput
-				result.DiffTarget = sess.DiffTarget
+				diffContent, diffTarget, _ := s.LoadDiff(sess.Meta.SessionId)
+				result.Diff = diffContent
+				result.DiffTarget = diffTarget
 			}
 			if withUncommitted {
 				result.UncommittedDiff = sess.UncommittedDiff
@@ -251,7 +252,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 			plan = sess.PlanContent
 		}
 		if withDiff {
-			diff = sess.DiffOutput
+			diff, _, _ = s.LoadDiff(sess.Meta.SessionId)
 		}
 		if withUncommitted {
 			uncommitted = sess.UncommittedDiff
@@ -306,7 +307,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 				TitleSource: sess.TitleSource,
 				LastActive:  sess.LastActive,
 				HasPlan:     sess.PlanContent != "" || sess.PlanFilePath != "",
-				HasDiff:     sess.DiffOutput != "",
+				HasDiff:     sess.DiffOutput != "" || sess.HasDiffSnapshot,
 				DiffTarget:  sess.DiffTarget,
 				Meta:        sess.Meta,
 			}
@@ -434,7 +435,7 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 }
 
 func diffAvailability(currentSession *session.Session) string {
-	if currentSession.DiffOutput == "" {
+	if currentSession.DiffOutput == "" && !currentSession.HasDiffSnapshot {
 		return "none"
 	}
 

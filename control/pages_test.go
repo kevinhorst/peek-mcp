@@ -139,7 +139,7 @@ func TestSessionsFragment_MissingAgent(t *testing.T) {
 
 func TestSessionsFragment_Pagination(t *testing.T) {
 	broker := events.NewBroker()
-	store := session.NewStore(10, broker, session.AgentClaude)
+	store := session.NewStore(10, 25, broker, session.AgentClaude)
 	for i := 0; i < defaultSessionLimit+1; i++ {
 		id := session.Id("p" + strconv.Itoa(i))
 		store.AddTurnBySessionId(id, session.AgentClaude, &session.Turn{
@@ -165,7 +165,7 @@ func TestSessionsFragment_Pagination(t *testing.T) {
 
 func TestSessionsFragment_Empty(t *testing.T) {
 	broker := events.NewBroker()
-	store := session.NewStore(10, broker)
+	store := session.NewStore(10, 25, broker)
 	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
 	require.NoError(t, err)
 
