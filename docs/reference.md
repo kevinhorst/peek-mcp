@@ -21,7 +21,9 @@ peek-mcp start --port 4242 --depth 20
 | `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
 | `--poll-window` | `1h` | Only poll repos whose session was active within this window |
 | `--state-dir` | `~/.peek/state` | State directory for diff pins/snapshots and plan revisions (empty disables persistence) |
-| `--state-retention-days` | `90` | Days to keep per-session state before GC removes it (0 disables GC) |
+| `--state-retention-days` | `90` | Days to keep per-session state before GC removes it, and how far back startup ingests transcripts (0 disables both) |
+| `--snapshot-retention-days` | `14` | Days to keep diff snapshots before GC removes them; session dirs and plans follow `--state-retention-days` (0 disables) |
+| `--diff-cache-sessions` | `25` | How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching) |
 | `--control-port` | `42442` | Control server start port; walks up to `42499` if taken (dashboard + JSON API + SSE); `0` disables |
 | `--control-token` | — | Optional bearer token protecting the control server |
 
@@ -40,13 +42,15 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_POLL_WINDOW` | `--poll-window` |
 | `PEEK_STATE_DIR` | `--state-dir` |
 | `PEEK_STATE_RETENTION_DAYS` | `--state-retention-days` |
+| `PEEK_SNAPSHOT_RETENTION_DAYS` | `--snapshot-retention-days` |
+| `PEEK_DIFF_CACHE_SESSIONS` | `--diff-cache-sessions` |
 | `PEEK_CONTROL_PORT` | `--control-port` |
 | `PEEK_CONTROL_TOKEN` | `--control-token` |
 | `PEEK_LOG_LEVEL` | `--log-level` |
 
 ## Config file
 
-A global config file at `~/.peek/config.json` is shared by every peek instance and read once at startup. Precedence: explicit flag > `PEEK_*` environment variable > config file > default. Only the safe tuning keys are persistable: `depth`, `poll_interval`, `poll_window`, `state_retention_days`, `log_level`. The file is written by the dashboard's config editor (`/stats` page, `POST /api/config/{key}`); edits apply on the next restart — http-transport instances can restart from the dashboard, stdio instances are restarted by their MCP client. Keys pinned by a flag or environment variable show an "overridden" badge in the editor and win over the file after restart.
+A global config file at `~/.peek/config.json` is shared by every peek instance and read once at startup. Precedence: explicit flag > `PEEK_*` environment variable > config file > default. Only the safe tuning keys are persistable: `depth`, `poll_interval`, `poll_window`, `state_retention_days`, `snapshot_retention_days`, `diff_cache_sessions`, `log_level`. The file is written by the dashboard's config editor (`/stats` page, `POST /api/config/{key}`); edits apply on the next restart — http-transport instances can restart from the dashboard, stdio instances are restarted by their MCP client. Keys pinned by a flag or environment variable show an "overridden" badge in the editor and win over the file after restart.
 
 ## Control server (dashboard + JSON API)
 
