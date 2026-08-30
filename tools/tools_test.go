@@ -15,7 +15,7 @@ import (
 )
 
 func provideToolStore() *session.Store {
-	s := session.NewStore(10, events.NewBroker(), session.AgentClaude, session.AgentCodex)
+	s := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude, session.AgentCodex)
 	now := time.Now()
 
 	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
@@ -34,6 +34,7 @@ func provideToolStore() *session.Store {
 	s1, _ := s.GetById("s1")
 	s1.PlanContent = "# Plan"
 	s1.DiffOutput = "diff-output"
+	s1.DiffSource = session.DiffSourceLive
 	s1.DiffTarget = "main"
 	s1.UncommittedDiff = "uncommitted-output"
 
@@ -157,7 +158,7 @@ func TestSessionGet_AgentRequired(t *testing.T) {
 }
 
 func TestSessionGet_NoSessions(t *testing.T) {
-	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 	handler := sessionGetHandler(store, providePageStore())
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{}))
@@ -199,6 +200,7 @@ func TestSessionGet_Pagination(t *testing.T) {
 	store := provideToolStore()
 	s1, _ := store.GetById("s1")
 	s1.DiffOutput = strings.Repeat("d", MaxResponseBytesClaude*2)
+	s1.DiffSource = session.DiffSourceLive
 	pageStore := providePageStore()
 	handler := sessionGetHandler(store, pageStore)
 
@@ -228,6 +230,7 @@ func TestSessionGet_JsonTypedUnpaginated(t *testing.T) {
 	store := provideToolStore()
 	s1, _ := store.GetById("s1")
 	s1.DiffOutput = strings.Repeat("d", MaxResponseBytesClaude*2)
+	s1.DiffSource = session.DiffSourceLive
 	handler := sessionGetHandler(store, providePageStore())
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true}))
