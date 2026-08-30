@@ -228,7 +228,7 @@ func TestTurnsFragment_SubagentTabs(t *testing.T) {
 	body := response.Body.String()
 	assert.Contains(t, body, `class="tabs subtabs"`)
 	assert.Contains(t, body, `?subagent=ag1`)
-	assert.Contains(t, body, ">Explore</a>")
+	assert.Contains(t, body, ">Explore ag1</a>")
 	assert.Contains(t, body, "What does this do?")
 	assert.NotContains(t, body, "sub prompt")
 
@@ -237,7 +237,7 @@ func TestTurnsFragment_SubagentTabs(t *testing.T) {
 	body = response.Body.String()
 	assert.Contains(t, body, "sub prompt")
 	assert.NotContains(t, body, "What does this do?")
-	assert.Contains(t, body, `class="active" title="scan">Explore</a>`)
+	assert.Contains(t, body, `class="active" title="scan">Explore ag1</a>`)
 }
 
 func TestTurnsFragment_Thinking(t *testing.T) {
@@ -257,6 +257,15 @@ func TestTurnsFragment_Thinking(t *testing.T) {
 	body := response.Body.String()
 	assert.Contains(t, body, `class="snippet thinking"`)
 	assert.Contains(t, body, "reasoning here")
+	assert.Contains(t, body, `class="toggle active"`)
+
+	response = get(server, "/fragments/sessions/s1/turns?thinking=off")
+	require.Equal(t, http.StatusOK, response.Code)
+	body = response.Body.String()
+	assert.NotContains(t, body, "reasoning here")
+	assert.Contains(t, body, "answer")
+	assert.Contains(t, body, `class="toggle"`)
+	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/turns"`)
 }
 
 func TestPlanFragment(t *testing.T) {

@@ -1,23 +1,30 @@
-<div class="turns-panel" hx-get="/fragments/sessions/{{.Id}}/turns{{if .Subagent}}?subagent={{.Subagent}}{{end}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
-{{if .Tabs}}
+<div class="turns-panel" hx-get="/fragments/sessions/{{.Id}}/turns{{.Query}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
 {{$root := .}}
+{{if or .Tabs .HasThinking}}
 <div class="tabs subtabs">
-  <a hx-get="/fragments/sessions/{{.Id}}/turns" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if not .Subagent}}class="active"{{end}}>main</a>
+  {{if .Tabs}}
+  <a hx-get="/fragments/sessions/{{.Id}}/turns{{.MainQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if not .Subagent}}class="active"{{end}}>main</a>
   {{range .Tabs}}
-  <a hx-get="/fragments/sessions/{{$root.Id}}/turns?subagent={{.Id}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if eq $root.Subagent .Id}}class="active"{{end}} title="{{.Description}}">{{.Label}}</a>
+  <a hx-get="/fragments/sessions/{{$root.Id}}/turns{{.Query}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if eq $root.Subagent .Id}}class="active"{{end}} title="{{.Description}}">{{.Label}}</a>
+  {{end}}
+  {{end}}
+  {{if .HasThinking}}
+  <a class="toggle{{if .ShowThinking}} active{{end}}" hx-get="/fragments/sessions/{{.Id}}/turns{{.ToggleQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML" title="{{if .ShowThinking}}hide{{else}}show{{end}} assistant thinking">thinking</a>
   {{end}}
 </div>
 {{end}}
 {{if .Turns}}
 {{range .Turns}}
+{{if or .Text $root.ShowThinking (not .Thinking)}}
 <div class="card card-column">
   <div class="card-row">
     <span class="badge {{if eq (printf "%s" .Role) "user"}}badge-action{{else}}badge-ok{{end}}">{{.Role}}</span>
     <span class="meta">{{ts .Timestamp}}</span>
   </div>
-  {{if .Thinking}}<div class="snippet thinking"><pre>{{.Thinking}}</pre></div>{{end}}
-  {{if or .Text (not .Thinking)}}<div class="snippet"><pre>{{.Text}}</pre></div>{{end}}
+  {{if and .Thinking $root.ShowThinking}}<div class="snippet thinking"><pre>{{.Thinking}}</pre></div>{{end}}
+  {{if or .Text (not (and .Thinking $root.ShowThinking))}}<div class="snippet"><pre>{{.Text}}</pre></div>{{end}}
 </div>
+{{end}}
 {{end}}
 {{else}}
 <div class="empty">No finished turns yet.</div>

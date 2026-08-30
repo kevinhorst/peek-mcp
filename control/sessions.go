@@ -2,6 +2,7 @@ package control
 
 import (
 	"net/http"
+	"net/url"
 	"slices"
 	"time"
 
@@ -54,16 +55,22 @@ type sessionListData struct {
 }
 
 type turnsData struct {
-	Id       session.Id
-	Turns    []*session.Turn
-	Subagent string
-	Tabs     []subagentTab
+	Id           session.Id
+	Turns        []*session.Turn
+	Subagent     string
+	Tabs         []subagentTab
+	ShowThinking bool
+	HasThinking  bool
+	Query        string
+	MainQuery    string
+	ToggleQuery  string
 }
 
 type subagentTab struct {
 	Id          string
 	Label       string
 	Description string
+	Query       string
 }
 
 type planData struct {
@@ -215,11 +222,20 @@ func (s *Server) handleEventsFragment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 	id := session.Id(r.PathValue("id"))
-	data := turnsData{Id: id, Subagent: r.URL.Query().Get("subagent")}
+	data := turnsData{
+		Id:           id,
+		Subagent:     r.URL.Query().Get("subagent"),
+		ShowThinking: r.URL.Query().Get("thinking") != "off",
+	}
 	if !s.store.WithSession(id, func(sess *session.Session) {
 		for _, agentId := range sess.SubagentIds() {
 			stat := sess.Subagents[agentId]
-			data.Tabs = append(data.Tabs, subagentTab{Id: agentId, Label: subagentTabLabel(agentId, stat), Description: stat.Description})
+			data.Tabs = append(data.Tabs, subagentTab{
+				Id:          agentId,
+				Label:       subagentTabLabel(agentId, stat),
+				Description: stat.Description,
+				Query:       turnsQuery(agentId, data.ShowThinking),
+			})
 		}
 		if data.Subagent != "" {
 			if turns, ok := sess.SubagentTurns(data.Subagent, tools.DefaultReturnedTurns); ok {
@@ -232,15 +248,42 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 		respondNotFound("unknown session", w)
 		return
 	}
+	for _, turn := range data.Turns {
+		if turn.Thinking != "" {
+			data.HasThinking = true
+			break
+		}
+	}
+	data.Query = turnsQuery(data.Subagent, data.ShowThinking)
+	data.MainQuery = turnsQuery("", data.ShowThinking)
+	data.ToggleQuery = turnsQuery(data.Subagent, !data.ShowThinking)
 	s.renderFragment(w, tmplTurns, data)
 }
 
+func turnsQuery(subagent string, showThinking bool) string {
+	values := url.Values{}
+	if subagent != "" {
+		values.Set("subagent", subagent)
+	}
+	if !showThinking {
+		values.Set("thinking", "off")
+	}
+	if len(values) == 0 {
+		return ""
+	}
+	return "?" + values.Encode()
+}
+
 func subagentTabLabel(agentId string, stat *session.SubagentStat) string {
+	runes := []rune(agentId)
 	if stat.AgentType != "" {
-		return stat.AgentType
+		suffix := agentId
+		if len(runes) > 4 {
+			suffix = string(runes[len(runes)-4:])
+		}
+		return stat.AgentType + " " + suffix
 	}
 
-	runes := []rune(agentId)
 	if len(runes) > 8 {
 		return string(runes[:8])
 	}
