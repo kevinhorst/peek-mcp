@@ -85,20 +85,30 @@ type sessionCounts struct {
 }
 
 type statsResponse struct {
-	PID              int                     `json:"pid"`
-	Version          string                  `json:"version"`
-	StartedAt        time.Time               `json:"started_at"`
-	Uptime           string                  `json:"uptime"`
-	HeapAllocBytes   int64                   `json:"heap_alloc_bytes"`
-	SysBytes         int64                   `json:"sys_bytes"`
-	Goroutines       int                     `json:"goroutines"`
-	StateDiskBytes   int64                   `json:"state_disk_bytes,omitempty"`
-	Sessions         sessionCounts           `json:"sessions"`
-	Invocations      map[string]int          `json:"invocations,omitempty"`
-	SSEClients       int64                   `json:"sse_clients"`
-	Config           Config                  `json:"config"`
-	TelemetryExport  *telemetry.ExportStatus `json:"telemetry_export,omitempty"`
-	RestartAvailable bool                    `json:"restart_available"`
+	PID              int                        `json:"pid"`
+	Version          string                     `json:"version"`
+	StartedAt        time.Time                  `json:"started_at"`
+	Uptime           string                     `json:"uptime"`
+	HeapAllocBytes   int64                      `json:"heap_alloc_bytes"`
+	SysBytes         int64                      `json:"sys_bytes"`
+	Goroutines       int                        `json:"goroutines"`
+	StateDiskBytes   int64                      `json:"state_disk_bytes,omitempty"`
+	Sessions         sessionCounts              `json:"sessions"`
+	Invocations      map[string]tools.ToolStats `json:"invocations,omitempty"`
+	Instances        []instanceView             `json:"instances,omitempty"`
+	SSEClients       int64                      `json:"sse_clients"`
+	Config           Config                     `json:"config"`
+	TelemetryExport  *telemetry.ExportStatus    `json:"telemetry_export,omitempty"`
+	RestartAvailable bool                       `json:"restart_available"`
+}
+
+type instanceView struct {
+	tools.InstanceRecord
+	Self       bool   `json:"self"`
+	Running    bool   `json:"running"`
+	RanFor     string `json:"ran_for"`
+	TotalCount int    `json:"total_count"`
+	TotalBytes int64  `json:"total_bytes"`
 }
 
 func newSessionSummary(sess *session.Session) sessionSummary {
