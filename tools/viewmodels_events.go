@@ -49,6 +49,7 @@ type sessionEventsResult struct {
 	PlanRevisions *planRevisionsView  `json:"plan_revisions,omitempty"`
 	Revisions     any                 `json:"revisions,omitempty"`
 	Skills        []*skillStatView    `json:"skills,omitempty"`
+	SubagentIds   []string            `json:"subagent_ids,omitempty"`
 	Subagents     []*subagentStatView `json:"subagents,omitempty"`
 	Time          *sessionTimeView    `json:"time,omitempty"`
 	TouchedFiles  []*touchedFileView  `json:"touched_files,omitempty"`

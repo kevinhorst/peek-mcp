@@ -242,6 +242,142 @@ func TestSessionGet_JsonTypedUnpaginated(t *testing.T) {
 	assert.Equal(t, s1.DiffOutput, payload.Diff)
 }
 
+func provideSubagentStore() *session.Store {
+	s := provideToolStore()
+	now := time.Now()
+	meta := &session.Meta{SessionId: "s1"}
+
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "ag1",
+		Events: []*session.Event{{
+			Kind:      session.EventKindSubagentSpawned,
+			Actor:     "ag1",
+			Subagent:  &session.SubagentPayload{AgentId: "ag1", AgentType: "Explore", Description: "scan"},
+			Timestamp: now,
+		}},
+		Timestamp: now,
+		Meta:      meta,
+	})
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "ag1", Role: session.RoleUser, Text: "sub prompt", Timestamp: now, Meta: meta,
+	})
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "ag1", Role: session.RoleAssistant, Text: "sub answer", Thinking: "sub think", RequestId: "r-sub", Timestamp: now, Meta: meta,
+	})
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Role: session.RoleAssistant, Text: "main answer", Thinking: "main think", RequestId: "r-main", Timestamp: now, Meta: meta,
+	})
+	return s
+}
+
+func TestSessionGet_Subagent(t *testing.T) {
+	store := provideSubagentStore()
+	handler := sessionGetHandler(store, providePageStore())
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "subagent": "ag1"}))
+
+	assert.NoError(t, err)
+	payload := decodeResult(t, result)
+	turns, ok := payload["turns"].(string)
+	require.True(t, ok)
+	assert.Contains(t, turns, "sub answer")
+	assert.NotContains(t, turns, "main answer")
+	assert.NotContains(t, payload, "plan")
+	assert.NotContains(t, payload, "diff")
+	events, ok := payload["events"].(string)
+	require.True(t, ok)
+	assert.Contains(t, events, "ag1")
+	subagents, ok := payload["subagents"].([]any)
+	require.True(t, ok)
+	require.Len(t, subagents, 1)
+	assert.Equal(t, "ag1", subagents[0].(map[string]any)["agent_id"])
+	assert.Equal(t, "Explore", subagents[0].(map[string]any)["agent_type"])
+}
+
+func TestSessionGet_SubagentUnknown(t *testing.T) {
+	store := provideSubagentStore()
+	handler := sessionGetHandler(store, providePageStore())
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "subagent": "nope"}))
+
+	assert.NoError(t, err)
+	text := errorText(t, result)
+	assert.Contains(t, text, "unknown subagent")
+	assert.Contains(t, text, "ag1")
+}
+
+func TestSessionGet_SubagentListWithoutParam(t *testing.T) {
+	store := provideSubagentStore()
+	handler := sessionGetHandler(store, providePageStore())
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1"}))
+
+	assert.NoError(t, err)
+	payload := decodeResult(t, result)
+	subagents, ok := payload["subagents"].([]any)
+	require.True(t, ok)
+	require.Len(t, subagents, 1)
+	assert.Equal(t, "ag1", subagents[0].(map[string]any)["agent_id"])
+}
+
+func TestSessionGet_Thinking(t *testing.T) {
+	store := provideSubagentStore()
+	handler := sessionGetHandler(store, providePageStore())
+
+	// default-strips-thinking
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1"}))
+	assert.NoError(t, err)
+	payload := decodeResult(t, result)
+	turns, ok := payload["turns"].(string)
+	require.True(t, ok)
+	assert.NotContains(t, turns, "main think")
+
+	// thinking-true-includes
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "thinking": true}))
+	assert.NoError(t, err)
+	payload = decodeResult(t, result)
+	turns, ok = payload["turns"].(string)
+	require.True(t, ok)
+	assert.Contains(t, turns, "main think")
+}
+
+func TestSessionEvents_Subagent(t *testing.T) {
+	store := provideSubagentStore()
+	s1, _ := store.GetById("s1")
+	s1.AddEvent(&session.Event{Kind: session.EventKindSkillInvoked, Skill: &session.SkillPayload{Skill: "jq"}})
+	pageStore := &PageStore[*sessionEventsResult]{PagesByRequestId: make(map[string]<-chan *sessionEventsResult)}
+	handler := sessionEventsHandler(nil, store, pageStore, nil)
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "subagent": "ag1", "json": true, "breakdown": true}))
+
+	assert.NoError(t, err)
+	require.False(t, result.IsError)
+	payload, ok := result.StructuredContent.(*sessionEventsResult)
+	require.True(t, ok)
+	events, ok := payload.Events.([]*session.Event)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	assert.Equal(t, "ag1", events[0].Actor)
+	require.Len(t, payload.Subagents, 1)
+	assert.Equal(t, "ag1", payload.Subagents[0].AgentId)
+	assert.Empty(t, payload.Skills)
+	assert.Equal(t, []string{"ag1"}, payload.SubagentIds)
+}
+
+func TestSessionEvents_SubagentIdsAlwaysPresent(t *testing.T) {
+	store := provideSubagentStore()
+	pageStore := &PageStore[*sessionEventsResult]{PagesByRequestId: make(map[string]<-chan *sessionEventsResult)}
+	handler := sessionEventsHandler(nil, store, pageStore, nil)
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true}))
+
+	assert.NoError(t, err)
+	require.False(t, result.IsError)
+	payload, ok := result.StructuredContent.(*sessionEventsResult)
+	require.True(t, ok)
+	assert.Equal(t, []string{"ag1"}, payload.SubagentIds)
+}
+
 func TestSessionEvents_JsonTypedUnpaginated(t *testing.T) {
 	store := provideToolStore()
 	s1, _ := store.GetById("s1")

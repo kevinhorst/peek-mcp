@@ -73,6 +73,12 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 		mcp.WithBoolean("remember",
 			mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only (default false)."),
 		),
+		mcp.WithString("subagent",
+			mcp.Description("Subagent id: scope the response to that agent's transcript and events (plan/diff/memory are omitted). Valid ids are listed in every response's subagents field."),
+		),
+		mcp.WithBoolean("thinking",
+			mcp.Description("Include assistant thinking text on turns (default false)."),
+		),
 		mcp.WithString("request_id",
 			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 		),
@@ -109,6 +115,9 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 		),
 		mcp.WithBoolean("breakdown",
 			mcp.Description("Include per-skill and per-subagent time and token usage (default false; Claude sessions only)"),
+		),
+		mcp.WithString("subagent",
+			mcp.Description("Subagent id: scope events and breakdown to that agent. Valid ids are listed in every response's subagent_ids field."),
 		),
 		mcp.WithString("request_id",
 			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
@@ -171,15 +180,31 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 			n = DefaultReturnedTurns
 		}
 
+		subagentId, _ := args["subagent"].(string)
+		withThinking := boolArgFromRequest(request, "thinking", false)
+
+		scopedTurns := sess.Turns(n)
+		scopedEvents := sess.Events.All()
+		if subagentId != "" {
+			subagentTurns, ok := sess.SubagentTurns(subagentId, n)
+			if !ok {
+				return mcp.NewToolResultError(fmt.Sprintf("unknown subagent id %q; valid ids: %v", subagentId, sess.SubagentIds())), nil
+			}
+			scopedTurns = subagentTurns
+			scopedEvents = filterEventsByActor(scopedEvents, subagentId)
+			withPlan, withDiff, withUncommitted, withMemory = false, false, false, false
+		}
+		scopedTurns = turnsForOutput(scopedTurns, withThinking)
+
 		if boolArgFromRequest(request, "json", false) {
-			result := &sessionGetResult{TotalUsage: sess.CurrentUsage()}
+			result := &sessionGetResult{TotalUsage: sess.CurrentUsage(), Subagents: newSubagentRefs(sess)}
 			if withTurns {
-				if turns := sess.Turns(n); len(turns) > 0 {
-					result.Turns = turns
+				if len(scopedTurns) > 0 {
+					result.Turns = scopedTurns
 				}
 			}
 			if withEvents {
-				if entries := NewEventEntries(sess.Events.All()); len(entries) > 0 {
+				if entries := NewEventEntries(scopedEvents); len(entries) > 0 {
 					result.Events = entries
 				}
 			}
@@ -201,14 +226,14 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 
 		var turns, events, plan, diff, uncommitted, memory string
 		if withTurns {
-			data, err := json.Marshal(sess.Turns(n))
+			data, err := json.Marshal(scopedTurns)
 			if err != nil {
 				return nil, fmt.Errorf("marshaling turns: %w", err)
 			}
 			turns = string(data)
 		}
 		if withEvents {
-			events = marshalEventEntries(sess)
+			events = marshalEventEntries(scopedEvents)
 		}
 		if withPlan {
 			plan = sess.PlanContent
@@ -235,6 +260,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 			firstPage.DiffTarget = sess.DiffTarget
 		}
 		firstPage.TotalUsage = sess.CurrentUsage()
+		firstPage.Subagents = newSubagentRefs(sess)
 
 		resultPage := newSessionGetResultPage(firstPage)
 		if len(nextPages) == 0 {
@@ -320,18 +346,27 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 		useJson := boolArgFromRequest(request, "json", false)
 		withRevisions := boolArgFromRequest(request, "revisions", false)
 
+		subagentId, _ := args["subagent"].(string)
+		scopedEvents := currentSession.Events.All()
+		if subagentId != "" {
+			if _, ok := currentSession.Subagents[subagentId]; !ok {
+				return mcp.NewToolResultError(fmt.Sprintf("unknown subagent id %q; valid ids: %v", subagentId, currentSession.SubagentIds())), nil
+			}
+			scopedEvents = filterEventsByActor(scopedEvents, subagentId)
+		}
+
 		var firstPage *sessionEventsResult
 		var nextPages []*sessionEventsResult
 		if useJson {
 			firstPage = &sessionEventsResult{}
-			if all := currentSession.Events.All(); len(all) > 0 {
-				firstPage.Events = all
+			if len(scopedEvents) > 0 {
+				firstPage.Events = scopedEvents
 			}
 			if withRevisions && len(currentSession.PlanRevisions) > 0 {
 				firstPage.Revisions = currentSession.PlanRevisions
 			}
 		} else {
-			events := marshalEvents(currentSession)
+			events := marshalEvents(scopedEvents)
 			revisions := ""
 			if withRevisions {
 				revisions = marshalPlanRevisions(currentSession)
@@ -354,7 +389,18 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 		if boolArgFromRequest(request, "breakdown", false) {
 			firstPage.Skills = newSkillStatViews(currentSession)
 			firstPage.Subagents = newSubagentStatViews(currentSession)
+			if subagentId != "" {
+				firstPage.Skills = nil
+				stats := firstPage.Subagents[:0]
+				for _, stat := range firstPage.Subagents {
+					if stat.AgentId == subagentId {
+						stats = append(stats, stat)
+					}
+				}
+				firstPage.Subagents = stats
+			}
 		}
+		firstPage.SubagentIds = currentSession.SubagentIds()
 		firstPage.Unsupported = unsupportedSignals(currentSession.Agent)
 		firstPage.Usage = currentSession.CurrentUsage()
 
@@ -427,8 +473,31 @@ func unsupportedSignals(agent session.Agent) []string {
 	return nil
 }
 
-func marshalEvents(currentSession *session.Session) string {
-	events := currentSession.Events.All()
+func turnsForOutput(turns []*session.Turn, withThinking bool) []*session.Turn {
+	if withThinking {
+		return turns
+	}
+
+	stripped := make([]*session.Turn, len(turns))
+	for i, turn := range turns {
+		copied := *turn
+		copied.Thinking = ""
+		stripped[i] = &copied
+	}
+	return stripped
+}
+
+func filterEventsByActor(all []*session.Event, actor string) []*session.Event {
+	filtered := make([]*session.Event, 0)
+	for _, event := range all {
+		if event.Actor == actor {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered
+}
+
+func marshalEvents(events []*session.Event) string {
 	if len(events) == 0 {
 		return ""
 	}
@@ -452,8 +521,8 @@ func marshalPlanRevisions(currentSession *session.Session) string {
 	return string(data)
 }
 
-func marshalEventEntries(currentSession *session.Session) string {
-	entries := NewEventEntries(currentSession.Events.All())
+func marshalEventEntries(events []*session.Event) string {
+	entries := NewEventEntries(events)
 	if len(entries) == 0 {
 		return ""
 	}
