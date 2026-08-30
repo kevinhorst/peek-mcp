@@ -67,6 +67,31 @@ func errorText(t *testing.T, result *mcp.CallToolResult) string {
 	return text.Text
 }
 
+func TestSessionList_ProjectFilter(t *testing.T) {
+	s := provideToolStore()
+	s.AddTurnBySessionId("s3", session.AgentClaude, &session.Turn{
+		Role:      session.RoleUser,
+		Text:      "Cowork task",
+		Timestamp: time.Now(),
+		Meta:      &session.Meta{SessionId: "s3", CWD: "/store/local_x/outputs", Project: "cowork"},
+	})
+	handler := sessionListHandler(s)
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"project": "cowork"}))
+	require.NoError(t, err)
+	payload, ok := result.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	sessions := payload["sessions"].([]sessionListItem)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, "cowork", sessions[0].Meta.Project)
+
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{}))
+	require.NoError(t, err)
+	payload, ok = result.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	assert.Len(t, payload["sessions"].([]sessionListItem), 3)
+}
+
 func TestSessionGet_Defaults(t *testing.T) {
 	store := provideToolStore()
 	handler := sessionGetHandler(store, providePageStore())

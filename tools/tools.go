@@ -85,9 +85,12 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 
 	sessionList :=
 		mcp.NewTool("session_list",
-			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, whether a plan or diff is available, the inferred diff base branch (diff_target), and session metadata (cwd, git branch, model, origin)."),
+			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, whether a plan or diff is available, the inferred diff base branch (diff_target), and session metadata (cwd, git branch, model, project label, origin)."),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Lists all sessions when omitted."),
+			),
+			mcp.WithString("project",
+				mcp.Description("Exact project label filter (e.g. \"cowork\"). Lists all sessions when omitted."),
 			),
 		)
 	sessionList.Meta = withMaxResultSize()
@@ -258,6 +261,15 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 			sessions = s.List()
 		} else {
 			sessions = s.List(agent)
+		}
+		if project := request.GetString("project", ""); project != "" {
+			filtered := sessions[:0:0]
+			for _, sess := range sessions {
+				if sess.Meta.Project == project {
+					filtered = append(filtered, sess)
+				}
+			}
+			sessions = filtered
 		}
 		items := make([]sessionListItem, len(sessions))
 		for i, sess := range sessions {
