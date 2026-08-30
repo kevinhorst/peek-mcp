@@ -2,11 +2,9 @@ package control
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"runtime"
-	"syscall"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
@@ -78,14 +76,6 @@ func newInstanceView(record tools.InstanceRecord, selfPID int) instanceView {
 		view.TotalBytes += stats.Bytes
 	}
 	return view
-}
-
-func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
