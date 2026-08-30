@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -88,4 +91,20 @@ func TestChangedConfigKeys(t *testing.T) {
 	assert.True(t, changed[config.KeyDepth])
 	assert.False(t, changed[config.KeyBackLink])
 	assert.False(t, changed[config.KeyLogLevel])
+}
+
+func TestHealthzHandler(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	healthzHandler("/home/a/.claude", "/home/a/.codex", 42443)(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, Version(), body["version"])
+	assert.Equal(t, "/home/a/.claude", body["claudeHome"])
+	assert.Equal(t, "/home/a/.codex", body["codexHome"])
+	assert.Equal(t, float64(42443), body["controlPort"])
 }

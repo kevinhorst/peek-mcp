@@ -118,6 +118,19 @@ func TestSetupTelemetry(t *testing.T) {
 		assert.NotContains(t, env, "OTEL_EXPORTER_OTLP_HEADERS")
 	})
 
+	// custom-control-port-in-endpoint
+	t.Run("custom-control-port-in-endpoint", func(t *testing.T) {
+		home := t.TempDir()
+		setTestHome(t, home)
+		setupControlPort = 42542
+		t.Cleanup(func() { setupControlPort = controlPortBase })
+
+		require.NoError(t, setupTelemetry(scriptedPrompter("\n"), true))
+
+		env := readTelemetryEnv(t, home)
+		assert.Equal(t, "http://127.0.0.1:42542/otlp", env["OTEL_EXPORTER_OTLP_ENDPOINT"])
+	})
+
 	// deletes-stale-headers-key
 	t.Run("deletes-stale-headers-key", func(t *testing.T) {
 		home := t.TempDir()

@@ -25,6 +25,7 @@ var setupCmd = &cobra.Command{
 		claude, _ := flags.GetBool("claude")
 		codex, _ := flags.GetBool("codex")
 		controlServer, _ := flags.GetBool("control-server")
+		setupControlPort, _ = flags.GetInt("control-port")
 
 		if !claude && !codex {
 			runSetup(cmd, args)
@@ -48,11 +49,14 @@ var setupCmd = &cobra.Command{
 	},
 }
 
+var setupControlPort = controlPortBase
+
 func init() {
 	flags := setupCmd.Flags()
 	flags.Bool("claude", false, "Configure Claude Code non-interactively")
 	flags.Bool("codex", false, "Configure Codex CLI non-interactively")
 	flags.Bool("control-server", true, "Enable the control server dashboard in the written config")
+	flags.Int("control-port", controlPortBase, "Control server port written into the telemetry export endpoint")
 
 	rootCmd.AddCommand(setupCmd)
 }
@@ -87,7 +91,7 @@ func runSetup(_ *cobra.Command, _ []string) {
 		return
 	}
 
-	controlServer := p.Confirm("Enable the control server dashboard (http://127.0.0.1:42442)?", true)
+	controlServer := p.Confirm(fmt.Sprintf("Enable the control server dashboard (http://127.0.0.1:%d)?", setupControlPort), true)
 
 	for i, fn := range steps {
 		if i > 0 {
@@ -215,7 +219,7 @@ func setupTelemetry(p *prompter, controlServer bool) error {
 	env["OTEL_LOGS_EXPORTER"] = "otlp"
 	env["OTEL_LOG_TOOL_DETAILS"] = "1"
 	env["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/json"
-	env["OTEL_EXPORTER_OTLP_ENDPOINT"] = fmt.Sprintf("http://127.0.0.1:%d/otlp", controlPortBase)
+	env["OTEL_EXPORTER_OTLP_ENDPOINT"] = fmt.Sprintf("http://127.0.0.1:%d/otlp", setupControlPort)
 	env["OTEL_METRIC_EXPORT_INTERVAL"] = defaultMetricExportIntervalMs
 	env["OTEL_LOGS_EXPORT_INTERVAL"] = defaultLogsExportIntervalMs
 	delete(env, "OTEL_EXPORTER_OTLP_HEADERS")

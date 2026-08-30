@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -176,14 +177,16 @@ var startCmd = &cobra.Command{
 		)
 
 		var detector *telemetry.Detector
+		boundControlPort := 0
 		if controlPort > 0 {
-			controlLn, err := listenLoopback(controlPort, controlPort+controlPortSpan-1)
+			controlLn, err := listenLoopback(controlPort, controlPortWalkEnd(controlPort, flags.Changed("control-port")))
 			if err != nil {
 				slog.Error("control server error", "err", err)
 				os.Exit(1)
 			}
 
 			boundPort := controlLn.Addr().(*net.TCPAddr).Port
+			boundControlPort = boundPort
 			if claudeHome != "" {
 				detector = telemetry.NewDetector(boundPort, filepath.Join(claudeHome, "settings.json"))
 				exportStatus := detector.Status()
@@ -262,12 +265,16 @@ var startCmd = &cobra.Command{
 		case "http":
 			httpSrv := server.NewStreamableHTTPServer(srv)
 
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /healthz", healthzHandler(claudeHome, codexHome, boundControlPort))
+			mux.Handle("/", requestLogger(httpSrv))
+
 			addr := fmt.Sprintf("127.0.0.1:%d", port)
 			slog.Info("peek-mcp listening", "addr", fmt.Sprintf("http://%s/mcp", addr))
 
 			httpServer := &http.Server{
 				Addr:    addr,
-				Handler: requestLogger(httpSrv),
+				Handler: mux,
 			}
 
 			go func() {
@@ -415,6 +422,18 @@ func changedConfigKeys(cmd *cobra.Command) map[string]bool {
 		changed[key] = cmd.Flags().Changed(key)
 	}
 	return changed
+}
+
+func healthzHandler(claudeHome, codexHome string, controlPort int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"version":     Version(),
+			"claudeHome":  claudeHome,
+			"codexHome":   codexHome,
+			"controlPort": controlPort,
+		})
+	}
 }
 
 func defaultHome(name string) string {
