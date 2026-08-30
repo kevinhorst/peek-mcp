@@ -64,18 +64,20 @@ type healthzResponse struct {
 }
 
 type Config struct {
-	Transport          string `json:"transport"`
-	Port               int    `json:"port"`
-	Depth              int    `json:"depth"`
-	ClaudeHome         string `json:"claude_home,omitempty"`
-	CodexHome          string `json:"codex_home,omitempty"`
-	PollInterval       string `json:"poll_interval"`
-	PollWindow         string `json:"poll_window"`
-	StateDir           string `json:"state_dir,omitempty"`
-	StateRetentionDays int    `json:"state_retention_days"`
-	ControlPort        int    `json:"control_port"`
-	TokenSet           bool   `json:"token_set"`
-	LogLevel           string `json:"log_level"`
+	Transport             string `json:"transport"`
+	Port                  int    `json:"port"`
+	Depth                 int    `json:"depth"`
+	ClaudeHome            string `json:"claude_home,omitempty"`
+	CodexHome             string `json:"codex_home,omitempty"`
+	PollInterval          string `json:"poll_interval"`
+	PollWindow            string `json:"poll_window"`
+	StateDir              string `json:"state_dir,omitempty"`
+	StateRetentionDays    int    `json:"state_retention_days"`
+	SnapshotRetentionDays int    `json:"snapshot_retention_days"`
+	DiffCacheSessions     int    `json:"diff_cache_sessions"`
+	ControlPort           int    `json:"control_port"`
+	TokenSet              bool   `json:"token_set"`
+	LogLevel              string `json:"log_level"`
 }
 
 type sessionCounts struct {
@@ -111,7 +113,7 @@ func newSessionSummary(sess *session.Session) sessionSummary {
 		GitBranch:          sess.Meta.GitBranch,
 		Model:              sess.Meta.Model,
 		HasPlan:            sess.PlanContent != "" || sess.PlanFilePath != "",
-		HasDiff:            sess.DiffOutput != "",
+		HasDiff:            sess.DiffOutput != "" || sess.HasDiffSnapshot,
 		HasUncommittedDiff: sess.UncommittedDiff != "",
 	}
 }
