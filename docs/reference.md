@@ -17,6 +17,7 @@ peek-mcp start --port 4242 --depth 20
 | `--depth` | `20` | Ring buffer depth per session (max turns kept) |
 | `--claude-home` | `~/.claude` | Override Claude Code session root |
 | `--codex-home` | `~/.codex` | Override Codex session root |
+| `--cowork-home` | `~/Library/Application Support/Claude` (macOS), empty elsewhere | Claude Desktop Cowork data root; empty disables |
 | `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
 | `--poll-window` | `1h` | Only poll repos whose session was active within this window |
@@ -36,6 +37,7 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_DEPTH` | `--depth` |
 | `PEEK_CLAUDE_HOME` | `--claude-home` |
 | `PEEK_CODEX_HOME` | `--codex-home` |
+| `PEEK_COWORK_HOME` | `--cowork-home` |
 | `PEEK_POLL_INTERVAL` | `--poll-interval` |
 | `PEEK_POLL_WINDOW` | `--poll-window` |
 | `PEEK_STATE_DIR` | `--state-dir` |
