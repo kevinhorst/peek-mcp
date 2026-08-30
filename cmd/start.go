@@ -12,7 +12,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -55,6 +57,7 @@ var startCmd = &cobra.Command{
 		depth, _ := flags.GetInt("depth")
 		claudeHome, _ := flags.GetString("claude-home")
 		codexHome, _ := flags.GetString("codex-home")
+		coworkHome, _ := flags.GetString("cowork-home")
 		pollInterval, _ := flags.GetDuration("poll-interval")
 		pollWindow, _ := flags.GetDuration("poll-window")
 		stateDirPath, _ := flags.GetString("state-dir")
@@ -77,7 +80,7 @@ var startCmd = &cobra.Command{
 		defer cancel()
 
 		var agents []session.Agent
-		if claudeHome != "" {
+		if claudeHome != "" || coworkHome != "" {
 			agents = append(agents, session.AgentClaude)
 		}
 		if codexHome != "" {
@@ -121,6 +124,25 @@ var startCmd = &cobra.Command{
 					os.Exit(1)
 				}
 			}()
+		}
+
+		if coworkHome != "" {
+			for _, name := range coworkStoreNames {
+				storeDir := filepath.Join(coworkHome, name)
+				if info, err := os.Stat(storeDir); err != nil || !info.IsDir() {
+					continue
+				}
+				go func() {
+					newParser := func() watcher.Parser { return claude.NewParser() }
+					w := watcher.New(session.AgentClaude, storeDir, newParser, store)
+					w.TranscriptPathOk = isCoworkTranscriptPath
+					w.Project = "cowork"
+					if err := w.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+						slog.Error("cowork watcher error", "err", err)
+						os.Exit(1)
+					}
+				}()
+			}
 		}
 
 		if codexHome != "" {
@@ -191,6 +213,7 @@ var startCmd = &cobra.Command{
 					Depth:              depth,
 					ClaudeHome:         claudeHome,
 					CodexHome:          codexHome,
+					CoworkHome:         coworkHome,
 					PollInterval:       pollInterval.String(),
 					PollWindow:         pollWindow.String(),
 					StateDir:           stateDirPath,
@@ -274,6 +297,7 @@ func init() {
 	flags.Int("depth", 20, "Ring buffer size per session (max turns kept)")
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
+	flags.String("cowork-home", defaultCoworkHome(), "Claude Desktop Cowork data root (empty disables; macOS default set automatically)")
 	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("state-dir", filepath.Join(defaultHome(".peek"), "state"), "State directory for diff pins/snapshots and plan revisions (empty disables persistence)")
@@ -335,6 +359,7 @@ var envFallbacks = map[string]string{
 	"depth":                "PEEK_DEPTH",
 	"claude-home":          "PEEK_CLAUDE_HOME",
 	"codex-home":           "PEEK_CODEX_HOME",
+	"cowork-home":          "PEEK_COWORK_HOME",
 	"poll-interval":        "PEEK_POLL_INTERVAL",
 	"poll-window":          "PEEK_POLL_WINDOW",
 	"state-dir":            "PEEK_STATE_DIR",
@@ -347,7 +372,26 @@ var envFallbacks = map[string]string{
 var pathFlags = map[string]bool{
 	"claude-home": true,
 	"codex-home":  true,
+	"cowork-home": true,
 	"state-dir":   true,
+}
+
+// coworkStoreNames: the Cowork session store is mid-rename; both names can coexist.
+var coworkStoreNames = []string{"local-agent-mode-sessions", "claude-code-sessions"}
+
+func defaultCoworkHome() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Application Support", "Claude")
+}
+
+func isCoworkTranscriptPath(path string) bool {
+	return strings.Contains(filepath.ToSlash(path), "/.claude/projects/")
 }
 
 const recommendedMaxOutputTokens = 125_000
