@@ -122,6 +122,73 @@ func provideUsageTurn(requestId string, outputTokens int) *Turn {
 	}
 }
 
+func TestSession_AppendTurn(t *testing.T) {
+	timestamp := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+	meta := &Meta{SessionId: Id("sess-123")}
+
+	// first-turn-becomes-active
+	buffer := NewTurnBuffer(10)
+	first := &Turn{Role: RoleAssistant, Text: "a", RequestId: "req-1", Timestamp: timestamp, Meta: meta}
+	active := appendTurn(nil, buffer, first)
+	assert.Same(t, first, active)
+	assert.Equal(t, 0, buffer.Len())
+
+	// same-request-merges-text-and-thinking
+	chunk := &Turn{Role: RoleAssistant, Text: "b", Thinking: "t2", RequestId: "req-1", Timestamp: timestamp, Meta: meta}
+	active.Thinking = "t1"
+	active = appendTurn(active, buffer, chunk)
+	assert.Equal(t, "ab", active.Text)
+	assert.Equal(t, "t1t2", active.Thinking)
+	assert.Equal(t, 0, buffer.Len())
+
+	// new-request-pushes-active
+	next := &Turn{Role: RoleAssistant, Text: "c", RequestId: "req-2", Timestamp: timestamp, Meta: meta}
+	active = appendTurn(active, buffer, next)
+	assert.Same(t, next, active)
+	assert.Equal(t, 1, buffer.Len())
+
+	// thinking-only-active-pushed
+	thinkingOnly := &Turn{Role: RoleAssistant, Thinking: "reasoning", RequestId: "req-3", Timestamp: timestamp, Meta: meta}
+	active = appendTurn(thinkingOnly, buffer, &Turn{Role: RoleUser, Text: "u", Timestamp: timestamp, Meta: meta})
+	assert.Equal(t, 2, buffer.Len())
+
+	// empty-active-dropped
+	empty := &Turn{Role: RoleAssistant, RequestId: "req-4", Timestamp: timestamp, Meta: meta}
+	appendTurn(empty, buffer, &Turn{Role: RoleUser, Text: "u2", Timestamp: timestamp, Meta: meta})
+	assert.Equal(t, 2, buffer.Len())
+	_ = active
+}
+
+func TestSession_AddSubagentTurn_Transcript(t *testing.T) {
+	s := provideCompleteSession()
+	timestamp := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+	meta := &Meta{SessionId: Id("sess-123")}
+
+	// signal-only-turn-buffers-nothing
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Timestamp: timestamp, Meta: meta})
+	turns, ok := s.SubagentTurns("ag1", 10)
+	assert.True(t, ok)
+	assert.Empty(t, turns)
+
+	// transcript-turns-buffered-per-agent
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleUser, Text: "prompt", Timestamp: timestamp, Meta: meta})
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleAssistant, Text: "answer", Thinking: "why", RequestId: "req-s1", Timestamp: timestamp, Meta: meta})
+	turns, ok = s.SubagentTurns("ag1", 10)
+	assert.True(t, ok)
+	assert.Len(t, turns, 2)
+	assert.Equal(t, "answer", turns[0].Text, "active turn prepended, same ordering as Session.Turns")
+	assert.Equal(t, "why", turns[0].Thinking)
+	assert.Equal(t, "prompt", turns[1].Text)
+
+	// unknown-agent
+	_, ok = s.SubagentTurns("nope", 10)
+	assert.False(t, ok)
+
+	// sorted-ids
+	s.AddSubagentTurn(&Turn{SubagentId: "ag0", Role: RoleUser, Text: "x", Timestamp: timestamp, Meta: meta})
+	assert.Equal(t, []string{"ag0", "ag1"}, s.SubagentIds())
+}
+
 func TestSession_AddTurn_UsageDedupByRequestId(t *testing.T) {
 	s := provideCompleteSession()
 

@@ -13,7 +13,8 @@ type FileTouch struct {
 
 type Turn struct {
 	Role         Role         `json:"role"`
-	Text         string       `json:"text"` // may be empty
+	Text         string       `json:"text"`               // may be empty
+	Thinking     string       `json:"thinking,omitempty"` // assistant reasoning, may be empty
 	Timestamp    time.Time    `json:"timestamp"`
 	Meta         *Meta        `json:"meta"`
 	RequestId    string       `json:"request_id,omitempty"` // optional

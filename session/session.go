@@ -2,6 +2,8 @@ package session
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"time"
 )
 
@@ -29,6 +31,8 @@ const idleThreshold = 5 * time.Minute
 const maxTouchedFiles = 500
 
 const maxSubagentStats = 200
+
+const subagentTurnDepth = 200
 
 const maxSkillStats = 100
 
@@ -179,11 +183,13 @@ func (s *Session) openSkillWindow(event *Event) {
 }
 
 type SubagentStat struct {
-	AgentType   string    `json:"agent_type,omitempty"`
-	Description string    `json:"description,omitempty"`
-	FirstActive time.Time `json:"first_active"`
-	LastActive  time.Time `json:"last_active"`
-	Usage       Usage     `json:"usage"`
+	AgentType   string      `json:"agent_type,omitempty"`
+	Description string      `json:"description,omitempty"`
+	FirstActive time.Time   `json:"first_active"`
+	LastActive  time.Time   `json:"last_active"`
+	TurnActive  *Turn       `json:"-"`
+	Turns       *TurnBuffer `json:"-"`
+	Usage       Usage       `json:"usage"`
 }
 
 func (s *Session) AddSubagentTurn(turn *Turn) {
@@ -196,8 +202,12 @@ func (s *Session) AddSubagentTurn(turn *Turn) {
 		if len(s.Subagents) >= maxSubagentStats {
 			return
 		}
-		stat = &SubagentStat{}
+		stat = &SubagentStat{Turns: NewTurnBuffer(subagentTurnDepth)}
 		s.Subagents[turn.SubagentId] = stat
+	}
+
+	if turn.Role != "" {
+		stat.TurnActive = appendTurn(stat.TurnActive, stat.Turns, turn)
 	}
 
 	if !turn.Timestamp.IsZero() {
@@ -262,25 +272,28 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 		s.CloseSkillWindow(nextTurn.Timestamp)
 	}
 
-	// first turn
-	if s.TurnActive == nil {
-		s.TurnActive = nextTurn
-		return
+	s.TurnActive = appendTurn(s.TurnActive, s.TurnsFinished, nextTurn)
+}
+
+// appendTurn merges streaming chunks of the same request into the active turn
+// and pushes the finished turn to the buffer when a new request begins.
+func appendTurn(active *Turn, buffer *TurnBuffer, next *Turn) *Turn {
+	if active == nil {
+		return next
 	}
 
-	// same turn, append text, no-op for empty text
-	if nextTurn.RequestId != "" && s.TurnActive.RequestId == nextTurn.RequestId {
-		merged := *nextTurn
-		merged.Text = s.TurnActive.Text + nextTurn.Text
-		s.TurnActive = &merged
-		return
+	if next.RequestId != "" && active.RequestId == next.RequestId {
+		merged := *next
+		merged.Text = active.Text + next.Text
+		merged.Thinking = active.Thinking + next.Thinking
+		return &merged
 	}
 
-	if s.TurnActive.Text != "" {
-		s.TurnsFinished.Push(s.TurnActive)
+	if active.Text != "" || active.Thinking != "" {
+		buffer.Push(active)
 	}
 
-	s.TurnActive = nextTurn
+	return next
 }
 
 func (s *Session) CurrentUsage() *Usage {
@@ -311,6 +324,30 @@ func (s *Session) Turns(number int) []*Turn {
 	}
 
 	return buffer.Last(number)
+}
+
+func (s *Session) SubagentTurns(agentId string, number int) ([]*Turn, bool) {
+	stat, ok := s.Subagents[agentId]
+	if !ok {
+		return nil, false
+	}
+
+	if stat.TurnActive == nil {
+		return stat.Turns.Last(number), true
+	}
+
+	buffer := &TurnBuffer{
+		capacity: stat.Turns.capacity,
+		items:    append([]*Turn{stat.TurnActive}, stat.Turns.items...),
+	}
+
+	return buffer.Last(number), true
+}
+
+func (s *Session) SubagentIds() []string {
+	ids := slices.Collect(maps.Keys(s.Subagents))
+	slices.Sort(ids)
+	return ids
 }
 
 func (s *Session) Validate() error {
