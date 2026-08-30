@@ -331,12 +331,13 @@ func legacyProjectFromCwd(cwd string) string {
 	if userHome == "" || cwd == "" {
 		return ""
 	}
-	prefix := filepath.Join(userHome, "Claude_")
-	if !strings.HasPrefix(cwd, prefix) {
+	prefix := strings.TrimSuffix(filepath.ToSlash(userHome), "/") + "/Claude_"
+	slashCwd := filepath.ToSlash(cwd)
+	if !strings.HasPrefix(slashCwd, prefix) {
 		return ""
 	}
-	rest := cwd[len(prefix):]
-	if i := strings.IndexByte(rest, filepath.Separator); i >= 0 {
+	rest := slashCwd[len(prefix):]
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
 		rest = rest[:i]
 	}
 	return rest
