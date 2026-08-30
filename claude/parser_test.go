@@ -100,6 +100,7 @@ func TestClaude_SidechainTranscript(t *testing.T) {
 	assert.Equal(t, "Found it.\n", turn.Text)
 	assert.Equal(t, "Reading files...\n", turn.Thinking)
 	assert.Equal(t, "ag1", turn.SubagentId)
+	assert.Equal(t, "claude-opus-4-6", turn.Meta.Model)
 }
 
 func TestClaude_SyntheticModelDropped(t *testing.T) {
