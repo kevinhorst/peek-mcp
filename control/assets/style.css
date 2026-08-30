@@ -135,7 +135,8 @@ nav a.active::after { content: ']'; }
 .tabs a:hover { color: var(--neon); border-color: var(--brand-emerald); }
 .tabs a.active { color: var(--bg); background: var(--neon); border-color: var(--neon); font-weight: 700; }
 .subtabs { margin-top: -8px; flex-wrap: wrap; }
-.subtabs .toggle { margin-left: auto; }
+.subtabs .thinking-toggle { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--text-2); cursor: pointer; }
+.subtabs .thinking-toggle input { accent-color: var(--neon); cursor: pointer; }
 .turns-panel .subtabs { margin: 12px 0 20px; }
 .turns-panel .subagent-info { margin-bottom: 20px; }
 

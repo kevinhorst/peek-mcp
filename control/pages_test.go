@@ -271,14 +271,14 @@ func TestTurnsFragment_Thinking(t *testing.T) {
 	body := response.Body.String()
 	assert.Contains(t, body, `class="snippet thinking"`)
 	assert.Contains(t, body, "reasoning here")
-	assert.Contains(t, body, `class="toggle active"`)
+	assert.Contains(t, body, `<input type="checkbox" checked`)
 
 	response = get(server, "/fragments/sessions/s1/turns?thinking=off")
 	require.Equal(t, http.StatusOK, response.Code)
 	body = response.Body.String()
 	assert.NotContains(t, body, "reasoning here")
 	assert.Contains(t, body, "answer")
-	assert.Contains(t, body, `class="toggle"`)
+	assert.Contains(t, body, `<input type="checkbox" hx-get`)
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/turns"`)
 }
 

@@ -9,7 +9,7 @@
   {{end}}
   {{end}}
   {{if .HasThinking}}
-  <a class="toggle{{if .ShowThinking}} active{{end}}" hx-get="/fragments/sessions/{{.Id}}/turns{{.ToggleQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML" title="{{if .ShowThinking}}hide{{else}}show{{end}} assistant thinking">thinking</a>
+  <label class="thinking-toggle" title="show assistant thinking"><input type="checkbox"{{if .ShowThinking}} checked{{end}} hx-get="/fragments/sessions/{{.Id}}/turns{{.ToggleQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML"> thinking</label>
   {{end}}
 </div>
 {{end}}
