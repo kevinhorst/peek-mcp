@@ -5,6 +5,7 @@ type Meta struct {
 	CWD       string  `json:"cwd,omitempty"`
 	GitBranch string  `json:"git_branch,omitempty"`
 	Model     string  `json:"model,omitempty"`
+	Project   string  `json:"project,omitempty"`
 	Origin    *Origin `json:"origin,omitempty"`
 }
 
@@ -36,6 +37,10 @@ func (m *Meta) Update(other *Meta) {
 
 	if other.Model != "" {
 		m.Model = other.Model
+	}
+
+	if other.Project != "" {
+		m.Project = other.Project
 	}
 
 	if other.Origin != nil {
