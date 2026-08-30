@@ -59,6 +59,7 @@ type turnsData struct {
 	Turns        []*session.Turn
 	Subagent     string
 	Tabs         []subagentTab
+	Info         *subagentInfo
 	ShowThinking bool
 	HasThinking  bool
 	Query        string
@@ -71,6 +72,15 @@ type subagentTab struct {
 	Label       string
 	Description string
 	Query       string
+}
+
+type subagentInfo struct {
+	Id          string
+	Description string
+	Model       string
+	Duration    string
+	Tokens      int
+	Cost        string
 }
 
 type planData struct {
@@ -240,6 +250,7 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 		if data.Subagent != "" {
 			if turns, ok := sess.SubagentTurns(data.Subagent, tools.DefaultReturnedTurns); ok {
 				data.Turns = turns
+				data.Info = newSubagentInfo(id, data.Subagent, sess)
 			}
 			return
 		}
@@ -258,6 +269,24 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 	data.MainQuery = turnsQuery("", data.ShowThinking)
 	data.ToggleQuery = turnsQuery(data.Subagent, !data.ShowThinking)
 	s.renderFragment(w, tmplTurns, data)
+}
+
+func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *subagentInfo {
+	stat, ok := sess.Subagents[agentId]
+	if !ok {
+		return nil
+	}
+
+	model := subagentModel(stat, sess)
+	cost := newCostData(id, sess.Agent, model, &stat.Usage)
+	return &subagentInfo{
+		Id:          agentId,
+		Description: stat.Description,
+		Model:       model,
+		Duration:    stat.LastActive.Sub(stat.FirstActive).Round(time.Second).String(),
+		Tokens:      displayTotalTokens(&stat.Usage),
+		Cost:        cost.Total,
+	}
 }
 
 func turnsQuery(subagent string, showThinking bool) string {

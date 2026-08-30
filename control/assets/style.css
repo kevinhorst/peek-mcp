@@ -136,6 +136,8 @@ nav a.active::after { content: ']'; }
 .tabs a.active { color: var(--bg); background: var(--neon); border-color: var(--neon); font-weight: 700; }
 .subtabs { margin-top: -8px; flex-wrap: wrap; }
 .subtabs .toggle { margin-left: auto; }
+.turns-panel .subtabs { margin: 12px 0 20px; }
+.turns-panel .subagent-info { margin-bottom: 20px; }
 
 /* metric cells (brandbook UI kit) */
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }

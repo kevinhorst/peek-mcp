@@ -220,6 +220,11 @@ func TestTurnsFragment_SubagentTabs(t *testing.T) {
 	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
 		SubagentId: "ag1", Role: session.RoleUser, Text: "sub prompt", Timestamp: now, Meta: &session.Meta{SessionId: "s1"},
 	})
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "ag1", Role: session.RoleAssistant, Text: "sub answer", RequestId: "r-sub", Timestamp: now.Add(time.Minute),
+		Usage: &session.Usage{InputTokens: 10, OutputTokens: 20},
+		Meta:  &session.Meta{SessionId: "s1", Model: "claude-haiku-4-5-20251001"},
+	})
 	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
 	require.NoError(t, err)
 
@@ -238,6 +243,15 @@ func TestTurnsFragment_SubagentTabs(t *testing.T) {
 	assert.Contains(t, body, "sub prompt")
 	assert.NotContains(t, body, "What does this do?")
 	assert.Contains(t, body, `class="active" title="scan">Explore ag1</a>`)
+	assert.Contains(t, body, `class="usage-table subagent-info"`)
+	assert.Contains(t, body, "<th>Id</th><td>ag1</td>")
+	assert.Contains(t, body, "<th>Model</th><td>claude-haiku-4-5-20251001</td>")
+	assert.Contains(t, body, "<th>Runtime</th><td>1m0s</td>")
+	assert.Contains(t, body, "<th>Tokens</th><td>30</td>")
+	assert.Contains(t, body, "<th>Cost</th>")
+
+	response = get(server, "/fragments/sessions/s1/turns")
+	assert.NotContains(t, response.Body.String(), "subagent-info")
 }
 
 func TestTurnsFragment_Thinking(t *testing.T) {

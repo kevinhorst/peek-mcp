@@ -190,6 +190,7 @@ func TestUsageSubagentsDetail(t *testing.T) {
 				"a1": {
 					AgentType:   "Explore",
 					Description: "find things",
+					Model:       "claude-haiku-4-5-20251001",
 					FirstActive: started,
 					LastActive:  started.Add(90 * time.Second),
 					Usage:       session.Usage{InputTokens: 10, OutputTokens: 20},
@@ -204,6 +205,7 @@ func TestUsageSubagentsDetail(t *testing.T) {
 		body := response.Body.String()
 		assert.Contains(t, body, "<th>Explore</th>")
 		assert.Contains(t, body, "<td>find things</td>")
+		assert.Contains(t, body, "<td>claude-haiku-4-5-20251001</td>")
 		assert.Contains(t, body, "1m30s")
 		assert.Contains(t, body, "<td>30</td>")
 		assert.Contains(t, body, "$0.0")
