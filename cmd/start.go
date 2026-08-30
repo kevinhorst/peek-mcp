@@ -16,7 +16,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -256,7 +255,7 @@ var startCmd = &cobra.Command{
 						slog.Error("restart: executable lookup failed", "err", err)
 						return
 					}
-					if err := syscall.Exec(exe, os.Args, os.Environ()); err != nil {
+					if err := restartProcess(exe); err != nil {
 						slog.Error("restart: exec failed", "err", err)
 					}
 				}
