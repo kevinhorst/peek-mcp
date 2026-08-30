@@ -60,6 +60,24 @@ func (d *Dir) pruneAgentDir(path string, cutoff time.Time) {
 	}
 }
 
+func (d *Dir) pruneSnapshots(path string, cutoff time.Time) {
+	sessionDirs, err := os.ReadDir(path)
+	if err != nil {
+		return
+	}
+
+	for _, sessionDir := range sessionDirs {
+		snapshotPath := filepath.Join(path, sessionDir.Name(), diffSnapshotFile)
+		info, err := os.Stat(snapshotPath)
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			os.Remove(snapshotPath)
+		}
+	}
+}
+
 func (d *Dir) sessionDir(agent, sessionId string) string {
 	return filepath.Join(d.root, sanitize(agent), sanitize(sessionId))
 }
@@ -80,19 +98,24 @@ func (d *Dir) writeFile(path, content string) error {
 	return nil
 }
 
-func (d *Dir) Gc(retention time.Duration) {
-	if retention <= 0 {
-		return
-	}
-
-	cutoff := time.Now().Add(-retention)
+func (d *Dir) Gc(retention, snapshotRetention time.Duration) {
 	agentDirs, err := os.ReadDir(d.root)
 	if err != nil {
 		return
 	}
 
-	for _, agentDir := range agentDirs {
-		d.pruneAgentDir(filepath.Join(d.root, agentDir.Name()), cutoff)
+	if retention > 0 {
+		cutoff := time.Now().Add(-retention)
+		for _, agentDir := range agentDirs {
+			d.pruneAgentDir(filepath.Join(d.root, agentDir.Name()), cutoff)
+		}
+	}
+
+	if snapshotRetention > 0 {
+		cutoff := time.Now().Add(-snapshotRetention)
+		for _, agentDir := range agentDirs {
+			d.pruneSnapshots(filepath.Join(d.root, agentDir.Name()), cutoff)
+		}
 	}
 }
 
@@ -123,6 +146,14 @@ func (d *Dir) ReadDiffBase(agent, sessionId string) (base DiffBase, ok bool) {
 
 	base = DiffBase{Sha: sha, Target: target}
 	return base, true
+}
+
+func (d *Dir) StatDiffSnapshot(agent, sessionId string) (capturedAt time.Time, ok bool) {
+	info, err := os.Stat(filepath.Join(d.sessionDir(agent, sessionId), diffSnapshotFile))
+	if err != nil {
+		return capturedAt, false
+	}
+	return info.ModTime(), true
 }
 
 func (d *Dir) ReadDiffSnapshot(agent, sessionId string) (content string, capturedAt time.Time, ok bool) {
@@ -184,10 +215,7 @@ func (d *Dir) WriteDiffBase(agent string, base DiffBase, sessionId string) error
 }
 
 func (d *Dir) WriteDiffSnapshot(agent, content, sessionId string) error {
-	if len(content) > MaxSnapshotBytes {
-		content = content[:MaxSnapshotBytes] + "\n[peek: snapshot truncated at 5 MB]\n"
-	}
-	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), diffSnapshotFile), content)
+	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), diffSnapshotFile), Truncate(content))
 }
 
 func (d *Dir) WritePlanLatest(agent, content, sessionId string) error {
@@ -211,6 +239,13 @@ type PlanVersion struct {
 	Index        int
 	IsAlteration bool
 	ModTime      time.Time
+}
+
+func Truncate(content string) string {
+	if len(content) > MaxSnapshotBytes {
+		return content[:MaxSnapshotBytes] + "\n[peek: snapshot truncated at 5 MB]\n"
+	}
+	return content
 }
 
 func newestModTime(root string) time.Time {
