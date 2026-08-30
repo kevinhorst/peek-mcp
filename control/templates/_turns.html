@@ -1,4 +1,13 @@
-<div hx-get="/fragments/sessions/{{.Id}}/turns" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+<div class="turns-panel" hx-get="/fragments/sessions/{{.Id}}/turns{{if .Subagent}}?subagent={{.Subagent}}{{end}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+{{if .Tabs}}
+{{$root := .}}
+<div class="tabs subtabs">
+  <a hx-get="/fragments/sessions/{{.Id}}/turns" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if not .Subagent}}class="active"{{end}}>main</a>
+  {{range .Tabs}}
+  <a hx-get="/fragments/sessions/{{$root.Id}}/turns?subagent={{.Id}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if eq $root.Subagent .Id}}class="active"{{end}} title="{{.Description}}">{{.Label}}</a>
+  {{end}}
+</div>
+{{end}}
 {{if .Turns}}
 {{range .Turns}}
 <div class="card card-column">
@@ -6,7 +15,8 @@
     <span class="badge {{if eq (printf "%s" .Role) "user"}}badge-action{{else}}badge-ok{{end}}">{{.Role}}</span>
     <span class="meta">{{ts .Timestamp}}</span>
   </div>
-  <div class="snippet"><pre>{{.Text}}</pre></div>
+  {{if .Thinking}}<div class="snippet thinking"><pre>{{.Thinking}}</pre></div>{{end}}
+  {{if or .Text (not .Thinking)}}<div class="snippet"><pre>{{.Text}}</pre></div>{{end}}
 </div>
 {{end}}
 {{else}}

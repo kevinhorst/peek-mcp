@@ -52,8 +52,16 @@ type sessionListData struct {
 }
 
 type turnsData struct {
-	Id    session.Id
-	Turns []*session.Turn
+	Id       session.Id
+	Turns    []*session.Turn
+	Subagent string
+	Tabs     []subagentTab
+}
+
+type subagentTab struct {
+	Id          string
+	Label       string
+	Description string
 }
 
 type planData struct {
@@ -205,12 +213,36 @@ func (s *Server) handleEventsFragment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 	id := session.Id(r.PathValue("id"))
-	data := turnsData{Id: id}
-	if !s.store.WithSession(id, func(sess *session.Session) { data.Turns = sess.Turns(tools.DefaultReturnedTurns) }) {
+	data := turnsData{Id: id, Subagent: r.URL.Query().Get("subagent")}
+	if !s.store.WithSession(id, func(sess *session.Session) {
+		for _, agentId := range sess.SubagentIds() {
+			stat := sess.Subagents[agentId]
+			data.Tabs = append(data.Tabs, subagentTab{Id: agentId, Label: subagentTabLabel(agentId, stat), Description: stat.Description})
+		}
+		if data.Subagent != "" {
+			if turns, ok := sess.SubagentTurns(data.Subagent, tools.DefaultReturnedTurns); ok {
+				data.Turns = turns
+			}
+			return
+		}
+		data.Turns = sess.Turns(tools.DefaultReturnedTurns)
+	}) {
 		respondNotFound("unknown session", w)
 		return
 	}
 	s.renderFragment(w, tmplTurns, data)
+}
+
+func subagentTabLabel(agentId string, stat *session.SubagentStat) string {
+	if stat.AgentType != "" {
+		return stat.AgentType
+	}
+
+	runes := []rune(agentId)
+	if len(runes) > 8 {
+		return string(runes[:8])
+	}
+	return agentId
 }
 
 func (s *Server) handlePlanFragment(w http.ResponseWriter, r *http.Request) {

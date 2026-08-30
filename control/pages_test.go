@@ -183,6 +183,63 @@ func TestTurnsFragment(t *testing.T) {
 	body := response.Body.String()
 	assert.Contains(t, body, "What does this do?")
 	assert.Contains(t, body, "It does things.")
+	assert.NotContains(t, body, `class="tabs subtabs"`)
+}
+
+func TestTurnsFragment_SubagentTabs(t *testing.T) {
+	store, broker := newTestStore()
+	now := time.Now()
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "ag1",
+		Events: []*session.Event{{
+			Kind:      session.EventKindSubagentSpawned,
+			Actor:     "ag1",
+			Subagent:  &session.SubagentPayload{AgentId: "ag1", AgentType: "Explore", Description: "scan"},
+			Timestamp: now,
+		}},
+		Timestamp: now,
+		Meta:      &session.Meta{SessionId: "s1"},
+	})
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "ag1", Role: session.RoleUser, Text: "sub prompt", Timestamp: now, Meta: &session.Meta{SessionId: "s1"},
+	})
+	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+	require.NoError(t, err)
+
+	response := get(server, "/fragments/sessions/s1/turns")
+	require.Equal(t, http.StatusOK, response.Code)
+	body := response.Body.String()
+	assert.Contains(t, body, `class="tabs subtabs"`)
+	assert.Contains(t, body, `?subagent=ag1`)
+	assert.Contains(t, body, ">Explore</a>")
+	assert.Contains(t, body, "What does this do?")
+	assert.NotContains(t, body, "sub prompt")
+
+	response = get(server, "/fragments/sessions/s1/turns?subagent=ag1")
+	require.Equal(t, http.StatusOK, response.Code)
+	body = response.Body.String()
+	assert.Contains(t, body, "sub prompt")
+	assert.NotContains(t, body, "What does this do?")
+	assert.Contains(t, body, `class="active" title="scan">Explore</a>`)
+}
+
+func TestTurnsFragment_Thinking(t *testing.T) {
+	store, broker := newTestStore()
+	now := time.Now()
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Role: session.RoleAssistant, Text: "answer", Thinking: "reasoning here", RequestId: "r-think", Timestamp: now, Meta: &session.Meta{SessionId: "s1"},
+	})
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Role: session.RoleUser, Text: "next prompt", Timestamp: now, Meta: &session.Meta{SessionId: "s1"},
+	})
+	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+	require.NoError(t, err)
+
+	response := get(server, "/fragments/sessions/s1/turns")
+	require.Equal(t, http.StatusOK, response.Code)
+	body := response.Body.String()
+	assert.Contains(t, body, `class="snippet thinking"`)
+	assert.Contains(t, body, "reasoning here")
 }
 
 func TestPlanFragment(t *testing.T) {

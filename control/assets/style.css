@@ -134,7 +134,7 @@ nav a.active::after { content: ']'; }
 }
 .tabs a:hover { color: var(--neon); border-color: var(--brand-emerald); }
 .tabs a.active { color: var(--bg); background: var(--neon); border-color: var(--neon); font-weight: 700; }
-.subtabs { margin-top: -8px; }
+.subtabs { margin-top: -8px; flex-wrap: wrap; }
 
 /* metric cells (brandbook UI kit) */
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
@@ -241,6 +241,7 @@ nav a.active::after { content: ']'; }
 .snippet { margin: 4px 0; }
 .snippet summary { color: var(--text-2); cursor: pointer; }
 .snippet pre { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; margin: 4px 0 0; overflow-x: auto; padding: 6px 10px; }
+.snippet.thinking pre { color: var(--text-2); font-style: italic; }
 .session-card > summary, .entry-card > summary {
   display: flex;
   align-items: center;
