@@ -59,6 +59,7 @@ func TestConfigFragment(t *testing.T) {
 		body := response.Body.String()
 		assert.Contains(t, body, `class="card card-config" id="config-depth"`)
 		assert.Contains(t, body, `hx-post="/api/config/depth"`)
+		assert.Contains(t, body, `hx-post="/api/config/back-link"`)
 	})
 
 	// read-only-transport-no-form

@@ -176,3 +176,39 @@ func TestGc(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func TestInstances(t *testing.T) {
+	// newest-first-with-limit
+	t.Run("newest-first-with-limit", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstance("100-1", `{"pid":1}`))
+		require.NoError(t, dir.WriteInstance("200-2", `{"pid":2}`))
+
+		old := time.Now().Add(-time.Hour)
+		require.NoError(t, os.Chtimes(filepath.Join(root, "instances", "100-1.json"), old, old))
+
+		assert.Equal(t, []string{`{"pid":2}`, `{"pid":1}`}, dir.ReadInstances(10))
+		assert.Equal(t, []string{`{"pid":2}`}, dir.ReadInstances(1))
+	})
+
+	// missing-dir-nil
+	t.Run("missing-dir-nil", func(t *testing.T) {
+		dir := NewDir(t.TempDir())
+		assert.Nil(t, dir.ReadInstances(10))
+	})
+
+	// old-instance-pruned-by-gc
+	t.Run("old-instance-pruned-by-gc", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstance("100-1", `{"pid":1}`))
+		require.NoError(t, dir.WriteInstance("200-2", `{"pid":2}`))
+
+		old := time.Now().Add(-48 * time.Hour)
+		require.NoError(t, os.Chtimes(filepath.Join(root, "instances", "100-1.json"), old, old))
+
+		dir.Gc(24 * time.Hour)
+		assert.Equal(t, []string{`{"pid":2}`}, dir.ReadInstances(10))
+	})
+}

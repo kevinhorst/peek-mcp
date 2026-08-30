@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 
 func newConfigFlagCommand() *cobra.Command {
 	cmd := &cobra.Command{}
+	cmd.Flags().String("back-link", "", "")
 	cmd.Flags().Int("depth", 20, "")
 	cmd.Flags().Duration("poll-interval", time.Second*5, "")
 	cmd.Flags().Duration("poll-window", time.Hour, "")
@@ -51,13 +55,16 @@ func TestApplyConfigFileFallbacks(t *testing.T) {
 	t.Run("file-beats-default", func(t *testing.T) {
 		cmd := newConfigFlagCommand()
 		file := &config.File{}
+		require.NoError(t, file.Set(config.KeyBackLink, "http://127.0.0.1:6001/"))
 		require.NoError(t, file.Set(config.KeyDepth, "50"))
 		require.NoError(t, file.Set(config.KeyPollInterval, "10s"))
 
 		applyConfigFileFallbacks(cmd, file)
 
+		backLink, _ := cmd.Flags().GetString("back-link")
 		depth, _ := cmd.Flags().GetInt("depth")
 		interval, _ := cmd.Flags().GetDuration("poll-interval")
+		assert.Equal(t, "http://127.0.0.1:6001/", backLink)
 		assert.Equal(t, 50, depth)
 		assert.Equal(t, 10*time.Second, interval)
 	})
@@ -82,5 +89,22 @@ func TestChangedConfigKeys(t *testing.T) {
 	changed := changedConfigKeys(cmd)
 
 	assert.True(t, changed[config.KeyDepth])
+	assert.False(t, changed[config.KeyBackLink])
 	assert.False(t, changed[config.KeyLogLevel])
+}
+
+func TestHealthzHandler(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	healthzHandler("/home/a/.claude", "/home/a/.codex", 42443)(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, Version(), body["version"])
+	assert.Equal(t, "/home/a/.claude", body["claudeHome"])
+	assert.Equal(t, "/home/a/.codex", body["codexHome"])
+	assert.Equal(t, float64(42443), body["controlPort"])
 }

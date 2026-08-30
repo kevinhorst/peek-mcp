@@ -28,9 +28,21 @@ func withMaxResultSize() *mcp.Meta {
 
 func counted(counter *InvocationCounter, name string, handler server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		counter.Inc(name)
-		return handler(ctx, req)
+		result, err := handler(ctx, req)
+		counter.Inc(name, resultBytes(result))
+		return result, err
 	}
+}
+
+func resultBytes(result *mcp.CallToolResult) int64 {
+	if result == nil {
+		return 0
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return 0
+	}
+	return int64(len(data))
 }
 
 func Register(server *server.MCPServer, store *session.Store, counter *InvocationCounter, telemetryStore *telemetry.Store, detector *telemetry.Detector) {

@@ -20,6 +20,7 @@ const (
 	planDir          = "plan"
 	planLatestFile   = "latest.md"
 	telemetryFile    = "telemetry.json"
+	instancesDir     = "instances"
 
 	draftDiffSuffix = ".draft.diff"
 	diffSuffix      = ".diff"
@@ -177,6 +178,45 @@ func (d *Dir) ReadTelemetry(agent, sessionId string) (string, error) {
 
 func (d *Dir) WriteTelemetry(agent, sessionId, content string) error {
 	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), telemetryFile), content)
+}
+
+func (d *Dir) WriteInstance(id, content string) error {
+	return d.writeFile(filepath.Join(d.root, instancesDir, sanitize(id)+".json"), content)
+}
+
+func (d *Dir) ReadInstances(limit int) []string {
+	dir := filepath.Join(d.root, instancesDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	type candidate struct {
+		name    string
+		modTime time.Time
+	}
+	candidates := make([]candidate, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, candidate{name: entry.Name(), modTime: info.ModTime()})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].modTime.After(candidates[j].modTime) })
+
+	contents := make([]string, 0, min(limit, len(candidates)))
+	for _, c := range candidates[:min(limit, len(candidates))] {
+		data, err := os.ReadFile(filepath.Join(dir, c.name))
+		if err != nil {
+			continue
+		}
+		contents = append(contents, string(data))
+	}
+	return contents
 }
 
 func (d *Dir) WriteDiffBase(agent string, base DiffBase, sessionId string) error {

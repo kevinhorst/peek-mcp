@@ -39,6 +39,22 @@ func TestListenLoopback_WalksPastOccupied(t *testing.T) {
 	assert.NotEqual(t, port, ln.Addr().(*net.TCPAddr).Port)
 }
 
+func TestControlPortWalkEnd(t *testing.T) {
+	// explicit-binds-exact
+	assert.Equal(t, 42450, controlPortWalkEnd(42450, true))
+	// default-walks-span
+	assert.Equal(t, 42442+controlPortSpan-1, controlPortWalkEnd(42442, false))
+}
+
+func TestListenLoopback_ExplicitOccupiedFails(t *testing.T) {
+	port, release := occupyPort(t)
+	defer release()
+
+	ln, err := listenLoopback(port, controlPortWalkEnd(port, true))
+	assert.Error(t, err)
+	assert.Nil(t, ln)
+}
+
 func TestListenLoopback_Exhausted(t *testing.T) {
 	port, release := occupyPort(t)
 	defer release()

@@ -48,6 +48,7 @@ func (s *Server) configRows() ([]configRow, error) {
 	rows = append(rows, s.editableRow("days before idle session state is GCed (0 disables)", config.KeyStateRetentionDays, "number", strconv.Itoa(s.config.StateRetentionDays), saved))
 	rows = append(rows, readOnlyRow("dashboard port, fixed at launch", "control-port", strconv.Itoa(s.config.ControlPort)))
 	rows = append(rows, readOnlyRow("bearer token protecting this dashboard", "control-token", tokenDisplay(s.config.TokenSet)))
+	rows = append(rows, s.editableRow("URL the nav's Hub link points to (empty hides it)", config.KeyBackLink, "text", s.config.BackLink, saved))
 	rows = append(rows, s.editableRow("slog level", config.KeyLogLevel, "enum", s.config.LogLevel, saved, "debug", "info", "warn", "error"))
 	return rows, nil
 }
