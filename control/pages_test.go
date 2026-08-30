@@ -97,6 +97,23 @@ func TestSessionsPage(t *testing.T) {
 	assert.Contains(t, body, "agent=claude")
 	assert.Contains(t, body, "agent=codex")
 	assert.Contains(t, body, "htmx.min.js")
+	assert.NotContains(t, body, ">Hub<")
+}
+
+func TestSessionsPage_BackLink(t *testing.T) {
+	store, broker := newTestStore()
+	server, err := New(&Options{
+		Store:   store,
+		Broker:  broker,
+		Version: "test",
+		Depth:   10,
+		Config:  Config{BackLink: "http://127.0.0.1:6001/"},
+	})
+	require.NoError(t, err)
+
+	response := get(server, "/")
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), `<a href="http://127.0.0.1:6001/">Hub</a>`)
 }
 
 func TestSessionsFragment(t *testing.T) {

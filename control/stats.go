@@ -93,7 +93,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatsPage(w http.ResponseWriter, r *http.Request) {
-	s.renderFragment(w, tmplStats, indexPage{Page: pageStats, Title: "Peek stats"})
+	s.renderFragment(w, tmplStats, indexPage{Page: pageStats, Title: "Peek stats", BackLink: s.config.BackLink})
 }
 
 func (s *Server) handleStatsFragment(w http.ResponseWriter, r *http.Request) {

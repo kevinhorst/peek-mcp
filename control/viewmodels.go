@@ -76,6 +76,7 @@ type Config struct {
 	ControlPort        int    `json:"control_port"`
 	TokenSet           bool   `json:"token_set"`
 	LogLevel           string `json:"log_level"`
+	BackLink           string `json:"back_link,omitempty"`
 }
 
 type sessionCounts struct {

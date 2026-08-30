@@ -30,6 +30,7 @@
 <nav>
   <a href="/" {{if eq .Page "sessions"}}class="active"{{end}}>Sessions</a>
   <a href="/stats" {{if eq .Page "stats"}}class="active"{{end}}>Stats</a>
+  {{if .BackLink}}<a href="{{.BackLink}}">Hub</a>{{end}}
 </nav>
 {{end}}
 
