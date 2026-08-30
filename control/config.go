@@ -42,6 +42,7 @@ func (s *Server) configRows() ([]configRow, error) {
 	rows = append(rows, s.editableRow("turns kept per session (ring buffer)", config.KeyDepth, "number", strconv.Itoa(s.config.Depth), saved))
 	rows = append(rows, readOnlyRow("Claude Code session root", "claude-home", s.config.ClaudeHome))
 	rows = append(rows, readOnlyRow("Codex session root", "codex-home", s.config.CodexHome))
+	rows = append(rows, readOnlyRow("Claude Desktop Cowork data root", "cowork-home", s.config.CoworkHome))
 	rows = append(rows, s.editableRow("uncommitted-diff poll cadence", config.KeyPollInterval, "text", s.config.PollInterval, saved))
 	rows = append(rows, s.editableRow("only poll repos active within this window", config.KeyPollWindow, "text", s.config.PollWindow, saved))
 	rows = append(rows, readOnlyRow("diff/plan persistence root", "state-dir", s.config.StateDir))

@@ -79,6 +79,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := strings.ToLower(r.URL.Query().Get("title"))
+	project := r.URL.Query().Get("project")
 
 	resp := sessionsResponse{Sessions: make([]sessionSummary, 0)}
 	s.store.WithSessions(agents, func(sessions []*session.Session) {
@@ -90,6 +91,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 					filtered = append(filtered, sess)
 				}
 			}
+		}
+		if project != "" {
+			byProject := make([]*session.Session, 0, len(filtered))
+			for _, sess := range filtered {
+				if sess.Meta.Project == project {
+					byProject = append(byProject, sess)
+				}
+			}
+			filtered = byProject
 		}
 		resp.Total = len(filtered)
 		for _, sess := range pageSlice(filtered, offset, limit) {

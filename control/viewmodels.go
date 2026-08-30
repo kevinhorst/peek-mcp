@@ -69,6 +69,7 @@ type Config struct {
 	Depth              int    `json:"depth"`
 	ClaudeHome         string `json:"claude_home,omitempty"`
 	CodexHome          string `json:"codex_home,omitempty"`
+	CoworkHome         string `json:"cowork_home,omitempty"`
 	PollInterval       string `json:"poll_interval"`
 	PollWindow         string `json:"poll_window"`
 	StateDir           string `json:"state_dir,omitempty"`
