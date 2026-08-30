@@ -12,48 +12,83 @@ import (
 )
 
 const (
-	KeyDepth              = "depth"
-	KeyLogLevel           = "log-level"
-	KeyPollInterval       = "poll-interval"
-	KeyPollWindow         = "poll-window"
-	KeyStateRetentionDays = "state-retention-days"
+	KeyDepth                 = "depth"
+	KeyDiffCacheSessions     = "diff-cache-sessions"
+	KeyLogLevel              = "log-level"
+	KeyPollInterval          = "poll-interval"
+	KeyPollWindow            = "poll-window"
+	KeySnapshotRetentionDays = "snapshot-retention-days"
+	KeyStateRetentionDays    = "state-retention-days"
 
 	dirPerm  = 0o700
 	filePerm = 0o600
 
-	maxDepth         = 1000
-	maxRetentionDays = 3650
-	minDepth         = 1
-	minPollInterval  = time.Second
-	minPollWindow    = time.Minute
+	maxDepth             = 1000
+	maxDiffCacheSessions = 1000
+	maxRetentionDays     = 3650
+	minDepth             = 1
+	minPollInterval      = time.Second
+	minPollWindow        = time.Minute
 )
 
-var EditableKeys = []string{KeyDepth, KeyPollInterval, KeyPollWindow, KeyStateRetentionDays, KeyLogLevel}
+var EditableKeys = []string{KeyDepth, KeyPollInterval, KeyPollWindow, KeyStateRetentionDays, KeySnapshotRetentionDays, KeyDiffCacheSessions, KeyLogLevel}
 
 var logLevels = []string{"debug", "info", "warn", "error"}
 
 type File struct {
-	Depth              *int    `json:"depth,omitempty"`
-	LogLevel           *string `json:"log_level,omitempty"`
-	PollInterval       *string `json:"poll_interval,omitempty"`
-	PollWindow         *string `json:"poll_window,omitempty"`
-	StateRetentionDays *int    `json:"state_retention_days,omitempty"`
+	Depth                 *int    `json:"depth,omitempty"`
+	DiffCacheSessions     *int    `json:"diff_cache_sessions,omitempty"`
+	LogLevel              *string `json:"log_level,omitempty"`
+	PollInterval          *string `json:"poll_interval,omitempty"`
+	PollWindow            *string `json:"poll_window,omitempty"`
+	SnapshotRetentionDays *int    `json:"snapshot_retention_days,omitempty"`
+	StateRetentionDays    *int    `json:"state_retention_days,omitempty"`
 }
 
 func (f *File) Set(key, value string) error {
 	switch key {
 	case KeyDepth:
 		return f.setDepth(value)
+	case KeyDiffCacheSessions:
+		return f.setDiffCacheSessions(value)
 	case KeyLogLevel:
 		return f.setLogLevel(value)
 	case KeyPollInterval:
 		return f.setPollInterval(value)
 	case KeyPollWindow:
 		return f.setPollWindow(value)
+	case KeySnapshotRetentionDays:
+		return f.setSnapshotRetentionDays(value)
 	case KeyStateRetentionDays:
 		return f.setStateRetentionDays(value)
 	}
 	return errors.Errorf("File.Set: Unknown or non-editable key: %s", key)
+}
+
+func (f *File) setDiffCacheSessions(value string) error {
+	sessions, err := strconv.Atoi(value)
+	if err != nil {
+		return errors.Errorf("File.setDiffCacheSessions: Invalid field diff-cache-sessions: %s (want an integer)", value)
+	}
+	if sessions < 0 || sessions > maxDiffCacheSessions {
+		return errors.Errorf("File.setDiffCacheSessions: Invalid field diff-cache-sessions: %d (want 0-%d, 0 disables caching)", sessions, maxDiffCacheSessions)
+	}
+
+	f.DiffCacheSessions = &sessions
+	return nil
+}
+
+func (f *File) setSnapshotRetentionDays(value string) error {
+	days, err := strconv.Atoi(value)
+	if err != nil {
+		return errors.Errorf("File.setSnapshotRetentionDays: Invalid field snapshot-retention-days: %s (want an integer)", value)
+	}
+	if days < 0 || days > maxRetentionDays {
+		return errors.Errorf("File.setSnapshotRetentionDays: Invalid field snapshot-retention-days: %d (want 0-%d, 0 disables snapshot GC)", days, maxRetentionDays)
+	}
+
+	f.SnapshotRetentionDays = &days
+	return nil
 }
 
 func (f *File) setDepth(value string) error {
@@ -133,8 +168,14 @@ func (f *File) FlagValues() map[string]string {
 	if f.PollWindow != nil {
 		values[KeyPollWindow] = *f.PollWindow
 	}
+	if f.SnapshotRetentionDays != nil {
+		values[KeySnapshotRetentionDays] = strconv.Itoa(*f.SnapshotRetentionDays)
+	}
 	if f.StateRetentionDays != nil {
 		values[KeyStateRetentionDays] = strconv.Itoa(*f.StateRetentionDays)
+	}
+	if f.DiffCacheSessions != nil {
+		values[KeyDiffCacheSessions] = strconv.Itoa(*f.DiffCacheSessions)
 	}
 	return values
 }
