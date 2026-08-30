@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/kevinhorst/peek-mcp/watcher"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 )
@@ -151,11 +153,26 @@ var startCmd = &cobra.Command{
 			}
 		}()
 
+		info := tools.InstanceInfo{
+			PID:       os.Getpid(),
+			PPID:      os.Getppid(),
+			Transport: transport,
+			Version:   Version(),
+			StartedAt: startedAt,
+		}
+		invocations := tools.NewInvocationCounter(info, stateDir)
+		invocations.Persist()
+		defer invocations.Persist()
+
+		hooks := &server.Hooks{}
+		hooks.AddAfterInitialize(func(ctx context.Context, id any, message *mcp.InitializeRequest, result *mcp.InitializeResult) {
+			invocations.AddClient(strings.TrimSpace(message.Params.ClientInfo.Name + " " + message.Params.ClientInfo.Version))
+		})
 		srv := server.NewMCPServer("peek-mcp", Version(),
 			server.WithToolCapabilities(true),
 			server.WithResourceCapabilities(false, true),
+			server.WithHooks(hooks),
 		)
-		invocations := tools.NewInvocationCounter()
 
 		var detector *telemetry.Detector
 		if controlPort > 0 {
