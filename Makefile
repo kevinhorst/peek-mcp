@@ -2,7 +2,7 @@ DIST    := dist
 STAGE   := $(DIST)/bundle
 LDFLAGS := -s -w
 GOENV := GOOS=darwin CGO_ENABLED=0
-VERSION = 1.2.1
+VERSION = 1.2.2
 
 build-darwin-universal:
 	@mkdir -p $(DIST)
