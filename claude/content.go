@@ -12,6 +12,7 @@ type ContentBlock struct {
 	IsError   bool            `json:"is_error"`
 	Name      string          `json:"name"`
 	Text      string          `json:"text"`
+	Thinking  string          `json:"thinking"`
 	ToolUseId string          `json:"tool_use_id"`
 	Type      string          `json:"type"`
 }

@@ -67,9 +67,39 @@ func TestClaude_AssistantThinkingOnly(t *testing.T) {
 
 	assert.NotNil(t, turn, "meta-only turn should not be nil")
 	assert.Equal(t, "", turn.Text, "thinking-only should have empty text")
+	assert.Equal(t, "Let me analyze this...\n", turn.Thinking)
 	assert.Equal(t, session.Id("sess-1"), turn.Meta.SessionId)
 	assert.Equal(t, "claude-opus-4-6", turn.Meta.Model)
 	assert.Equal(t, "", turn.StopReason)
+}
+
+func TestClaude_AssistantThinkingAndText(t *testing.T) {
+	p := NewParser()
+	line := []byte(`{"type":"assistant","requestId":"req-2","sessionId":"sess-1","timestamp":"2026-04-05T15:30:18.628Z","isSidechain":false,"message":{"role":"assistant","model":"claude-opus-4-6","content":[{"type":"thinking","thinking":"Checking the code...","signature":"sig"},{"type":"text","text":"Done."}]}}`)
+	turn := p.ParseLine(line)
+
+	assert.NotNil(t, turn)
+	assert.Equal(t, "Done.\n", turn.Text)
+	assert.Equal(t, "Checking the code...\n", turn.Thinking)
+}
+
+func TestClaude_SidechainTranscript(t *testing.T) {
+	p := NewParser()
+
+	userLine := []byte(`{"type":"user","sessionId":"sess-1","agentId":"ag1","timestamp":"2026-04-05T15:30:18.000Z","isSidechain":true,"message":{"role":"user","content":[{"type":"text","text":"Explore the repo."}]}}`)
+	turn := p.ParseLine(userLine)
+	assert.NotNil(t, turn)
+	assert.Equal(t, session.RoleUser, turn.Role)
+	assert.Equal(t, "Explore the repo.\n", turn.Text)
+	assert.Equal(t, "ag1", turn.SubagentId)
+
+	assistantLine := []byte(`{"type":"assistant","requestId":"req-3","sessionId":"sess-1","agentId":"ag1","timestamp":"2026-04-05T15:30:19.000Z","isSidechain":true,"message":{"role":"assistant","model":"claude-opus-4-6","content":[{"type":"thinking","thinking":"Reading files..."},{"type":"text","text":"Found it."}]}}`)
+	turn = p.ParseLine(assistantLine)
+	assert.NotNil(t, turn)
+	assert.Equal(t, session.RoleAssistant, turn.Role)
+	assert.Equal(t, "Found it.\n", turn.Text)
+	assert.Equal(t, "Reading files...\n", turn.Thinking)
+	assert.Equal(t, "ag1", turn.SubagentId)
 }
 
 func TestClaude_SyntheticModelDropped(t *testing.T) {
@@ -105,6 +135,7 @@ func TestClaude_SameRequestIdMerged(t *testing.T) {
 
 	assert.NotNil(t, turn1, "thinking-only returns meta-only turn")
 	assert.Equal(t, "", turn1.Text)
+	assert.Equal(t, "analyzing...\n", turn1.Thinking)
 	assert.Equal(t, "req-1", turn1.RequestId)
 
 	assert.NotNil(t, turn2)
