@@ -31,6 +31,7 @@ func TestLoad(t *testing.T) {
 	t.Run("valid-file-roundtrip", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.json")
 		saved := &File{}
+		require.NoError(t, saved.Set(KeyBackLink, "http://127.0.0.1:6001/"))
 		require.NoError(t, saved.Set(KeyDepth, "50"))
 		require.NoError(t, saved.Set(KeyLogLevel, "debug"))
 		require.NoError(t, Save(path, saved))
@@ -51,6 +52,35 @@ func TestFile_Set(t *testing.T) {
 	}
 
 	tests := make([]*testCase, 0)
+
+	// back-link-valid
+	tests = append(tests, &testCase{
+		_id:         "back-link-valid",
+		_shouldPass: true,
+		key:         KeyBackLink,
+		value:       "http://127.0.0.1:6001/",
+	})
+
+	// back-link-not-a-url
+	tests = append(tests, &testCase{
+		_id:   "back-link-not-a-url",
+		key:   KeyBackLink,
+		value: "::bad",
+	})
+
+	// back-link-relative
+	tests = append(tests, &testCase{
+		_id:   "back-link-relative",
+		key:   KeyBackLink,
+		value: "/dashboard",
+	})
+
+	// back-link-bad-scheme
+	tests = append(tests, &testCase{
+		_id:   "back-link-bad-scheme",
+		key:   KeyBackLink,
+		value: "ftp://host/",
+	})
 
 	// depth-valid
 	tests = append(tests, &testCase{
@@ -157,6 +187,16 @@ func TestFile_Set(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFile_SetBackLinkEmptyClears(t *testing.T) {
+	file := &File{}
+	require.NoError(t, file.Set(KeyBackLink, "http://127.0.0.1:6001/"))
+	require.NotNil(t, file.BackLink)
+
+	require.NoError(t, file.Set(KeyBackLink, ""))
+	assert.Nil(t, file.BackLink)
+	assert.NotContains(t, file.FlagValues(), KeyBackLink)
 }
 
 func TestSave(t *testing.T) {

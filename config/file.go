@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +13,7 @@ import (
 )
 
 const (
+	KeyBackLink           = "back-link"
 	KeyDepth              = "depth"
 	KeyLogLevel           = "log-level"
 	KeyPollInterval       = "poll-interval"
@@ -28,11 +30,12 @@ const (
 	minPollWindow    = time.Minute
 )
 
-var EditableKeys = []string{KeyDepth, KeyPollInterval, KeyPollWindow, KeyStateRetentionDays, KeyLogLevel}
+var EditableKeys = []string{KeyBackLink, KeyDepth, KeyPollInterval, KeyPollWindow, KeyStateRetentionDays, KeyLogLevel}
 
 var logLevels = []string{"debug", "info", "warn", "error"}
 
 type File struct {
+	BackLink           *string `json:"back_link,omitempty"`
 	Depth              *int    `json:"depth,omitempty"`
 	LogLevel           *string `json:"log_level,omitempty"`
 	PollInterval       *string `json:"poll_interval,omitempty"`
@@ -42,6 +45,8 @@ type File struct {
 
 func (f *File) Set(key, value string) error {
 	switch key {
+	case KeyBackLink:
+		return f.setBackLink(value)
 	case KeyDepth:
 		return f.setDepth(value)
 	case KeyLogLevel:
@@ -54,6 +59,21 @@ func (f *File) Set(key, value string) error {
 		return f.setStateRetentionDays(value)
 	}
 	return errors.Errorf("File.Set: Unknown or non-editable key: %s", key)
+}
+
+func (f *File) setBackLink(value string) error {
+	if value == "" {
+		f.BackLink = nil
+		return nil
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return errors.Errorf("File.setBackLink: Invalid field back-link: %s (want an absolute http(s) URL, empty hides the link)", value)
+	}
+
+	f.BackLink = &value
+	return nil
 }
 
 func (f *File) setDepth(value string) error {
@@ -121,6 +141,9 @@ func (f *File) setStateRetentionDays(value string) error {
 
 func (f *File) FlagValues() map[string]string {
 	values := make(map[string]string)
+	if f.BackLink != nil {
+		values[KeyBackLink] = *f.BackLink
+	}
 	if f.Depth != nil {
 		values[KeyDepth] = strconv.Itoa(*f.Depth)
 	}
