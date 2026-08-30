@@ -63,6 +63,7 @@ var startCmd = &cobra.Command{
 		stateRetentionDays, _ := flags.GetInt("state-retention-days")
 		controlPort, _ := flags.GetInt("control-port")
 		controlToken, _ := flags.GetString("control-token")
+		backLink, _ := flags.GetString("back-link")
 
 		level := slog.LevelInfo
 		switch logLevel {
@@ -215,6 +216,7 @@ var startCmd = &cobra.Command{
 					ControlPort:        boundPort,
 					TokenSet:           controlToken != "",
 					LogLevel:           logLevel,
+					BackLink:           backLink,
 				},
 			}
 			if transport == "http" {
@@ -297,6 +299,7 @@ func init() {
 	flags.Int("state-retention-days", 90, "Days to keep per-session state before GC removes it (0 disables GC)")
 	flags.Int("control-port", controlPortBase, "Control server start port; walks up to +57 if taken (dashboard + JSON API + SSE); 0 disables")
 	flags.String("control-token", "", "Optional bearer token protecting the control server")
+	flags.String("back-link", "", "URL of an external dashboard the control server nav links back to (empty hides the link)")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	rootCmd.AddCommand(startCmd)
@@ -358,6 +361,7 @@ var envFallbacks = map[string]string{
 	"state-retention-days": "PEEK_STATE_RETENTION_DAYS",
 	"control-port":         "PEEK_CONTROL_PORT",
 	"control-token":        "PEEK_CONTROL_TOKEN",
+	"back-link":            "PEEK_BACK_LINK",
 	"log-level":            "PEEK_LOG_LEVEL",
 }
 
