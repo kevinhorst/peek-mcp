@@ -16,7 +16,7 @@ import (
 
 func claudeWatcher(dir string, store *session.Store) *Watcher {
 	newParser := func() Parser { return claude.NewParser() }
-	return New(session.AgentClaude, dir, newParser, store)
+	return New(session.AgentClaude, dir, 0, newParser, store)
 }
 
 func writeSubagentMeta(t *testing.T, projectDir, parentId, agentId, body string) string {
@@ -32,7 +32,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// spawned-event-on-parent
 	t.Run("spawned-event-on-parent", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -59,7 +59,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// duplicate-read-no-second-event
 	t.Run("duplicate-read-no-second-event", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -87,7 +87,7 @@ func TestReadSubagentMeta(t *testing.T) {
 
 func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
 	projectDir := t.TempDir()
-	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 	w := claudeWatcher(projectDir, store)
 
 	// On-disk layout as left behind by a finished session: the subagent dir
@@ -114,7 +114,7 @@ func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
 
 func TestWalkAndWatch_NewDirBackfill(t *testing.T) {
 	root := t.TempDir()
-	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 	w := claudeWatcher(root, store)
 
 	// A dir already populated with a transcript before we start watching it

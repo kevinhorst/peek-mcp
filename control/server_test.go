@@ -14,7 +14,7 @@ import (
 
 func newTestStore() (*session.Store, *events.Broker) {
 	broker := events.NewBroker()
-	store := session.NewStore(10, broker, session.AgentClaude, session.AgentCodex)
+	store := session.NewStore(10, 25, broker, session.AgentClaude, session.AgentCodex)
 	now := time.Now()
 
 	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{

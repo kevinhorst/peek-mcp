@@ -12,6 +12,7 @@ type sessionGetResult struct {
 	Events          any            `json:"events,omitempty"`
 	Memory          any            `json:"memory,omitempty"`
 	Plan            string         `json:"plan,omitempty"`
+	Subagents       []subagentRef  `json:"subagents,omitempty"`
 	TotalUsage      *session.Usage `json:"total_usage,omitempty"`
 	Turns           any            `json:"turns,omitempty"`
 	UncommittedDiff string         `json:"uncommitted_diff,omitempty"`
@@ -32,6 +33,21 @@ func newSessionGetResultPage(result *sessionGetResult) *sessionGetResultPage {
 func (p *sessionGetResultPage) WithRequestId(id string) {
 	p.HasMore = true
 	p.RequestId = id
+}
+
+type subagentRef struct {
+	AgentId     string `json:"agent_id"`
+	AgentType   string `json:"agent_type,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+func newSubagentRefs(sess *session.Session) []subagentRef {
+	refs := make([]subagentRef, 0, len(sess.Subagents))
+	for _, id := range sess.SubagentIds() {
+		stat := sess.Subagents[id]
+		refs = append(refs, subagentRef{AgentId: id, AgentType: stat.AgentType, Description: stat.Description})
+	}
+	return refs
 }
 
 type sessionListItem struct {

@@ -157,6 +157,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 	}
 
 	text := extractTextBlocks(message.Content)
+	thinking := extractThinkingBlocks(message.Content)
 	events := p.eventsFromAssistantContent(entry, &message)
 
 	model := message.Model
@@ -177,6 +178,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 		Events:     events,
 		Role:       session.RoleAssistant,
 		Text:       text,
+		Thinking:   thinking,
 		Timestamp:  entry.Timestamp,
 		RequestId:  entry.RequestId,
 		StopReason: message.StopReason,
@@ -245,11 +247,21 @@ func (p *Parser) handleSidechain(entry *Entry) *session.Turn {
 	var events []*session.Event
 	var touches []*session.FileTouch
 	var usage *session.Usage
+	var role session.Role
+	var text, thinking, model string
 	switch entry.Type {
 	case EntryTypeUser:
 		events, touches = p.eventsFromUserContent(entry, &message)
+		role = session.RoleUser
+		text = extractTextBlocks(message.Content)
 	case EntryTypeAssistant:
 		events = p.eventsFromAssistantContent(entry, &message)
+		role = session.RoleAssistant
+		text = extractTextBlocks(message.Content)
+		thinking = extractThinkingBlocks(message.Content)
+		if message.Model != syntheticModel {
+			model = message.Model
+		}
 		if message.Usage != nil {
 			usage = &session.Usage{
 				InputTokens:              message.Usage.InputTokens,
@@ -264,12 +276,16 @@ func (p *Parser) handleSidechain(entry *Entry) *session.Turn {
 		Events:      events,
 		FileTouches: touches,
 		RequestId:   entry.RequestId,
+		Role:        role,
+		Text:        text,
+		Thinking:    thinking,
 		SubagentId:  entry.AgentId,
 		Timestamp:   entry.Timestamp,
 		Usage:       usage,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
+			Model:     model,
 		},
 	}
 }
@@ -443,6 +459,23 @@ func extractTextBlocks(raw json.RawMessage) string {
 		return ""
 	}
 	return s
+}
+
+func extractThinkingBlocks(raw json.RawMessage) string {
+	var blocks []ContentBlock
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return ""
+	}
+
+	var builder strings.Builder
+	for _, block := range blocks {
+		if block.Type != "thinking" || block.Thinking == "" {
+			continue
+		}
+
+		builder.WriteString(block.Thinking + "\n")
+	}
+	return builder.String()
 }
 
 func isPlanAttachment(t string) bool {

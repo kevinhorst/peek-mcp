@@ -64,19 +64,22 @@ type healthzResponse struct {
 }
 
 type Config struct {
-	Transport          string `json:"transport"`
-	Port               int    `json:"port"`
-	Depth              int    `json:"depth"`
-	ClaudeHome         string `json:"claude_home,omitempty"`
-	CodexHome          string `json:"codex_home,omitempty"`
-	CoworkHome         string `json:"cowork_home,omitempty"`
-	PollInterval       string `json:"poll_interval"`
-	PollWindow         string `json:"poll_window"`
-	StateDir           string `json:"state_dir,omitempty"`
-	StateRetentionDays int    `json:"state_retention_days"`
-	ControlPort        int    `json:"control_port"`
-	TokenSet           bool   `json:"token_set"`
-	LogLevel           string `json:"log_level"`
+	Transport             string `json:"transport"`
+	Port                  int    `json:"port"`
+	Depth                 int    `json:"depth"`
+	ClaudeHome            string `json:"claude_home,omitempty"`
+	CodexHome             string `json:"codex_home,omitempty"`
+	CoworkHome            string `json:"cowork_home,omitempty"`
+	PollInterval          string `json:"poll_interval"`
+	PollWindow            string `json:"poll_window"`
+	StateDir              string `json:"state_dir,omitempty"`
+	StateRetentionDays    int    `json:"state_retention_days"`
+	SnapshotRetentionDays int    `json:"snapshot_retention_days"`
+	DiffCacheSessions     int    `json:"diff_cache_sessions"`
+	ControlPort           int    `json:"control_port"`
+	TokenSet              bool   `json:"token_set"`
+	LogLevel              string `json:"log_level"`
+	BackLink              string `json:"back_link,omitempty"`
 }
 
 type sessionCounts struct {
@@ -86,20 +89,30 @@ type sessionCounts struct {
 }
 
 type statsResponse struct {
-	PID              int                     `json:"pid"`
-	Version          string                  `json:"version"`
-	StartedAt        time.Time               `json:"started_at"`
-	Uptime           string                  `json:"uptime"`
-	HeapAllocBytes   int64                   `json:"heap_alloc_bytes"`
-	SysBytes         int64                   `json:"sys_bytes"`
-	Goroutines       int                     `json:"goroutines"`
-	StateDiskBytes   int64                   `json:"state_disk_bytes,omitempty"`
-	Sessions         sessionCounts           `json:"sessions"`
-	Invocations      map[string]int          `json:"invocations,omitempty"`
-	SSEClients       int64                   `json:"sse_clients"`
-	Config           Config                  `json:"config"`
-	TelemetryExport  *telemetry.ExportStatus `json:"telemetry_export,omitempty"`
-	RestartAvailable bool                    `json:"restart_available"`
+	PID              int                        `json:"pid"`
+	Version          string                     `json:"version"`
+	StartedAt        time.Time                  `json:"started_at"`
+	Uptime           string                     `json:"uptime"`
+	HeapAllocBytes   int64                      `json:"heap_alloc_bytes"`
+	SysBytes         int64                      `json:"sys_bytes"`
+	Goroutines       int                        `json:"goroutines"`
+	StateDiskBytes   int64                      `json:"state_disk_bytes,omitempty"`
+	Sessions         sessionCounts              `json:"sessions"`
+	Invocations      map[string]tools.ToolStats `json:"invocations,omitempty"`
+	Instances        []instanceView             `json:"instances,omitempty"`
+	SSEClients       int64                      `json:"sse_clients"`
+	Config           Config                     `json:"config"`
+	TelemetryExport  *telemetry.ExportStatus    `json:"telemetry_export,omitempty"`
+	RestartAvailable bool                       `json:"restart_available"`
+}
+
+type instanceView struct {
+	tools.InstanceRecord
+	Self       bool   `json:"self"`
+	Running    bool   `json:"running"`
+	RanFor     string `json:"ran_for"`
+	TotalCount int    `json:"total_count"`
+	TotalBytes int64  `json:"total_bytes"`
 }
 
 func newSessionSummary(sess *session.Session) sessionSummary {
@@ -112,7 +125,7 @@ func newSessionSummary(sess *session.Session) sessionSummary {
 		GitBranch:          sess.Meta.GitBranch,
 		Model:              sess.Meta.Model,
 		HasPlan:            sess.PlanContent != "" || sess.PlanFilePath != "",
-		HasDiff:            sess.DiffOutput != "",
+		HasDiff:            sess.DiffOutput != "" || sess.HasDiffSnapshot,
 		HasUncommittedDiff: sess.UncommittedDiff != "",
 	}
 }

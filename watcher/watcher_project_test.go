@@ -16,9 +16,9 @@ func TestReadNewLines_ProjectLabel(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "cowork.jsonl")
 
-	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 	newParser := func() Parser { return claude.NewParser() }
-	w := New(session.AgentClaude, dir, newParser, store)
+	w := New(session.AgentClaude, dir, 0, newParser, store)
 	w.Project = "cowork"
 
 	appendLine(t, file, `{"type":"user","promptId":"p1","sessionId":"sess-cowork","timestamp":"2026-08-30T10:00:00.000Z","isSidechain":false,"cwd":"/store/local_x/outputs","message":{"role":"user","content":"hi"}}`)
@@ -38,9 +38,9 @@ func TestReadNewLines_LegacyProjectFromCwd(t *testing.T) {
 	fileLegacy := filepath.Join(dir, "legacy.jsonl")
 	fileRepo := filepath.Join(dir, "repo.jsonl")
 
-	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 	newParser := func() Parser { return claude.NewParser() }
-	w := New(session.AgentClaude, dir, newParser, store)
+	w := New(session.AgentClaude, dir, 0, newParser, store)
 
 	appendLine(t, fileLegacy, `{"type":"user","promptId":"p1","sessionId":"sess-legacy","timestamp":"2026-08-30T10:00:00.000Z","isSidechain":false,"cwd":"/Users/tester/Claude_Unassigned","message":{"role":"user","content":"hi"}}`)
 	require.NoError(t, w.readNewLines(fileLegacy))

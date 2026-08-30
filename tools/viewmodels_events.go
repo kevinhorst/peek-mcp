@@ -49,6 +49,7 @@ type sessionEventsResult struct {
 	PlanRevisions *planRevisionsView  `json:"plan_revisions,omitempty"`
 	Revisions     any                 `json:"revisions,omitempty"`
 	Skills        []*skillStatView    `json:"skills,omitempty"`
+	SubagentIds   []string            `json:"subagent_ids,omitempty"`
 	Subagents     []*subagentStatView `json:"subagents,omitempty"`
 	Time          *sessionTimeView    `json:"time,omitempty"`
 	TouchedFiles  []*touchedFileView  `json:"touched_files,omitempty"`
@@ -185,6 +186,7 @@ type subagentStatView struct {
 	AgentId     string         `json:"agent_id"`
 	AgentType   string         `json:"agent_type,omitempty"`
 	Description string         `json:"description,omitempty"`
+	Model       string         `json:"model,omitempty"`
 	StartedAt   time.Time      `json:"started_at"`
 	LastActive  time.Time      `json:"last_active"`
 	Seconds     int            `json:"seconds"`
@@ -203,6 +205,7 @@ func newSubagentStatViews(currentSession *session.Session) []*subagentStatView {
 			AgentId:     agentId,
 			AgentType:   stat.AgentType,
 			Description: stat.Description,
+			Model:       stat.Model,
 			StartedAt:   stat.FirstActive,
 			LastActive:  stat.LastActive,
 			Seconds:     int(stat.LastActive.Sub(stat.FirstActive).Seconds()),

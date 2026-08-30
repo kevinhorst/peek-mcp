@@ -52,7 +52,7 @@ func TestParseLine_SkillEvents(t *testing.T) {
 	line = []byte(`{"type":"assistant","sessionId":"s","agentId":"sub-ag","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Skill","input":{"skill":"jq"}}]}}`)
 	turn = p.ParseLine(line)
 	require.NotNil(t, turn)
-	require.True(t, turn.IsEventSignal())
+	assert.Equal(t, session.RoleAssistant, turn.Role)
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, "sub-ag", turn.Events[0].Actor)
 }

@@ -1,15 +1,22 @@
 package control
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/tools"
 )
 
-const pageStats = "stats"
+const (
+	pageStats         = "stats"
+	maxInstancesShown = 100
+)
 
 func (s *Server) stats() statsResponse {
 	var mem runtime.MemStats
@@ -39,6 +46,13 @@ func (s *Server) stats() statsResponse {
 	}
 	if s.stateDir != nil {
 		resp.StateDiskBytes = s.stateDir.Size()
+		for _, content := range s.stateDir.ReadInstances(maxInstancesShown) {
+			var record tools.InstanceRecord
+			if err := json.Unmarshal([]byte(content), &record); err != nil {
+				continue
+			}
+			resp.Instances = append(resp.Instances, newInstanceView(record, resp.PID))
+		}
 	}
 	if s.invocations != nil {
 		resp.Invocations = s.invocations.Snapshot()
@@ -50,12 +64,36 @@ func (s *Server) stats() statsResponse {
 	return resp
 }
 
+func newInstanceView(record tools.InstanceRecord, selfPID int) instanceView {
+	view := instanceView{InstanceRecord: record}
+	view.Self = record.PID == selfPID
+	view.Running = processAlive(record.PID)
+	end := record.UpdatedAt
+	if view.Running {
+		end = time.Now()
+	}
+	view.RanFor = end.Sub(record.StartedAt).Truncate(time.Second).String()
+	for _, stats := range record.Tools {
+		view.TotalCount += stats.Count
+		view.TotalBytes += stats.Bytes
+	}
+	return view
+}
+
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.stats())
 }
 
 func (s *Server) handleStatsPage(w http.ResponseWriter, r *http.Request) {
-	s.renderFragment(w, tmplStats, indexPage{Page: pageStats, Title: "Peek stats"})
+	s.renderFragment(w, tmplStats, indexPage{Page: pageStats, Title: "Peek stats", BackLink: s.config.BackLink})
 }
 
 func (s *Server) handleStatsFragment(w http.ResponseWriter, r *http.Request) {

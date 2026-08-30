@@ -210,6 +210,7 @@ func newSkillsData(id session.Id, sess *session.Session) *skillsData {
 type subagentRow struct {
 	Agent       string
 	Description string
+	Model       string
 	StartedAt   time.Time
 	Duration    string
 	Tokens      int
@@ -221,13 +222,22 @@ type subagentsData struct {
 	Subagents []subagentRow
 }
 
+func subagentModel(stat *session.SubagentStat, sess *session.Session) string {
+	if stat.Model != "" {
+		return stat.Model
+	}
+	return sess.Meta.Model
+}
+
 func newSubagentsData(id session.Id, sess *session.Session) *subagentsData {
 	data := &subagentsData{Id: id}
 	for _, stat := range sess.Subagents {
-		cost := newCostData(id, sess.Agent, sess.Meta.Model, &stat.Usage)
+		model := subagentModel(stat, sess)
+		cost := newCostData(id, sess.Agent, model, &stat.Usage)
 		data.Subagents = append(data.Subagents, subagentRow{
 			Agent:       stat.AgentType,
 			Description: stat.Description,
+			Model:       model,
 			StartedAt:   stat.FirstActive,
 			Duration:    stat.LastActive.Sub(stat.FirstActive).Round(time.Second).String(),
 			Tokens:      displayTotalTokens(&stat.Usage),

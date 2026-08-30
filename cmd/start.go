@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
 	"github.com/kevinhorst/peek-mcp/watcher"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 )
@@ -62,8 +64,12 @@ var startCmd = &cobra.Command{
 		pollWindow, _ := flags.GetDuration("poll-window")
 		stateDirPath, _ := flags.GetString("state-dir")
 		stateRetentionDays, _ := flags.GetInt("state-retention-days")
+		snapshotRetentionDays, _ := flags.GetInt("snapshot-retention-days")
+		diffCacheSessions, _ := flags.GetInt("diff-cache-sessions")
 		controlPort, _ := flags.GetInt("control-port")
 		controlToken, _ := flags.GetString("control-token")
+		backLink, _ := flags.GetString("back-link")
+		ingestHorizon := time.Duration(stateRetentionDays) * 24 * time.Hour
 
 		level := slog.LevelInfo
 		switch logLevel {
@@ -88,7 +94,7 @@ var startCmd = &cobra.Command{
 		}
 
 		broker := events.NewBroker()
-		store := session.NewStore(depth, broker, agents...)
+		store := session.NewStore(depth, diffCacheSessions, broker, agents...)
 
 		var telemetryStore *telemetry.Store
 		if controlPort > 0 {
@@ -99,7 +105,7 @@ var startCmd = &cobra.Command{
 		if stateDirPath != "" {
 			stateDir = state.NewDir(stateDirPath)
 			store.StateDir = stateDir
-			go runStateGc(ctx, stateDir, stateRetentionDays)
+			go runStateGc(ctx, stateDir, stateRetentionDays, snapshotRetentionDays)
 		}
 		if telemetryStore != nil {
 			telemetryStore.StateDir = stateDir
@@ -109,7 +115,7 @@ var startCmd = &cobra.Command{
 			go func() {
 				watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
 				newParser := func() watcher.Parser { return claude.NewParser() }
-				err := watcher.New(session.AgentClaude, watchedDir, newParser, store).Run(ctx)
+				err := watcher.New(session.AgentClaude, watchedDir, ingestHorizon, newParser, store).Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("claude watcher error", "err", err)
 					os.Exit(1)
@@ -134,7 +140,7 @@ var startCmd = &cobra.Command{
 				}
 				go func() {
 					newParser := func() watcher.Parser { return claude.NewParser() }
-					w := watcher.New(session.AgentClaude, storeDir, newParser, store)
+					w := watcher.New(session.AgentClaude, storeDir, ingestHorizon, newParser, store)
 					w.TranscriptPathOk = isCoworkTranscriptPath
 					w.Project = "cowork"
 					if err := w.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -149,7 +155,7 @@ var startCmd = &cobra.Command{
 			go func() {
 				watchedDir := filepath.Join(codexHome, codex.SessionDir)
 				newParser := func() watcher.Parser { return codex.NewParser() }
-				err := watcher.New(session.AgentCodex, watchedDir, newParser, store).Run(ctx)
+				err := watcher.New(session.AgentCodex, watchedDir, ingestHorizon, newParser, store).Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("codex watcher error", "err", err)
 					os.Exit(1)
@@ -173,21 +179,38 @@ var startCmd = &cobra.Command{
 			}
 		}()
 
+		info := tools.InstanceInfo{
+			PID:       os.Getpid(),
+			PPID:      os.Getppid(),
+			Transport: transport,
+			Version:   Version(),
+			StartedAt: startedAt,
+		}
+		invocations := tools.NewInvocationCounter(info, stateDir)
+		invocations.Persist()
+		defer invocations.Persist()
+
+		hooks := &server.Hooks{}
+		hooks.AddAfterInitialize(func(ctx context.Context, id any, message *mcp.InitializeRequest, result *mcp.InitializeResult) {
+			invocations.AddClient(strings.TrimSpace(message.Params.ClientInfo.Name + " " + message.Params.ClientInfo.Version))
+		})
 		srv := server.NewMCPServer("peek-mcp", Version(),
 			server.WithToolCapabilities(true),
 			server.WithResourceCapabilities(false, true),
+			server.WithHooks(hooks),
 		)
-		invocations := tools.NewInvocationCounter()
 
 		var detector *telemetry.Detector
+		boundControlPort := 0
 		if controlPort > 0 {
-			controlLn, err := listenLoopback(controlPort, controlPort+controlPortSpan-1)
+			controlLn, err := listenLoopback(controlPort, controlPortWalkEnd(controlPort, flags.Changed("control-port")))
 			if err != nil {
 				slog.Error("control server error", "err", err)
 				os.Exit(1)
 			}
 
 			boundPort := controlLn.Addr().(*net.TCPAddr).Port
+			boundControlPort = boundPort
 			if claudeHome != "" {
 				detector = telemetry.NewDetector(boundPort, filepath.Join(claudeHome, "settings.json"))
 				exportStatus := detector.Status()
@@ -208,19 +231,22 @@ var startCmd = &cobra.Command{
 				ConfigPath:     configPath,
 				OverriddenKeys: overriddenKeys,
 				Config: control.Config{
-					Transport:          transport,
-					Port:               port,
-					Depth:              depth,
-					ClaudeHome:         claudeHome,
-					CodexHome:          codexHome,
-					CoworkHome:         coworkHome,
-					PollInterval:       pollInterval.String(),
-					PollWindow:         pollWindow.String(),
-					StateDir:           stateDirPath,
-					StateRetentionDays: stateRetentionDays,
-					ControlPort:        boundPort,
-					TokenSet:           controlToken != "",
-					LogLevel:           logLevel,
+					Transport:             transport,
+					Port:                  port,
+					Depth:                 depth,
+					ClaudeHome:            claudeHome,
+					CodexHome:             codexHome,
+					CoworkHome:            coworkHome,
+					PollInterval:          pollInterval.String(),
+					PollWindow:            pollWindow.String(),
+					StateDir:              stateDirPath,
+					StateRetentionDays:    stateRetentionDays,
+					SnapshotRetentionDays: snapshotRetentionDays,
+					DiffCacheSessions:     diffCacheSessions,
+					ControlPort:           boundPort,
+					TokenSet:              controlToken != "",
+					LogLevel:              logLevel,
+					BackLink:              backLink,
 				},
 			}
 			if transport == "http" {
@@ -266,12 +292,16 @@ var startCmd = &cobra.Command{
 		case "http":
 			httpSrv := server.NewStreamableHTTPServer(srv)
 
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /healthz", healthzHandler(claudeHome, codexHome, boundControlPort))
+			mux.Handle("/", requestLogger(httpSrv))
+
 			addr := fmt.Sprintf("127.0.0.1:%d", port)
 			slog.Info("peek-mcp listening", "addr", fmt.Sprintf("http://%s/mcp", addr))
 
 			httpServer := &http.Server{
 				Addr:    addr,
-				Handler: requestLogger(httpSrv),
+				Handler: mux,
 			}
 
 			go func() {
@@ -301,21 +331,25 @@ func init() {
 	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("state-dir", filepath.Join(defaultHome(".peek"), "state"), "State directory for diff pins/snapshots and plan revisions (empty disables persistence)")
-	flags.Int("state-retention-days", 90, "Days to keep per-session state before GC removes it (0 disables GC)")
+	flags.Int("state-retention-days", 90, "Days to keep per-session state before GC removes it, and how far back startup ingests transcripts (0 disables both)")
+	flags.Int("snapshot-retention-days", 14, "Days to keep diff snapshots before GC removes them; session dirs and plans follow state-retention-days (0 disables)")
+	flags.Int("diff-cache-sessions", 25, "How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching)")
 	flags.Int("control-port", controlPortBase, "Control server start port; walks up to +57 if taken (dashboard + JSON API + SSE); 0 disables")
 	flags.String("control-token", "", "Optional bearer token protecting the control server")
+	flags.String("back-link", "", "URL of an external dashboard the control server nav links back to (empty hides the link)")
 	flags.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	rootCmd.AddCommand(startCmd)
 }
 
-func runStateGc(ctx context.Context, stateDir *state.Dir, retentionDays int) {
-	if retentionDays <= 0 {
+func runStateGc(ctx context.Context, stateDir *state.Dir, retentionDays, snapshotRetentionDays int) {
+	if retentionDays <= 0 && snapshotRetentionDays <= 0 {
 		return
 	}
 
 	retention := time.Duration(retentionDays) * 24 * time.Hour
-	stateDir.Gc(retention)
+	snapshotRetention := time.Duration(snapshotRetentionDays) * 24 * time.Hour
+	stateDir.Gc(retention, snapshotRetention)
 
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
@@ -325,7 +359,7 @@ func runStateGc(ctx context.Context, stateDir *state.Dir, retentionDays int) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			stateDir.Gc(retention)
+			stateDir.Gc(retention, snapshotRetention)
 		}
 	}
 }
@@ -354,19 +388,22 @@ func (sw *statusWriter) WriteHeader(code int) {
 }
 
 var envFallbacks = map[string]string{
-	"transport":            "PEEK_TRANSPORT",
-	"port":                 "PEEK_PORT",
-	"depth":                "PEEK_DEPTH",
-	"claude-home":          "PEEK_CLAUDE_HOME",
-	"codex-home":           "PEEK_CODEX_HOME",
-	"cowork-home":          "PEEK_COWORK_HOME",
-	"poll-interval":        "PEEK_POLL_INTERVAL",
-	"poll-window":          "PEEK_POLL_WINDOW",
-	"state-dir":            "PEEK_STATE_DIR",
-	"state-retention-days": "PEEK_STATE_RETENTION_DAYS",
-	"control-port":         "PEEK_CONTROL_PORT",
-	"control-token":        "PEEK_CONTROL_TOKEN",
-	"log-level":            "PEEK_LOG_LEVEL",
+	"transport":               "PEEK_TRANSPORT",
+	"port":                    "PEEK_PORT",
+	"depth":                   "PEEK_DEPTH",
+	"claude-home":             "PEEK_CLAUDE_HOME",
+	"codex-home":              "PEEK_CODEX_HOME",
+	"cowork-home":             "PEEK_COWORK_HOME",
+	"poll-interval":           "PEEK_POLL_INTERVAL",
+	"poll-window":             "PEEK_POLL_WINDOW",
+	"state-dir":               "PEEK_STATE_DIR",
+	"state-retention-days":    "PEEK_STATE_RETENTION_DAYS",
+	"snapshot-retention-days": "PEEK_SNAPSHOT_RETENTION_DAYS",
+	"diff-cache-sessions":     "PEEK_DIFF_CACHE_SESSIONS",
+	"control-port":            "PEEK_CONTROL_PORT",
+	"control-token":           "PEEK_CONTROL_TOKEN",
+	"back-link":               "PEEK_BACK_LINK",
+	"log-level":               "PEEK_LOG_LEVEL",
 }
 
 var pathFlags = map[string]bool{
@@ -438,6 +475,18 @@ func changedConfigKeys(cmd *cobra.Command) map[string]bool {
 		changed[key] = cmd.Flags().Changed(key)
 	}
 	return changed
+}
+
+func healthzHandler(claudeHome, codexHome string, controlPort int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"version":     Version(),
+			"claudeHome":  claudeHome,
+			"codexHome":   codexHome,
+			"controlPort": controlPort,
+		})
+	}
 }
 
 func defaultHome(name string) string {

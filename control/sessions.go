@@ -2,6 +2,7 @@ package control
 
 import (
 	"net/http"
+	"net/url"
 	"slices"
 	"time"
 
@@ -28,14 +29,16 @@ const (
 const maxEventsFragment = 100
 
 type indexPage struct {
-	Page  string
-	Title string
+	Page     string
+	Title    string
+	BackLink string
 }
 
 type detailPage struct {
-	Page    string
-	Title   string
-	Summary sessionSummary
+	Page     string
+	Title    string
+	Summary  sessionSummary
+	BackLink string
 }
 
 type sessionListData struct {
@@ -52,8 +55,32 @@ type sessionListData struct {
 }
 
 type turnsData struct {
-	Id    session.Id
-	Turns []*session.Turn
+	Id           session.Id
+	Turns        []*session.Turn
+	Subagent     string
+	Tabs         []subagentTab
+	Info         *subagentInfo
+	ShowThinking bool
+	HasThinking  bool
+	Query        string
+	MainQuery    string
+	ToggleQuery  string
+}
+
+type subagentTab struct {
+	Id          string
+	Label       string
+	Description string
+	Query       string
+}
+
+type subagentInfo struct {
+	Id          string
+	Description string
+	Model       string
+	Duration    string
+	Tokens      int
+	Cost        string
 }
 
 type planData struct {
@@ -72,7 +99,7 @@ type diffData struct {
 }
 
 func (s *Server) handleSessionsPage(w http.ResponseWriter, r *http.Request) {
-	s.renderFragment(w, tmplSessionsIndex, indexPage{Page: pageSessions, Title: "Peek"})
+	s.renderFragment(w, tmplSessionsIndex, indexPage{Page: pageSessions, Title: "Peek", BackLink: s.config.BackLink})
 }
 
 func (s *Server) handleSessionDetailPage(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +115,7 @@ func (s *Server) handleSessionDetailPage(w http.ResponseWriter, r *http.Request)
 	if title == "" {
 		title = string(summary.Id)
 	}
-	s.renderFragment(w, tmplSessionDetail, detailPage{Page: pageSessions, Title: title, Summary: summary})
+	s.renderFragment(w, tmplSessionDetail, detailPage{Page: pageSessions, Title: title, Summary: summary, BackLink: s.config.BackLink})
 }
 
 func (s *Server) handleSessionsFragment(w http.ResponseWriter, r *http.Request) {
@@ -205,12 +232,91 @@ func (s *Server) handleEventsFragment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 	id := session.Id(r.PathValue("id"))
-	data := turnsData{Id: id}
-	if !s.store.WithSession(id, func(sess *session.Session) { data.Turns = sess.Turns(tools.DefaultReturnedTurns) }) {
+	data := turnsData{
+		Id:           id,
+		Subagent:     r.URL.Query().Get("subagent"),
+		ShowThinking: r.URL.Query().Get("thinking") != "off",
+	}
+	if !s.store.WithSession(id, func(sess *session.Session) {
+		for _, agentId := range sess.SubagentIds() {
+			stat := sess.Subagents[agentId]
+			data.Tabs = append(data.Tabs, subagentTab{
+				Id:          agentId,
+				Label:       subagentTabLabel(agentId, stat),
+				Description: stat.Description,
+				Query:       turnsQuery(agentId, data.ShowThinking),
+			})
+		}
+		if data.Subagent != "" {
+			if turns, ok := sess.SubagentTurns(data.Subagent, tools.DefaultReturnedTurns); ok {
+				data.Turns = turns
+				data.Info = newSubagentInfo(id, data.Subagent, sess)
+			}
+			return
+		}
+		data.Turns = sess.Turns(tools.DefaultReturnedTurns)
+	}) {
 		respondNotFound("unknown session", w)
 		return
 	}
+	for _, turn := range data.Turns {
+		if turn.Thinking != "" {
+			data.HasThinking = true
+			break
+		}
+	}
+	data.Query = turnsQuery(data.Subagent, data.ShowThinking)
+	data.MainQuery = turnsQuery("", data.ShowThinking)
+	data.ToggleQuery = turnsQuery(data.Subagent, !data.ShowThinking)
 	s.renderFragment(w, tmplTurns, data)
+}
+
+func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *subagentInfo {
+	stat, ok := sess.Subagents[agentId]
+	if !ok {
+		return nil
+	}
+
+	model := subagentModel(stat, sess)
+	cost := newCostData(id, sess.Agent, model, &stat.Usage)
+	return &subagentInfo{
+		Id:          agentId,
+		Description: stat.Description,
+		Model:       model,
+		Duration:    stat.LastActive.Sub(stat.FirstActive).Round(time.Second).String(),
+		Tokens:      displayTotalTokens(&stat.Usage),
+		Cost:        cost.Total,
+	}
+}
+
+func turnsQuery(subagent string, showThinking bool) string {
+	values := url.Values{}
+	if subagent != "" {
+		values.Set("subagent", subagent)
+	}
+	if !showThinking {
+		values.Set("thinking", "off")
+	}
+	if len(values) == 0 {
+		return ""
+	}
+	return "?" + values.Encode()
+}
+
+func subagentTabLabel(agentId string, stat *session.SubagentStat) string {
+	runes := []rune(agentId)
+	if stat.AgentType != "" {
+		suffix := agentId
+		if len(runes) > 4 {
+			suffix = string(runes[len(runes)-4:])
+		}
+		return stat.AgentType + " " + suffix
+	}
+
+	if len(runes) > 8 {
+		return string(runes[:8])
+	}
+	return agentId
 }
 
 func (s *Server) handlePlanFragment(w http.ResponseWriter, r *http.Request) {
@@ -287,21 +393,35 @@ func (s *Server) handleMemoryFragment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDiffFragment(w http.ResponseWriter, r *http.Request) {
-	s.serveDiffFragment(w, r, "diff", func(sess *session.Session) (string, string) {
-		return sess.DiffOutput, sess.DiffTarget
+	s.serveDiffFragment(w, r, "diff", func(id session.Id) (string, string, bool) {
+		var target string
+		found := s.store.WithSession(id, func(sess *session.Session) {
+			target = sess.DiffTarget
+		})
+		if !found {
+			return "", "", false
+		}
+
+		content, loadedTarget, ok := s.store.LoadDiff(id)
+		if ok {
+			target = loadedTarget
+		}
+		return content, target, true
 	})
 }
 
 func (s *Server) handleUncommittedDiffFragment(w http.ResponseWriter, r *http.Request) {
-	s.serveDiffFragment(w, r, "uncommitted-diff", func(sess *session.Session) (string, string) {
-		return sess.UncommittedDiff, ""
+	s.serveDiffFragment(w, r, "uncommitted-diff", func(id session.Id) (string, string, bool) {
+		var diff string
+		found := s.store.WithSession(id, func(sess *session.Session) { diff = sess.UncommittedDiff })
+		return diff, "", found
 	})
 }
 
-func (s *Server) serveDiffFragment(w http.ResponseWriter, r *http.Request, kind string, extract func(*session.Session) (string, string)) {
+func (s *Server) serveDiffFragment(w http.ResponseWriter, r *http.Request, kind string, load func(session.Id) (string, string, bool)) {
 	id := session.Id(r.PathValue("id"))
-	var diff, target string
-	if !s.store.WithSession(id, func(sess *session.Session) { diff, target = extract(sess) }) {
+	diff, target, found := load(id)
+	if !found {
 		respondNotFound("unknown session", w)
 		return
 	}

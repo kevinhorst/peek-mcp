@@ -163,28 +163,40 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
-	s.serveDiff(w, r, func(sess *session.Session) diffResponse {
-		return diffResponse{Target: sess.DiffTarget, Diff: sess.DiffOutput}
+	s.serveDiff(w, r, func(id session.Id) (diffResponse, bool) {
+		var resp diffResponse
+		found := s.store.WithSession(id, func(sess *session.Session) {
+			resp = diffResponse{Target: sess.DiffTarget}
+		})
+		if !found {
+			return resp, false
+		}
+
+		if content, target, ok := s.store.LoadDiff(id); ok {
+			resp = diffResponse{Diff: content, Target: target}
+		}
+		return resp, true
 	})
 }
 
 func (s *Server) handleUncommittedDiff(w http.ResponseWriter, r *http.Request) {
-	s.serveDiff(w, r, func(sess *session.Session) diffResponse {
-		return diffResponse{Diff: sess.UncommittedDiff}
+	s.serveDiff(w, r, func(id session.Id) (diffResponse, bool) {
+		var resp diffResponse
+		found := s.store.WithSession(id, func(sess *session.Session) {
+			resp = diffResponse{Diff: sess.UncommittedDiff}
+		})
+		return resp, found
 	})
 }
 
-func (s *Server) serveDiff(w http.ResponseWriter, r *http.Request, extract func(*session.Session) diffResponse) {
+func (s *Server) serveDiff(w http.ResponseWriter, r *http.Request, load func(session.Id) (diffResponse, bool)) {
 	size, ok := intParam(r, "size", defaultDiffSize)
 	if !ok {
 		respondBadRequest("size must be a non-negative integer", w)
 		return
 	}
 
-	var resp diffResponse
-	found := s.store.WithSession(session.Id(r.PathValue("id")), func(sess *session.Session) {
-		resp = extract(sess)
-	})
+	resp, found := load(session.Id(r.PathValue("id")))
 	if !found {
 		respondNotFound("unknown session", w)
 		return

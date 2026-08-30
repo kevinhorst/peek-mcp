@@ -12,7 +12,7 @@ Full parameter reference for every tool peek-mcp exposes. For task-oriented walk
 
 ## `session_get`
 
-Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memory) for a session in one call. Sections are selected with flat boolean flags. Turns are returned as the last N human/assistant turn pairs; tool calls and tool results are filtered out.
+Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memory) for a session in one call. Sections are selected with flat boolean flags. Turns are returned as the last N human/assistant turn pairs; tool calls and tool results are filtered out. Assistant thinking is captured but omitted unless `thinking` is set; `subagent` scopes the whole response to one subagent's transcript.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -26,10 +26,12 @@ Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memo
 | `diff` | boolean | no | Return the pre-computed merge-base diff against the inferred base branch, reported as `diff_target` (default `true`) |
 | `uncommitted_diff` | boolean | no | Return the live `git diff HEAD` in the session's own working tree, refreshed as files are saved (default `false`) |
 | `remember` | boolean | no | Include the project's auto-memory (`MEMORY.md` + fact files). Claude sessions only (default `false`) |
+| `subagent` | string | no | Subagent id: scope the response to that agent's transcript and actor-tagged events (plan/diff/memory sections are omitted). Valid ids are listed in every response's `subagents` field |
+| `thinking` | boolean | no | Include assistant thinking text on turns (default `false`) |
 | `request_id` | string | no | Pagination request ID from a previous response |
 | `json` | boolean | no | Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default `false`: paginated JSON text block) |
 
-The first page also carries `total_usage`, the running token total (including the in-flight turn).
+The first page also carries `total_usage`, the running token total (including the in-flight turn), and `subagents` — every spawned subagent's `agent_id`, `agent_type`, and `description`, always present so a follow-up call can scope to one of them.
 
 ## `session_events`
 
@@ -42,6 +44,7 @@ Returns the typed event stream of a session (plan lifecycle, permission denials/
 | `agent` | string | no | Agent: `claude` or `codex`. Required when `id` and `title` are omitted |
 | `revisions` | boolean | no | Include plan revision diffs (default `false`; they dominate response size) |
 | `breakdown` | boolean | no | Include per-skill and per-subagent time and token usage (default `false`; Claude sessions only). A skill window spans from its invocation to the next user prompt or next skill; skill usage counts main-loop tokens only — subagent tokens are listed per subagent and never enter the session's `usage` totals |
+| `subagent` | string | no | Subagent id: scope events (by actor) and the `breakdown` stats to that agent. Valid ids are listed in every response's `subagent_ids` field |
 | `request_id` | string | no | Pagination request ID from a previous response |
 | `json` | boolean | no | Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default `false`: paginated JSON text block) |
 
@@ -73,7 +76,8 @@ On Windows the session roots resolve to `%USERPROFILE%\.claude` and `%USERPROFIL
 | Model | per assistant message | per turn context |
 | Token usage | summed per message | cumulative snapshots, kept-last; accurate totals (incl. in-flight turn) |
 | Tool calls | filtered out | filtered out |
-| Sub-agent sessions | hidden (sidechains) | hidden (sub-agent rollouts) |
+| Thinking | captured, returned via `thinking` | not available |
+| Sub-agent sessions | folded into the parent; per-agent transcript via `subagent` | folded into the parent; per-agent transcript via `subagent` |
 | Session time | wall/idle/active from transcript timestamps | wall/idle/active from transcript timestamps |
 | Touched files | per-path read/write counts from file-tool results | not available |
 | Skill/subagent usage | per-skill and per-subagent time + tokens via `breakdown` | not available |

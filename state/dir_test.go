@@ -146,7 +146,7 @@ func TestGc(t *testing.T) {
 		sessionPath := filepath.Join(root, "claude", "old")
 		require.NoError(t, os.Chtimes(filepath.Join(sessionPath, diffSnapshotFile), old, old))
 
-		dir.Gc(24 * time.Hour)
+		dir.Gc(24*time.Hour, 0)
 		_, err := os.Stat(sessionPath)
 		assert.True(t, os.IsNotExist(err))
 	})
@@ -157,7 +157,7 @@ func TestGc(t *testing.T) {
 		dir := NewDir(root)
 		require.NoError(t, dir.WriteDiffSnapshot("claude", "content", "fresh"))
 
-		dir.Gc(24 * time.Hour)
+		dir.Gc(24*time.Hour, 0)
 		_, err := os.Stat(filepath.Join(root, "claude", "fresh"))
 		assert.NoError(t, err)
 	})
@@ -171,8 +171,97 @@ func TestGc(t *testing.T) {
 		old := time.Now().Add(-1000 * time.Hour)
 		require.NoError(t, os.Chtimes(filepath.Join(root, "claude", "s1", diffSnapshotFile), old, old))
 
-		dir.Gc(0)
+		dir.Gc(0, 0)
 		_, err := os.Stat(filepath.Join(root, "claude", "s1"))
 		assert.NoError(t, err)
+	})
+
+	// old-snapshot-pruned-dir-kept
+	t.Run("old-snapshot-pruned-dir-kept", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "content", "s1"))
+		require.NoError(t, dir.WritePlanLatest("claude", "# plan", "s1"))
+
+		old := time.Now().Add(-48 * time.Hour)
+		snapshotPath := filepath.Join(root, "claude", "s1", diffSnapshotFile)
+		require.NoError(t, os.Chtimes(snapshotPath, old, old))
+
+		dir.Gc(0, 24*time.Hour)
+		assert.NoFileExists(t, snapshotPath)
+		assert.FileExists(t, filepath.Join(root, "claude", "s1", planDir, planLatestFile))
+	})
+
+	// fresh-snapshot-kept
+	t.Run("fresh-snapshot-kept", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "content", "s1"))
+
+		dir.Gc(0, 24*time.Hour)
+		assert.FileExists(t, filepath.Join(root, "claude", "s1", diffSnapshotFile))
+	})
+
+	// zero-snapshot-retention-noop
+	t.Run("zero-snapshot-retention-noop", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "content", "s1"))
+
+		old := time.Now().Add(-1000 * time.Hour)
+		snapshotPath := filepath.Join(root, "claude", "s1", diffSnapshotFile)
+		require.NoError(t, os.Chtimes(snapshotPath, old, old))
+		now := time.Now()
+		require.NoError(t, os.Chtimes(filepath.Join(root, "claude", "s1"), now, now))
+
+		dir.Gc(0, 0)
+		assert.FileExists(t, snapshotPath)
+	})
+}
+
+func TestStatDiffSnapshot(t *testing.T) {
+	dir := NewDir(t.TempDir())
+	_, ok := dir.StatDiffSnapshot("claude", "s1")
+	assert.False(t, ok)
+
+	require.NoError(t, dir.WriteDiffSnapshot("claude", "content", "s1"))
+	capturedAt, ok := dir.StatDiffSnapshot("claude", "s1")
+	assert.True(t, ok)
+	assert.False(t, capturedAt.IsZero())
+}
+
+func TestInstances(t *testing.T) {
+	// newest-first-with-limit
+	t.Run("newest-first-with-limit", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstance("100-1", `{"pid":1}`))
+		require.NoError(t, dir.WriteInstance("200-2", `{"pid":2}`))
+
+		old := time.Now().Add(-time.Hour)
+		require.NoError(t, os.Chtimes(filepath.Join(root, "instances", "100-1.json"), old, old))
+
+		assert.Equal(t, []string{`{"pid":2}`, `{"pid":1}`}, dir.ReadInstances(10))
+		assert.Equal(t, []string{`{"pid":2}`}, dir.ReadInstances(1))
+	})
+
+	// missing-dir-nil
+	t.Run("missing-dir-nil", func(t *testing.T) {
+		dir := NewDir(t.TempDir())
+		assert.Nil(t, dir.ReadInstances(10))
+	})
+
+	// old-instance-pruned-by-gc
+	t.Run("old-instance-pruned-by-gc", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstance("100-1", `{"pid":1}`))
+		require.NoError(t, dir.WriteInstance("200-2", `{"pid":2}`))
+
+		old := time.Now().Add(-48 * time.Hour)
+		require.NoError(t, os.Chtimes(filepath.Join(root, "instances", "100-1.json"), old, old))
+
+		dir.Gc(24*time.Hour, 0)
+		assert.Equal(t, []string{`{"pid":2}`}, dir.ReadInstances(10))
 	})
 }
