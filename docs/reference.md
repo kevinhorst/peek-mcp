@@ -13,7 +13,7 @@ peek-mcp start --port 4242 --depth 20
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--transport` | `http` | Transport: `http` or `stdio` |
-| `--port` | `4242` | HTTP port (http transport only) |
+| `--port` | `4242` | HTTP port (http transport only); also serves `GET /healthz` — a JSON identity probe (`version`, `claudeHome`, `codexHome`, `controlPort`) for supervisors that need to tell instances apart |
 | `--depth` | `20` | Ring buffer depth per session (max turns kept) |
 | `--claude-home` | `~/.claude` | Override Claude Code session root |
 | `--codex-home` | `~/.codex` | Override Codex session root |
@@ -24,8 +24,9 @@ peek-mcp start --port 4242 --depth 20
 | `--state-retention-days` | `90` | Days to keep per-session state before GC removes it, and how far back startup ingests transcripts (0 disables both) |
 | `--snapshot-retention-days` | `14` | Days to keep diff snapshots before GC removes them; session dirs and plans follow `--state-retention-days` (0 disables) |
 | `--diff-cache-sessions` | `25` | How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching) |
-| `--control-port` | `42442` | Control server start port; walks up to `42499` if taken (dashboard + JSON API + SSE); `0` disables |
+| `--control-port` | `42442` | Control server start port (dashboard + JSON API + SSE); the default walks up to `42499` if taken, an explicitly set port (flag or `PEEK_CONTROL_PORT`) binds exactly or fails; `0` disables |
 | `--control-token` | — | Optional bearer token protecting the control server |
+| `--back-link` | — | URL of an external dashboard the control server nav links back to (empty hides the link) |
 
 ## Environment variables
 
@@ -46,11 +47,12 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_DIFF_CACHE_SESSIONS` | `--diff-cache-sessions` |
 | `PEEK_CONTROL_PORT` | `--control-port` |
 | `PEEK_CONTROL_TOKEN` | `--control-token` |
+| `PEEK_BACK_LINK` | `--back-link` |
 | `PEEK_LOG_LEVEL` | `--log-level` |
 
 ## Config file
 
-A global config file at `~/.peek/config.json` is shared by every peek instance and read once at startup. Precedence: explicit flag > `PEEK_*` environment variable > config file > default. Only the safe tuning keys are persistable: `depth`, `poll_interval`, `poll_window`, `state_retention_days`, `snapshot_retention_days`, `diff_cache_sessions`, `log_level`. The file is written by the dashboard's config editor (`/stats` page, `POST /api/config/{key}`); edits apply on the next restart — http-transport instances can restart from the dashboard, stdio instances are restarted by their MCP client. Keys pinned by a flag or environment variable show an "overridden" badge in the editor and win over the file after restart.
+A global config file at `~/.peek/config.json` is shared by every peek instance and read once at startup. Precedence: explicit flag > `PEEK_*` environment variable > config file > default. Only the safe tuning keys are persistable: `back_link`, `depth`, `poll_interval`, `poll_window`, `state_retention_days`, `snapshot_retention_days`, `diff_cache_sessions`, `log_level`. The file is written by the dashboard's config editor (`/stats` page, `POST /api/config/{key}`); edits apply on the next restart — http-transport instances can restart from the dashboard, stdio instances are restarted by their MCP client. Keys pinned by a flag or environment variable show an "overridden" badge in the editor and win over the file after restart.
 
 ## Control server (dashboard + JSON API)
 
@@ -58,7 +60,7 @@ A global config file at `~/.peek/config.json` is shared by every peek instance a
 peek-mcp start --control-port 42442
 ```
 
-Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns, plan, diffs, per-session usage (tokens, cost, session/idle time, skills, subagents, touched files) and events update as agents work; Claude sessions also show the project's auto-memory. A `/stats` page shows server uptime, config snapshot, state-directory size, and per-tool invocation counts. If the start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. The same data is scriptable as JSON:
+Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns, plan, diffs, per-session usage (tokens, cost, session/idle time, skills, subagents, touched files) and events update as agents work; Claude sessions also show the project's auto-memory. A `/stats` page shows server uptime, config snapshot, state-directory size, and per-tool invocation counts. If the default start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. An explicitly set `--control-port` (or `PEEK_CONTROL_PORT`) never walks — it binds exactly that port or exits with an error, so a multi-instance setup (e.g. one peek per macOS user profile) keeps deterministic per-instance ports. The same data is scriptable as JSON:
 
 ```bash
 curl -s http://127.0.0.1:42442/api/sessions | jq
@@ -91,7 +93,7 @@ peek-mcp can ingest Claude Code's OpenTelemetry export to enrich `session_events
 }
 ```
 
-The endpoint base must match the control server port (`--control-port`, default 42442); Claude Code appends `/v1/metrics` and `/v1/logs` per the OTLP spec. When the control server is disabled in setup, the step just reports that telemetry stays disabled.
+The endpoint base must match the control server port (`--control-port`, default 42442); `setup --control-port <p>` writes a different port into the endpoint for instances that run on a non-default control port. Claude Code appends `/v1/metrics` and `/v1/logs` per the OTLP spec. When the control server is disabled in setup, the step just reports that telemetry stays disabled.
 
 peek detects whether this export is configured: at startup, on the `/stats` page, and in the `session_events` `time.telemetry` block, the status reads `receiving` (metrics arrived for the session), `configured` (settings.json points at the actually bound control port with `http/json`), `misconfigured` (enabled but wrong endpoint/protocol/port — the detail says what was expected), or `not_configured` (no telemetry env in settings.json — it may still be enabled via shell env, which peek cannot see). The check compares against the port the server actually bound after any port walk.
 

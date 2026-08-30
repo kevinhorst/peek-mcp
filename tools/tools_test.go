@@ -264,3 +264,8 @@ func TestSessionEvents_JsonTypedUnpaginated(t *testing.T) {
 	assert.Equal(t, session.EventKindSkillInvoked, events[0].Kind)
 	assert.NotNil(t, payload.Counters)
 }
+
+func TestResultBytes(t *testing.T) {
+	assert.Zero(t, resultBytes(nil))
+	assert.Greater(t, resultBytes(mcp.NewToolResultText("hello")), int64(0))
+}

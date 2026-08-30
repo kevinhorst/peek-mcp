@@ -12,6 +12,13 @@ const (
 	controlPortSpan = 58
 )
 
+func controlPortWalkEnd(fromPort int, explicit bool) int {
+	if explicit {
+		return fromPort
+	}
+	return fromPort + controlPortSpan - 1
+}
+
 func listenLoopback(fromPort, toPort int) (net.Listener, error) {
 	var lastErr error
 	for port := fromPort; port <= toPort; port++ {

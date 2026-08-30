@@ -28,14 +28,16 @@ const (
 const maxEventsFragment = 100
 
 type indexPage struct {
-	Page  string
-	Title string
+	Page     string
+	Title    string
+	BackLink string
 }
 
 type detailPage struct {
-	Page    string
-	Title   string
-	Summary sessionSummary
+	Page     string
+	Title    string
+	Summary  sessionSummary
+	BackLink string
 }
 
 type sessionListData struct {
@@ -72,7 +74,7 @@ type diffData struct {
 }
 
 func (s *Server) handleSessionsPage(w http.ResponseWriter, r *http.Request) {
-	s.renderFragment(w, tmplSessionsIndex, indexPage{Page: pageSessions, Title: "Peek"})
+	s.renderFragment(w, tmplSessionsIndex, indexPage{Page: pageSessions, Title: "Peek", BackLink: s.config.BackLink})
 }
 
 func (s *Server) handleSessionDetailPage(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +90,7 @@ func (s *Server) handleSessionDetailPage(w http.ResponseWriter, r *http.Request)
 	if title == "" {
 		title = string(summary.Id)
 	}
-	s.renderFragment(w, tmplSessionDetail, detailPage{Page: pageSessions, Title: title, Summary: summary})
+	s.renderFragment(w, tmplSessionDetail, detailPage{Page: pageSessions, Title: title, Summary: summary, BackLink: s.config.BackLink})
 }
 
 func (s *Server) handleSessionsFragment(w http.ResponseWriter, r *http.Request) {

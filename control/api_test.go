@@ -191,8 +191,8 @@ func TestStats(t *testing.T) {
 	store, broker := newTestStore()
 	stateDir := state.NewDir(t.TempDir())
 	require.NoError(t, stateDir.WriteDiffSnapshot("claude", "diff content", "s1"))
-	invocations := tools.NewInvocationCounter()
-	invocations.Inc("session_list")
+	invocations := tools.NewInvocationCounter(tools.InstanceInfo{PID: os.Getpid(), StartedAt: time.Now()}, nil)
+	invocations.Inc("session_list", 12)
 	server, err := New(&Options{
 		Store:       store,
 		Broker:      broker,
@@ -215,9 +215,52 @@ func TestStats(t *testing.T) {
 	assert.Positive(t, stats.Goroutines)
 	assert.Equal(t, sessionCounts{Claude: 1, Codex: 1, Total: 2}, stats.Sessions)
 	assert.Positive(t, stats.StateDiskBytes)
-	assert.Equal(t, map[string]int{"session_list": 1}, stats.Invocations)
+	assert.Equal(t, map[string]tools.ToolStats{"session_list": {Count: 1, Bytes: 12}}, stats.Invocations)
 	assert.True(t, stats.Config.TokenSet)
 	assert.NotContains(t, response.Body.String(), "secret123")
+}
+
+func TestStatsInstances(t *testing.T) {
+	store, broker := newTestStore()
+	stateDir := state.NewDir(t.TempDir())
+	record := tools.InstanceRecord{
+		InstanceInfo: tools.InstanceInfo{
+			Id:        "100-99999999",
+			PID:       99999999,
+			Transport: "stdio",
+			Version:   "test",
+			StartedAt: time.Now().Add(-time.Minute),
+		},
+		Clients:   []string{"claude-code 2.0"},
+		Tools:     map[string]tools.ToolStats{"session_list": {Count: 2, Bytes: 30}, "session_get": {Count: 1, Bytes: 5}},
+		UpdatedAt: time.Now(),
+	}
+	content, err := json.Marshal(record)
+	require.NoError(t, err)
+	require.NoError(t, stateDir.WriteInstance(record.Id, string(content)))
+
+	server, err := New(&Options{
+		Store:     store,
+		Broker:    broker,
+		Version:   "test",
+		Depth:     10,
+		StartedAt: time.Now(),
+		StateDir:  stateDir,
+	})
+	require.NoError(t, err)
+
+	response := get(server, "/api/stats")
+	require.Equal(t, http.StatusOK, response.Code)
+	stats := decode[statsResponse](t, response)
+	require.Len(t, stats.Instances, 1)
+	instance := stats.Instances[0]
+	assert.Equal(t, 99999999, instance.PID)
+	assert.Equal(t, []string{"claude-code 2.0"}, instance.Clients)
+	assert.False(t, instance.Running)
+	assert.False(t, instance.Self)
+	assert.Equal(t, 3, instance.TotalCount)
+	assert.Equal(t, int64(35), instance.TotalBytes)
+	assert.NotEmpty(t, instance.RanFor)
 }
 
 func TestStats_WithoutStateDir(t *testing.T) {
