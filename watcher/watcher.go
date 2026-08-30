@@ -45,6 +45,12 @@ type Watcher struct {
 	mu        sync.Mutex
 	newParser func() Parser
 	store     *session.Store
+
+	// Optional, set between New and Run.
+	// TranscriptPathOk restricts which .jsonl files count as transcripts (nil = all).
+	// Project labels every ingested turn's Meta.Project (empty = derive from CWD).
+	TranscriptPathOk func(path string) bool
+	Project          string
 }
 
 func New(agent session.Agent, agentDir string, newParser func() Parser, store *session.Store) *Watcher {
@@ -92,7 +98,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 			}
 
 			// new or changed file
-			if strings.HasSuffix(path, jsonlSuffix) {
+			if w.isTranscriptPath(path) {
 				err = w.readNewLines(path)
 				if err != nil {
 					slog.Warn("readNewLines", "err", err)
@@ -137,7 +143,7 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 			subagentPaths = append(subagentPaths, path)
 			return nil
 		}
-		if strings.HasSuffix(path, jsonlSuffix) {
+		if w.isTranscriptPath(path) {
 			err = w.readNewLines(path)
 			if err != nil {
 				slog.Warn("walkAndWatch: readNewLines", "err", err)
@@ -210,6 +216,7 @@ func (w *Watcher) readNewLines(path string) error {
 				continue
 			}
 			turn.FilePath = path
+			w.stampProject(turn)
 
 			w.store.AddTurnBySessionId(turn.Meta.SessionId, w.agent, turn)
 		}
@@ -270,6 +277,46 @@ func (w *Watcher) readSubagentMeta(path string) {
 	}
 
 	w.store.AddTurnBySessionId(sessionId, w.agent, turn)
+}
+
+func (w *Watcher) isTranscriptPath(path string) bool {
+	if !strings.HasSuffix(path, jsonlSuffix) {
+		return false
+	}
+	if w.TranscriptPathOk != nil {
+		return w.TranscriptPathOk(path)
+	}
+	return true
+}
+
+func (w *Watcher) stampProject(turn *session.Turn) {
+	if turn.Meta == nil {
+		return
+	}
+	if w.Project != "" {
+		turn.Meta.Project = w.Project
+		return
+	}
+	turn.Meta.Project = legacyProjectFromCwd(turn.Meta.CWD)
+}
+
+var userHome, _ = os.UserHomeDir()
+
+// legacyProjectFromCwd maps the dead-generation desktop layout
+// (cwd at or under ~/Claude_<Name>) to <Name>; everything else is "".
+func legacyProjectFromCwd(cwd string) string {
+	if userHome == "" || cwd == "" {
+		return ""
+	}
+	prefix := filepath.Join(userHome, "Claude_")
+	if !strings.HasPrefix(cwd, prefix) {
+		return ""
+	}
+	rest := cwd[len(prefix):]
+	if i := strings.IndexByte(rest, filepath.Separator); i >= 0 {
+		rest = rest[:i]
+	}
+	return rest
 }
 
 func isSubagentMetaPath(path string) bool {
