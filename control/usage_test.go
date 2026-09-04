@@ -41,7 +41,41 @@ func TestUsageCostDetail(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.Code)
 		body := response.Body.String()
 		assert.Contains(t, body, "<th>Total</th>")
-		assert.Contains(t, body, "Estimate from embedded rates for claude-fable-5")
+		assert.Contains(t, body, "Estimate from embedded rates (as of 2026-09-04) for claude-fable-5")
+	})
+
+	// tiered-rows
+	t.Run("tiered-rows", func(t *testing.T) {
+		store, broker := newTestStore()
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.Meta.Model = "claude-fable-5"
+			sess.TotalUsage = session.Usage{CacheCreationInputTokens: 1100, CacheCreation5mInputTokens: 100, CacheCreation1hInputTokens: 1000}
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/fragments/sessions/s1/usage?detail=cost")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Contains(t, body, "<th>Cache write (5m)</th><td>100</td>")
+		assert.Contains(t, body, "<th>Cache write (1h)</th><td>1000</td>")
+	})
+
+	// untiered-legacy
+	t.Run("untiered-legacy", func(t *testing.T) {
+		store, broker := newTestStore()
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.Meta.Model = "claude-fable-5"
+			sess.TotalUsage = session.Usage{CacheCreationInputTokens: 200}
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/fragments/sessions/s1/usage?detail=cost")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Contains(t, body, "<th>Cache write (5m)</th><td>200</td>")
+		assert.Contains(t, body, "<th>Cache write (1h)</th><td>0</td>")
 	})
 
 	// unknown-model

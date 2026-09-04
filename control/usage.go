@@ -62,6 +62,7 @@ type costRow struct {
 type costData struct {
 	Id    session.Id
 	Model string
+	AsOf  string
 	Known bool
 	Rows  []costRow
 	Total string
@@ -79,7 +80,7 @@ func newCostRow(component string, tokens int, ratePerMTok float64, total *float6
 }
 
 func newCostData(id session.Id, agent session.Agent, model string, usage *session.Usage) costData {
-	data := costData{Id: id, Model: model}
+	data := costData{Id: id, Model: model, AsOf: pricing.AsOf}
 	rates, known := pricing.Lookup(model)
 	if !known {
 		return data
@@ -95,9 +96,13 @@ func newCostData(id session.Id, agent session.Agent, model string, usage *sessio
 			newCostRow("Output", usage.OutputTokens, rates.OutputPerMTok, &total),
 		}
 	} else {
+		// Writes without a tier breakdown (older transcripts) are priced at the
+		// 5m rate, the API default TTL.
+		untiered := max(0, usage.CacheCreationInputTokens-usage.CacheCreation5mInputTokens-usage.CacheCreation1hInputTokens)
 		data.Rows = []costRow{
 			newCostRow("Input", usage.InputTokens, rates.InputPerMTok, &total),
-			newCostRow("Cache write", usage.CacheCreationInputTokens, rates.CacheWritePerMTok, &total),
+			newCostRow("Cache write (5m)", usage.CacheCreation5mInputTokens+untiered, rates.CacheWrite5mPerMTok, &total),
+			newCostRow("Cache write (1h)", usage.CacheCreation1hInputTokens, rates.CacheWrite1hPerMTok, &total),
 			newCostRow("Cache read", usage.CacheReadInputTokens, rates.CacheReadPerMTok, &total),
 			newCostRow("Output", usage.OutputTokens, rates.OutputPerMTok, &total),
 		}
