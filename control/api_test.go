@@ -261,6 +261,37 @@ func TestStatsInstances(t *testing.T) {
 	assert.Equal(t, 3, instance.TotalCount)
 	assert.Equal(t, int64(35), instance.TotalBytes)
 	assert.NotEmpty(t, instance.RanFor)
+
+	fragment := get(server, "/fragments/stats").Body.String()
+	assert.Contains(t, fragment, "<th>Last active</th>")
+}
+
+func TestStatsInstances_RetentionAndOrder(t *testing.T) {
+	store, broker := newTestStore()
+	stateDir := state.NewDir(t.TempDir())
+	now := time.Now()
+
+	write := func(id string, pid int, updated time.Time) {
+		record := tools.InstanceRecord{
+			InstanceInfo: tools.InstanceInfo{Id: id, PID: pid, Transport: "stdio", StartedAt: updated.Add(-time.Minute)},
+			UpdatedAt:    updated,
+		}
+		content, err := json.Marshal(record)
+		require.NoError(t, err)
+		require.NoError(t, stateDir.WriteInstance(id, string(content)))
+	}
+	// exited (dead pid) 49h ago — dropped; 47h ago — kept; recent — kept, newest first.
+	write("a", 999999001, now.Add(-49*time.Hour))
+	write("b", 999999002, now.Add(-47*time.Hour))
+	write("c", 999999003, now.Add(-time.Hour))
+
+	server, err := New(&Options{Store: store, Broker: broker, Version: "test", StartedAt: now, StateDir: stateDir})
+	require.NoError(t, err)
+
+	stats := decode[statsResponse](t, get(server, "/api/stats"))
+	require.Len(t, stats.Instances, 2)
+	assert.Equal(t, 999999003, stats.Instances[0].PID, "newest last-active first")
+	assert.Equal(t, 999999002, stats.Instances[1].PID)
 }
 
 func TestStats_WithoutStateDir(t *testing.T) {

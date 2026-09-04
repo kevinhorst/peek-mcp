@@ -1,5 +1,21 @@
 <div class="turns-panel" hx-get="/fragments/sessions/{{.Id}}/turns{{.Query}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
 {{$root := .}}
+{{if .Info}}
+<table class="usage-table turns-info">
+  <tr><th>Id</th><td>{{.Info.Id}}</td></tr>
+  {{if .Info.Description}}<tr><th>Description</th><td>{{.Info.Description}}</td></tr>{{end}}
+  {{if .Info.Model}}<tr><th>Model</th><td>{{.Info.Model}}</td></tr>{{end}}
+  {{if .Info.Duration}}<tr><th>Runtime</th><td>{{.Info.Duration}}</td></tr>{{end}}
+  <tr><th>Input tokens</th><td>{{.Info.Usage.InputTokens}}</td></tr>
+  <tr><th>Output tokens</th><td>{{.Info.Usage.OutputTokens}}</td></tr>
+  {{if .Info.Usage.CacheCreationInputTokens}}<tr><th>Cache creation</th><td>{{.Info.Usage.CacheCreationInputTokens}}</td></tr>{{end}}
+  {{if .Info.Usage.CacheReadInputTokens}}<tr><th>Cache read</th><td>{{.Info.Usage.CacheReadInputTokens}}</td></tr>{{end}}
+  {{if .Info.Usage.CachedInputTokens}}<tr><th>Cached input</th><td>{{.Info.Usage.CachedInputTokens}}</td></tr>{{end}}
+  {{if .Info.Usage.ReasoningOutputTokens}}<tr><th>Reasoning output</th><td>{{.Info.Usage.ReasoningOutputTokens}}</td></tr>{{end}}
+  <tr><th>Total tokens</th><td>{{.Info.Tokens}}</td></tr>
+  {{if .Info.Cost}}<tr><th>Cost</th><td>{{.Info.Cost}}</td></tr>{{end}}
+</table>
+{{end}}
 {{if or .Tabs .HasThinking}}
 <div class="tabs subtabs">
   {{if .Tabs}}
@@ -12,16 +28,6 @@
   <label class="thinking-toggle" title="show assistant thinking"><input type="checkbox"{{if .ShowThinking}} checked{{end}} hx-get="/fragments/sessions/{{.Id}}/turns{{.ToggleQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML"> thinking</label>
   {{end}}
 </div>
-{{end}}
-{{if .Info}}
-<table class="usage-table subagent-info">
-  <tr><th>Id</th><td>{{.Info.Id}}</td></tr>
-  {{if .Info.Description}}<tr><th>Description</th><td>{{.Info.Description}}</td></tr>{{end}}
-  {{if .Info.Model}}<tr><th>Model</th><td>{{.Info.Model}}</td></tr>{{end}}
-  <tr><th>Runtime</th><td>{{.Info.Duration}}</td></tr>
-  <tr><th>Tokens</th><td>{{.Info.Tokens}}</td></tr>
-  {{if .Info.Cost}}<tr><th>Cost</th><td>{{.Info.Cost}}</td></tr>{{end}}
-</table>
 {{end}}
 {{if .Turns}}
 {{range .Turns}}

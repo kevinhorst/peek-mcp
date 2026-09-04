@@ -308,6 +308,41 @@ func TestUsageFilesDetail(t *testing.T) {
 		assert.Contains(t, body, "<td>2</td>")
 	})
 
+	// claude-config-split
+	t.Run("claude-config-split", func(t *testing.T) {
+		store, broker := newTestStore()
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.AddFileTouch(&session.FileTouch{Path: "/repo/.claude/worktrees/w/control/api.go"})
+			sess.AddFileTouch(&session.FileTouch{Path: "/home/k/.claude/plans/x.md"})
+			sess.AddFileTouch(&session.FileTouch{Path: "/repo/.claude/settings.json"})
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		body := get(server, "/fragments/sessions/s1/usage?detail=files").Body.String()
+		assert.Contains(t, body, `<details class="section">`)
+		assert.Contains(t, body, "<summary>.claude")
+		// worktree file stays in the open list, above the .claude dropdown
+		assert.Less(t, strings.Index(body, "worktrees/w/control/api.go"), strings.Index(body, "<summary>.claude"))
+		// config files sit inside the dropdown, after its summary
+		assert.Greater(t, strings.Index(body, "/home/k/.claude/plans/x.md"), strings.Index(body, "<summary>.claude"))
+		assert.Greater(t, strings.Index(body, "/repo/.claude/settings.json"), strings.Index(body, "<summary>.claude"))
+	})
+
+	// only-config
+	t.Run("only-config", func(t *testing.T) {
+		store, broker := newTestStore()
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			sess.AddFileTouch(&session.FileTouch{Path: "/home/k/.claude/plans/x.md"})
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		body := get(server, "/fragments/sessions/s1/usage?detail=files").Body.String()
+		assert.Contains(t, body, "<summary>.claude")
+		assert.NotContains(t, body, "No touched files.")
+	})
+
 	// empty-state
 	t.Run("empty-state", func(t *testing.T) {
 		server, _ := newTestServer(t, "")
@@ -412,4 +447,21 @@ func TestUsageDenialsDetail(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.Code)
 		assert.Contains(t, response.Body.String(), "No permission denials.")
 	})
+}
+
+func TestIsClaudeConfigPath(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/Users/k/.claude/plans/x.md", true},
+		{"/repo/.claude/settings.json", true},
+		{"/repo/.claude/worktrees/w/control/api.go", false},
+		{"/repo/.claude/worktrees/w/.claude/settings.json", true},
+		{`C:\Users\k\.claude\x.md`, true},
+		{"/repo/control/api.go", false},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, isClaudeConfigPath(c.path), c.path)
+	}
 }

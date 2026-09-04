@@ -19,13 +19,14 @@
 {{if .Instances}}
 <h2>Instances</h2>
 <table class="evidence-table">
-  <tr><th>Client</th><th>PID</th><th>Transport</th><th>Started</th><th>Ran for</th><th>Status</th><th>Invocations</th><th>Bytes</th></tr>
+  <tr><th>Client</th><th>PID</th><th>Transport</th><th>Started</th><th>Last active</th><th>Ran for</th><th>Status</th><th>Invocations</th><th>Bytes</th></tr>
   {{range .Instances}}
   <tr>
     <td>{{range $i, $c := .Clients}}{{if $i}}<br>{{end}}{{$c}}{{end}}</td>
     <td>{{.PID}}{{if .Self}} (this){{end}}</td>
     <td>{{.Transport}}</td>
     <td>{{ts .StartedAt}}</td>
+    <td>{{ts .UpdatedAt}}</td>
     <td>{{.RanFor}}</td>
     <td>{{if .Running}}running{{else}}exited{{end}}</td>
     <td>{{range $tool, $stats := .Tools}}{{$tool}}: {{$stats.Count}}× · {{bytes $stats.Bytes}}<br>{{end}}{{if not .Tools}}—{{end}}</td>
