@@ -7,14 +7,14 @@ Flags, environment variables, the control server, hot reload, the Claude Desktop
 ## Flags
 
 ```bash
-peek-mcp start --port 4242 --depth 20
+peek-mcp start --port 4242 --depth 100
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--transport` | `http` | Transport: `http` or `stdio` |
 | `--port` | `4242` | HTTP port (http transport only); also serves `GET /healthz` — a JSON identity probe (`version`, `claudeHome`, `codexHome`, `controlPort`) for supervisors that need to tell instances apart |
-| `--depth` | `20` | Ring buffer depth per session (max turns kept) |
+| `--depth` | `100` | Ring buffer depth per session (max turns kept) |
 | `--claude-home` | `~/.claude` | Override Claude Code session root |
 | `--codex-home` | `~/.codex` | Override Codex session root |
 | `--cowork-home` | `~/Library/Application Support/Claude` (macOS), empty elsewhere | Claude Desktop Cowork data root; empty disables |
