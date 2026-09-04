@@ -12,7 +12,7 @@ func TestLookup(t *testing.T) {
 	t.Run("exact-match", func(t *testing.T) {
 		rates, ok := Lookup("claude-fable-5")
 		require.True(t, ok)
-		assert.Equal(t, 5.0, rates.InputPerMTok)
+		assert.Equal(t, 10.0, rates.InputPerMTok)
 	})
 
 	// longest-prefix-wins
@@ -31,6 +31,45 @@ func TestLookup(t *testing.T) {
 		rates, ok := Lookup("claude-sonnet-4-5-20250929")
 		require.True(t, ok)
 		assert.Equal(t, 3.0, rates.InputPerMTok)
+	})
+
+	// bracket-suffix
+	t.Run("bracket-suffix", func(t *testing.T) {
+		rates, ok := Lookup("claude-opus-4-8[1m]")
+		require.True(t, ok)
+		assert.Equal(t, 5.0, rates.InputPerMTok)
+	})
+
+	// boundary-rejects-dot
+	t.Run("boundary-rejects-dot", func(t *testing.T) {
+		rates, ok := Lookup("gpt-5.5")
+		require.True(t, ok)
+		assert.Equal(t, 5.0, rates.InputPerMTok)
+
+		_, ok = Lookup("gpt-5.7")
+		assert.False(t, ok)
+	})
+
+	// opus-4-8-not-opus-4
+	t.Run("opus-4-8-not-opus-4", func(t *testing.T) {
+		rates, ok := Lookup("claude-opus-4-8")
+		require.True(t, ok)
+		assert.Equal(t, 5.0, rates.InputPerMTok)
+		assert.Equal(t, 25.0, rates.OutputPerMTok)
+	})
+
+	// sonnet-5
+	t.Run("sonnet-5", func(t *testing.T) {
+		rates, ok := Lookup("claude-sonnet-5")
+		require.True(t, ok)
+		assert.Equal(t, Rates{InputPerMTok: 2, OutputPerMTok: 10, CacheWrite5mPerMTok: 2.50, CacheWrite1hPerMTok: 4, CacheReadPerMTok: 0.20}, rates)
+	})
+
+	// fable-5-1-read
+	t.Run("fable-5-1-read", func(t *testing.T) {
+		rates, ok := Lookup("claude-fable-5-1")
+		require.True(t, ok)
+		assert.Equal(t, 0.25, rates.CacheReadPerMTok)
 	})
 
 	// unknown-model
