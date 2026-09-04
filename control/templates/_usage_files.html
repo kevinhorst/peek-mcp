@@ -1,9 +1,18 @@
-{{if .Files}}
+{{define "usage_files_table"}}
 <table class="usage-table">
   <tr><th>Path</th><th>Reads</th><th>Writes</th></tr>
-  {{range .Files}}<tr><th>{{.Path}}</th><td>{{.Reads}}</td><td>{{.Writes}}</td></tr>
+  {{range .}}<tr><th>{{.Path}}</th><td>{{.Reads}}</td><td>{{.Writes}}</td></tr>
   {{end}}
 </table>
+{{end}}
+{{if or .Files .Config}}
+{{if .Files}}{{template "usage_files_table" .Files}}{{end}}
+{{if .Config}}
+<details class="section">
+  <summary>.claude <span class="meta">{{len .Config}} files</span></summary>
+  {{template "usage_files_table" .Config}}
+</details>
+{{end}}
 {{else}}
 <div class="empty">No touched files.</div>
 {{end}}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
@@ -14,6 +15,7 @@ import (
 const (
 	pageStats         = "stats"
 	maxInstancesShown = 100
+	instanceRetention = 48 * time.Hour
 )
 
 func (s *Server) stats() statsResponse {
@@ -49,8 +51,13 @@ func (s *Server) stats() statsResponse {
 			if err := json.Unmarshal([]byte(content), &record); err != nil {
 				continue
 			}
-			resp.Instances = append(resp.Instances, newInstanceView(record, resp.PID))
+			view := newInstanceView(record, resp.PID)
+			if !view.Running && time.Since(record.UpdatedAt) > instanceRetention {
+				continue
+			}
+			resp.Instances = append(resp.Instances, view)
 		}
+		slices.SortFunc(resp.Instances, func(a, b instanceView) int { return b.UpdatedAt.Compare(a.UpdatedAt) })
 	}
 	if s.invocations != nil {
 		resp.Invocations = s.invocations.Snapshot()

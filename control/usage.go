@@ -260,17 +260,39 @@ type fileRow struct {
 }
 
 type filesData struct {
-	Id    session.Id
-	Files []fileRow
+	Id     session.Id
+	Files  []fileRow
+	Config []fileRow
 }
 
 func newFilesData(sess *session.Session) *filesData {
 	data := &filesData{Id: sess.Meta.SessionId}
 	for path, counts := range sess.TouchedFiles {
-		data.Files = append(data.Files, fileRow{Path: path, Reads: counts.Reads, Writes: counts.Writes})
+		row := fileRow{Path: path, Reads: counts.Reads, Writes: counts.Writes}
+		if isClaudeConfigPath(path) {
+			data.Config = append(data.Config, row)
+			continue
+		}
+		data.Files = append(data.Files, row)
 	}
-	slices.SortFunc(data.Files, func(a, b fileRow) int { return strings.Compare(a.Path, b.Path) })
+	byPath := func(a, b fileRow) int { return strings.Compare(a.Path, b.Path) }
+	slices.SortFunc(data.Files, byPath)
+	slices.SortFunc(data.Config, byPath)
 	return data
+}
+
+func isClaudeConfigPath(path string) bool {
+	segments := strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' })
+	for i, segment := range segments {
+		if segment != ".claude" {
+			continue
+		}
+		if i+1 < len(segments) && segments[i+1] == "worktrees" {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 type modelRow struct {

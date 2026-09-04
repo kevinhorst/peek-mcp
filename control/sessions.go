@@ -59,7 +59,7 @@ type turnsData struct {
 	Turns        []*session.Turn
 	Subagent     string
 	Tabs         []subagentTab
-	Info         *subagentInfo
+	Info         *turnsInfo
 	ShowThinking bool
 	HasThinking  bool
 	Query        string
@@ -74,13 +74,31 @@ type subagentTab struct {
 	Query       string
 }
 
-type subagentInfo struct {
+type turnsInfo struct {
 	Id          string
 	Description string
 	Model       string
 	Duration    string
+	Usage       session.Usage
 	Tokens      int
 	Cost        string
+}
+
+func newMainInfo(sess *session.Session) *turnsInfo {
+	usage := sess.CurrentUsage()
+	cost := newCostData(sess.Meta.SessionId, sess.Agent, sess.Meta.Model, usage)
+	info := &turnsInfo{
+		Id:          string(sess.Meta.SessionId),
+		Description: sess.Title,
+		Model:       sess.Meta.Model,
+		Usage:       *usage,
+		Tokens:      displayTotalTokens(usage),
+		Cost:        cost.Total,
+	}
+	if !sess.StartedAt.IsZero() {
+		info.Duration = sess.LastActive.Sub(sess.StartedAt).Round(time.Second).String()
+	}
+	return info
 }
 
 type planData struct {
@@ -248,17 +266,20 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		if data.Subagent != "" {
-			if turns, ok := sess.SubagentTurns(data.Subagent, tools.DefaultReturnedTurns); ok {
+			if turns, ok := sess.SubagentTurns(data.Subagent, session.AllTurns); ok {
 				data.Turns = turns
 				data.Info = newSubagentInfo(id, data.Subagent, sess)
 			}
 			return
 		}
-		data.Turns = sess.Turns(tools.DefaultReturnedTurns)
+		data.Turns = sess.Turns(session.AllTurns)
+		data.Info = newMainInfo(sess)
 	}) {
 		respondNotFound("unknown session", w)
 		return
 	}
+	data.Turns = slices.Clone(data.Turns)
+	slices.Reverse(data.Turns)
 	for _, turn := range data.Turns {
 		if turn.Thinking != "" {
 			data.HasThinking = true
@@ -271,7 +292,7 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 	s.renderFragment(w, tmplTurns, data)
 }
 
-func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *subagentInfo {
+func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *turnsInfo {
 	stat, ok := sess.Subagents[agentId]
 	if !ok {
 		return nil
@@ -279,11 +300,12 @@ func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *suba
 
 	model := subagentModel(stat, sess)
 	cost := newCostData(id, sess.Agent, model, &stat.Usage)
-	return &subagentInfo{
+	return &turnsInfo{
 		Id:          agentId,
 		Description: stat.Description,
 		Model:       model,
 		Duration:    stat.LastActive.Sub(stat.FirstActive).Round(time.Second).String(),
+		Usage:       stat.Usage,
 		Tokens:      displayTotalTokens(&stat.Usage),
 		Cost:        cost.Total,
 	}

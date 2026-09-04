@@ -243,15 +243,20 @@ func TestTurnsFragment_SubagentTabs(t *testing.T) {
 	assert.Contains(t, body, "sub prompt")
 	assert.NotContains(t, body, "What does this do?")
 	assert.Contains(t, body, `class="active" title="scan">Explore ag1</a>`)
-	assert.Contains(t, body, `class="usage-table subagent-info"`)
+	assert.Contains(t, body, `class="usage-table turns-info"`)
 	assert.Contains(t, body, "<th>Id</th><td>ag1</td>")
 	assert.Contains(t, body, "<th>Model</th><td>claude-haiku-4-5-20251001</td>")
 	assert.Contains(t, body, "<th>Runtime</th><td>1m0s</td>")
-	assert.Contains(t, body, "<th>Tokens</th><td>30</td>")
+	assert.Contains(t, body, "<th>Input tokens</th><td>10</td>")
+	assert.Contains(t, body, "<th>Output tokens</th><td>20</td>")
+	assert.Contains(t, body, "<th>Total tokens</th><td>30</td>")
 	assert.Contains(t, body, "<th>Cost</th>")
+	assert.Less(t, strings.Index(body, "turns-info"), strings.Index(body, "tabs subtabs"))
 
 	response = get(server, "/fragments/sessions/s1/turns")
-	assert.NotContains(t, response.Body.String(), "subagent-info")
+	body = response.Body.String()
+	assert.Contains(t, body, `class="usage-table turns-info"`)
+	assert.Contains(t, body, "<th>Id</th><td>s1</td>")
 }
 
 func TestTurnsFragment_Thinking(t *testing.T) {
