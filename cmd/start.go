@@ -323,7 +323,7 @@ func init() {
 	flags := startCmd.Flags()
 	flags.String("transport", "http", "Transport: http or stdio")
 	flags.Int("port", 4242, "HTTP port (http transport only)")
-	flags.Int("depth", 20, "Ring buffer size per session (max turns kept)")
+	flags.Int("depth", 100, "Ring buffer size per session (max turns kept)")
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
 	flags.String("cowork-home", defaultCoworkHome(), "Claude Desktop Cowork data root (empty disables; macOS default set automatically)")
