@@ -55,6 +55,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 
 	sessionGet := mcp.NewTool("session_get",
 		mcp.WithDescription("Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memory) for a session. Defaults to the most recently active session when id and title are omitted. Select sections with the turns/events/plan/diff/uncommitted_diff/remember flags. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
+		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("id",
 			mcp.Description("Session ID (omit for most recent session)"),
 		),
@@ -104,6 +105,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 	sessionList :=
 		mcp.NewTool("session_list",
 			mcp.WithDescription("Lists all sessions. Returns session ID, agent, last activity timestamp, whether a plan or diff is available, the inferred diff base branch (diff_target), and session metadata (cwd, git branch, model, project label, origin)."),
+			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithString("agent",
 				mcp.Description("Agent: \"claude\" or \"codex\". Lists all sessions when omitted."),
 			),
@@ -116,6 +118,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 
 	sessionEvents := mcp.NewTool("session_events",
 		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials/grants, permission-mode changes, skill invocations, subagent spawns/results, user answers) plus derived counters, telemetry-based permission decisions (auto-allowed vs. prompted vs. rejected, with the prompted commands), token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_get for those."),
+		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("id",
 			mcp.Description("Session ID (omit for most recent session)"),
 		),

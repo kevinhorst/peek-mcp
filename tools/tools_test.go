@@ -9,7 +9,9 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -429,4 +431,16 @@ func TestSessionEvents_JsonTypedUnpaginated(t *testing.T) {
 func TestResultBytes(t *testing.T) {
 	assert.Zero(t, resultBytes(nil))
 	assert.Greater(t, resultBytes(mcp.NewToolResultText("hello")), int64(0))
+}
+
+func TestRegister_ReadOnlyHint(t *testing.T) {
+	srv := server.NewMCPServer("peek-mcp", "test")
+	Register(srv, provideToolStore(), NewInvocationCounter(InstanceInfo{}, nil), telemetry.NewStore(), telemetry.NewDetector(0, ""))
+
+	registered := srv.ListTools()
+	require.NotEmpty(t, registered)
+	for name, tool := range registered {
+		require.NotNil(t, tool.Tool.Annotations.ReadOnlyHint, "%s missing readOnlyHint", name)
+		assert.True(t, *tool.Tool.Annotations.ReadOnlyHint, "%s readOnlyHint should be true", name)
+	}
 }
