@@ -1,10 +1,12 @@
 package session
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func provideCompleteSession() *Session {
@@ -176,9 +178,9 @@ func TestSession_AddSubagentTurn_Transcript(t *testing.T) {
 	turns, ok = s.SubagentTurns("ag1", 10)
 	assert.True(t, ok)
 	assert.Len(t, turns, 2)
-	assert.Equal(t, "answer", turns[0].Text, "active turn prepended, same ordering as Session.Turns")
-	assert.Equal(t, "why", turns[0].Thinking)
-	assert.Equal(t, "prompt", turns[1].Text)
+	assert.Equal(t, "prompt", turns[0].Text)
+	assert.Equal(t, "answer", turns[1].Text, "active turn appended last, same ordering as Session.Turns")
+	assert.Equal(t, "why", turns[1].Thinking)
 
 	// unknown-agent
 	_, ok = s.SubagentTurns("nope", 10)
@@ -213,4 +215,41 @@ func TestSession_AddTurn_UsageCountsActiveTurn(t *testing.T) {
 
 	assert.Equal(t, 10, s.TotalUsage.OutputTokens)
 	assert.NotNil(t, s.TurnActive)
+}
+
+func TestSession_AddFileTouch_Cap(t *testing.T) {
+	s := &Session{TouchedFiles: make(map[string]*FileTouchCounts)}
+	for i := 0; i < maxTouchedFiles; i++ {
+		s.AddFileTouch(&FileTouch{Path: fmt.Sprintf("/f/%d.go", i)})
+	}
+	assert.Len(t, s.TouchedFiles, maxTouchedFiles)
+
+	s.AddFileTouch(&FileTouch{Path: "/f/overflow.go"})
+	assert.Len(t, s.TouchedFiles, maxTouchedFiles, "path beyond the cap is dropped")
+	_, ok := s.TouchedFiles["/f/overflow.go"]
+	assert.False(t, ok)
+}
+
+func TestSession_Turns_ActiveLast(t *testing.T) {
+	s := &Session{TurnsFinished: NewTurnBuffer(100)}
+	ts := time.Now()
+	s.AddTurn(&Turn{Role: RoleUser, Text: "first", Timestamp: ts, Meta: &Meta{SessionId: "s"}})
+	s.AddTurn(&Turn{Role: RoleAssistant, Text: "active", RequestId: "r1", Timestamp: ts, Meta: &Meta{SessionId: "s"}})
+
+	turns := s.Turns(10)
+	require.Len(t, turns, 2)
+	assert.Equal(t, "first", turns[0].Text)
+	assert.Equal(t, "active", turns[1].Text, "in-progress turn is last, never dropped")
+}
+
+func TestSession_Turns_ActiveKeptOverOldest(t *testing.T) {
+	s := &Session{TurnsFinished: NewTurnBuffer(2)}
+	ts := time.Now()
+	s.AddTurn(&Turn{Role: RoleUser, Text: "t0", RequestId: "a", Timestamp: ts, Meta: &Meta{SessionId: "s"}})
+	s.AddTurn(&Turn{Role: RoleUser, Text: "t1", RequestId: "b", Timestamp: ts, Meta: &Meta{SessionId: "s"}})
+	s.AddTurn(&Turn{Role: RoleAssistant, Text: "active", RequestId: "c", Timestamp: ts, Meta: &Meta{SessionId: "s"}})
+
+	turns := s.Turns(2)
+	require.Len(t, turns, 2)
+	assert.Equal(t, "active", turns[len(turns)-1].Text, "active turn survives the cap")
 }
