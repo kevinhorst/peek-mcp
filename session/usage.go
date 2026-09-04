@@ -3,13 +3,15 @@ package session
 import "errors"
 
 type Usage struct {
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
-	CachedInputTokens        int `json:"cached_input_tokens,omitempty"`
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	ReasoningOutputTokens    int `json:"reasoning_output_tokens,omitempty"`
-	TotalTokens              int `json:"total_tokens,omitempty"`
+	CacheCreation1hInputTokens int `json:"cache_creation_1h_input_tokens,omitempty"`
+	CacheCreation5mInputTokens int `json:"cache_creation_5m_input_tokens,omitempty"`
+	CacheCreationInputTokens   int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens       int `json:"cache_read_input_tokens,omitempty"`
+	CachedInputTokens          int `json:"cached_input_tokens,omitempty"`
+	InputTokens                int `json:"input_tokens"`
+	OutputTokens               int `json:"output_tokens"`
+	ReasoningOutputTokens      int `json:"reasoning_output_tokens,omitempty"`
+	TotalTokens                int `json:"total_tokens,omitempty"`
 }
 
 func (u *Usage) Validate() error {
@@ -31,6 +33,12 @@ func (u *Usage) Validate() error {
 	if u.TotalTokens < 0 {
 		return errors.New("total_tokens must be non-negative")
 	}
+	if u.CacheCreation5mInputTokens < 0 {
+		return errors.New("cache_creation_5m_input_tokens must be non-negative")
+	}
+	if u.CacheCreation1hInputTokens < 0 {
+		return errors.New("cache_creation_1h_input_tokens must be non-negative")
+	}
 	return nil
 }
 
@@ -44,5 +52,7 @@ func (u *Usage) Add(other *Usage) {
 	u.ReasoningOutputTokens += other.ReasoningOutputTokens
 	u.TotalTokens += other.TotalTokens
 	u.CacheCreationInputTokens += other.CacheCreationInputTokens
+	u.CacheCreation5mInputTokens += other.CacheCreation5mInputTokens
+	u.CacheCreation1hInputTokens += other.CacheCreation1hInputTokens
 	u.CacheReadInputTokens += other.CacheReadInputTokens
 }
