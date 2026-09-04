@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"maps"
+	"math"
 	"slices"
 	"time"
 )
@@ -28,11 +29,13 @@ const EventBufferCapacity = 500
 
 const idleThreshold = 5 * time.Minute
 
-const maxTouchedFiles = 500
+const maxTouchedFiles = 1000
 
 const maxSubagentStats = 200
 
 const subagentTurnDepth = 200
+
+const AllTurns = math.MaxInt
 
 const maxSkillStats = 100
 
@@ -320,16 +323,7 @@ func (s *Session) HasNewTitle(title string, source TitleSource) bool {
 }
 
 func (s *Session) Turns(number int) []*Turn {
-	if s.TurnActive == nil {
-		return s.TurnsFinished.Last(number)
-	}
-
-	buffer := &TurnBuffer{
-		capacity: s.TurnsFinished.capacity,
-		items:    append([]*Turn{s.TurnActive}, s.TurnsFinished.items...),
-	}
-
-	return buffer.Last(number)
+	return lastTurns(s.TurnActive, s.TurnsFinished, number)
 }
 
 func (s *Session) SubagentTurns(agentId string, number int) ([]*Turn, bool) {
@@ -338,16 +332,20 @@ func (s *Session) SubagentTurns(agentId string, number int) ([]*Turn, bool) {
 		return nil, false
 	}
 
-	if stat.TurnActive == nil {
-		return stat.Turns.Last(number), true
+	return lastTurns(stat.TurnActive, stat.Turns, number), true
+}
+
+func lastTurns(active *Turn, finished *TurnBuffer, number int) []*Turn {
+	if active == nil {
+		return finished.Last(number)
 	}
 
 	buffer := &TurnBuffer{
-		capacity: stat.Turns.capacity,
-		items:    append([]*Turn{stat.TurnActive}, stat.Turns.items...),
+		capacity: finished.capacity,
+		items:    append(slices.Clone(finished.items), active),
 	}
 
-	return buffer.Last(number), true
+	return buffer.Last(number)
 }
 
 func (s *Session) SubagentIds() []string {
