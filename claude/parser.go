@@ -165,15 +165,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 		model = ""
 	}
 
-	var usage *session.Usage
-	if message.Usage != nil {
-		usage = &session.Usage{
-			InputTokens:              message.Usage.InputTokens,
-			OutputTokens:             message.Usage.OutputTokens,
-			CacheCreationInputTokens: message.Usage.CacheCreationInputTokens,
-			CacheReadInputTokens:     message.Usage.CacheReadInputTokens,
-		}
-	}
+	usage := toSessionUsage(message.Usage)
 	turn := &session.Turn{
 		Events:     events,
 		Role:       session.RoleAssistant,
@@ -199,6 +191,25 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 	}
 
 	return turn
+}
+
+// toSessionUsage converts transcript usage to the agent-neutral struct,
+// carrying the cache-write tier breakdown when the transcript has it.
+func toSessionUsage(usage *Usage) *session.Usage {
+	if usage == nil {
+		return nil
+	}
+	out := &session.Usage{
+		InputTokens:              usage.InputTokens,
+		OutputTokens:             usage.OutputTokens,
+		CacheCreationInputTokens: usage.CacheCreationInputTokens,
+		CacheReadInputTokens:     usage.CacheReadInputTokens,
+	}
+	if usage.CacheCreation != nil {
+		out.CacheCreation5mInputTokens = usage.CacheCreation.Ephemeral5mInputTokens
+		out.CacheCreation1hInputTokens = usage.CacheCreation.Ephemeral1hInputTokens
+	}
+	return out
 }
 
 func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
@@ -262,14 +273,7 @@ func (p *Parser) handleSidechain(entry *Entry) *session.Turn {
 		if message.Model != syntheticModel {
 			model = message.Model
 		}
-		if message.Usage != nil {
-			usage = &session.Usage{
-				InputTokens:              message.Usage.InputTokens,
-				OutputTokens:             message.Usage.OutputTokens,
-				CacheCreationInputTokens: message.Usage.CacheCreationInputTokens,
-				CacheReadInputTokens:     message.Usage.CacheReadInputTokens,
-			}
-		}
+		usage = toSessionUsage(message.Usage)
 	}
 
 	return &session.Turn{

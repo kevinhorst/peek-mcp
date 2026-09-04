@@ -53,7 +53,23 @@ func TestClaude_AssistantWithText(t *testing.T) {
 	assert.NotNil(t, turn.Usage)
 	assert.Equal(t, 100, turn.Usage.InputTokens)
 	assert.Equal(t, 50, turn.Usage.OutputTokens)
+	assert.Equal(t, 200, turn.Usage.CacheCreationInputTokens)
+	assert.Equal(t, 50, turn.Usage.CacheCreation5mInputTokens)
+	assert.Equal(t, 150, turn.Usage.CacheCreation1hInputTokens)
 	assert.Equal(t, "end_turn", turn.StopReason)
+}
+
+func TestClaude_AssistantUsageWithoutBreakdown(t *testing.T) {
+	p := NewParser()
+
+	line := `{"type":"assistant","requestId":"req-9","sessionId":"sess-1","timestamp":"2026-04-05T15:30:18.628Z","cwd":"/home/user/project","message":{"role":"assistant","model":"claude-opus-4-6","content":[{"type":"text","text":"legacy"}],"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":200,"cache_read_input_tokens":300}}}`
+	turn := p.ParseLine([]byte(line))
+
+	assert.NotNil(t, turn)
+	assert.NotNil(t, turn.Usage)
+	assert.Equal(t, 200, turn.Usage.CacheCreationInputTokens)
+	assert.Equal(t, 0, turn.Usage.CacheCreation5mInputTokens)
+	assert.Equal(t, 0, turn.Usage.CacheCreation1hInputTokens)
 }
 
 func TestClaude_AssistantThinkingOnly(t *testing.T) {

@@ -12,6 +12,7 @@ func provideCompleteUsage() *Usage {
 		OutputTokens:             2,
 		CacheCreationInputTokens: 3,
 		CacheReadInputTokens:     4,
+		CacheCreation:            &CacheCreation{Ephemeral5mInputTokens: 1, Ephemeral1hInputTokens: 2},
 	}
 }
 
@@ -70,6 +71,33 @@ func TestUsage_Validate(t *testing.T) {
 	form.CacheReadInputTokens = -1
 	test = &testCase{
 		_id:         "fail-negative-cache-read-tokens",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	form = provideCompleteUsage()
+	form.CacheCreation = nil
+	test = &testCase{
+		_id:         "pass-nil-cache-creation",
+		_shouldPass: true,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	form = provideCompleteUsage()
+	form.CacheCreation.Ephemeral5mInputTokens = -1
+	test = &testCase{
+		_id:         "fail-negative-ephemeral-5m",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	form = provideCompleteUsage()
+	form.CacheCreation.Ephemeral1hInputTokens = -1
+	test = &testCase{
+		_id:         "fail-negative-ephemeral-1h",
 		_shouldPass: false,
 		form:        form,
 	}
