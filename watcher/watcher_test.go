@@ -88,7 +88,7 @@ func TestReadNewLines_PerFileParserState(t *testing.T) {
 	assert.True(t, ok)
 	turns := sessionA.Turns(10)
 	assert.Len(t, turns, 2)
-	assert.Equal(t, "second message in A", turns[0].Text)
+	assert.Equal(t, "second message in A", turns[1].Text)
 
 	// B holds only its own meta-only turn — no text turn from file A leaked in
 	sessionB, ok := store.GetById("sess-b")
