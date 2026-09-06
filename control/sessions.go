@@ -214,7 +214,7 @@ func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
 	id := session.Id(r.PathValue("id"))
 	data := usageData{Id: id, Detail: usageDetailParam(r)}
 	key, dir := usageSortParam(r, data.Detail)
-	data.Sort = sortState{Id: id, Detail: data.Detail, Key: key, Dir: dir}
+	data.Sort = sortState{Id: id, Detail: data.Detail, Key: key, Dir: dir, Cols: usageColsParam(r)}
 	if !s.store.WithSession(id, func(sess *session.Session) {
 		data.Counters = sess.Counters
 		data.Usage = aggregateUsage(sess)

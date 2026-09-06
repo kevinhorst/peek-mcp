@@ -1,20 +1,33 @@
 {{if .Groups}}
 {{$sort := .Sort}}{{$id := .Id}}
+<div class="card card-filter">
+  <span class="section-label">columns</span>
+  <a class="badge {{if ne $sort.Cols "timing"}}badge-ok{{else}}badge-dim{{end}}" hx-get="/fragments/sessions/{{$id}}/usage{{$sort.ColsQuery ""}}" hx-target="closest .usage-panel" hx-swap="outerHTML">usage</a>
+  <a class="badge {{if eq $sort.Cols "timing"}}badge-ok{{else}}badge-dim{{end}}" hx-get="/fragments/sessions/{{$id}}/usage{{$sort.ColsQuery "timing"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">timing</a>
+</div>
 {{range .Groups}}
 <details class="section" data-key="usage-subagents-{{$id}}-{{.Name}}">
   <summary>{{.Name}} <span class="meta">{{len .Rows}}</span></summary>
   <table class="usage-table">
+    {{if eq $sort.Cols "timing"}}
+    <tr>
+      <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "agent"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Id{{$sort.Marker "agent"}}</a></th>
+      <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "started"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Started{{$sort.Marker "started"}}</a></th>
+      <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "lastactive"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Last active{{$sort.Marker "lastactive"}}</a></th>
+      <th>Duration</th>
+    </tr>
+    {{range .Rows}}<tr><th>{{.Agent}}</th><td>{{ts .StartedAt}}</td><td>{{ts .LastActive}}</td><td>{{.Duration}}</td></tr>
+    {{end}}
+    {{else}}
     <tr>
       <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "agent"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Id{{$sort.Marker "agent"}}</a></th>
       <th>Description</th>
       <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "model"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Model{{$sort.Marker "model"}}</a></th>
-      <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "started"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Started{{$sort.Marker "started"}}</a></th>
-      <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "lastactive"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Last active{{$sort.Marker "lastactive"}}</a></th>
-      <th>Duration</th>
       <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "tokens"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Tokens{{$sort.Marker "tokens"}}</a></th>
       <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "cost"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Cost{{$sort.Marker "cost"}}</a></th>
     </tr>
-    {{range .Rows}}<tr><th>{{.Agent}}</th><td>{{.Description}}</td><td>{{.Model}}</td><td>{{ts .StartedAt}}</td><td>{{ts .LastActive}}</td><td>{{.Duration}}</td><td>{{.Tokens}}</td><td>{{.Cost}}</td></tr>
+    {{range .Rows}}<tr><th>{{.Agent}}</th><td>{{.Description}}</td><td>{{.Model}}</td><td>{{.Tokens}}</td><td>{{.Cost}}</td></tr>
+    {{end}}
     {{end}}
   </table>
 </details>

@@ -1,4 +1,4 @@
-<div class="usage-panel" hx-get="/fragments/sessions/{{.Id}}/usage{{if .Detail}}?detail={{.Detail}}{{if .Sort.Key}}&sort={{.Sort.Key}}&dir={{.Sort.Dir}}{{end}}{{end}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+<div class="usage-panel" hx-get="/fragments/sessions/{{.Id}}/usage{{if .Detail}}?detail={{.Detail}}{{if .Sort.Key}}&sort={{.Sort.Key}}&dir={{.Sort.Dir}}{{end}}{{if .Sort.Cols}}&cols={{.Sort.Cols}}{{end}}{{end}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
 <div class="usage-grid">
 <table class="usage-table">
   {{if .SessionTime}}<tr><th>Started at</th><td>{{ts .StartedAt}}</td></tr>

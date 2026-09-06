@@ -35,11 +35,21 @@ func usageSortParam(r *http.Request, detail string) (string, string) {
 	return key, sortDirAsc
 }
 
+const colsTiming = "timing"
+
+func usageColsParam(r *http.Request) string {
+	if r.URL.Query().Get("cols") == colsTiming {
+		return colsTiming
+	}
+	return ""
+}
+
 type sortState struct {
 	Id     session.Id
 	Detail string
 	Key    string
 	Dir    string
+	Cols   string
 }
 
 func (s sortState) Query(column string) string {
@@ -47,7 +57,22 @@ func (s sortState) Query(column string) string {
 	if s.Key == column && s.Dir == sortDirAsc {
 		dir = sortDirDesc
 	}
-	return fmt.Sprintf("?detail=%s&sort=%s&dir=%s", s.Detail, column, dir)
+	query := fmt.Sprintf("?detail=%s&sort=%s&dir=%s", s.Detail, column, dir)
+	if s.Cols != "" {
+		query += "&cols=" + s.Cols
+	}
+	return query
+}
+
+func (s sortState) ColsQuery(cols string) string {
+	query := "?detail=" + s.Detail
+	if cols != "" {
+		query += "&cols=" + cols
+	}
+	if s.Key != "" {
+		query += fmt.Sprintf("&sort=%s&dir=%s", s.Key, s.Dir)
+	}
+	return query
 }
 
 func (s sortState) Marker(column string) string {

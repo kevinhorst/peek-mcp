@@ -211,8 +211,12 @@ nav a.active::after { content: ']'; }
 .card-row { display: flex; align-items: center; gap: 12px; }
 .card-config { flex-wrap: wrap; }
 .card-config .label-key { flex-basis: 40%; }
-.card-filter { flex-wrap: wrap; justify-content: flex-start; }
+.card-filter { flex-wrap: wrap; justify-content: flex-start; padding: 8px 12px; margin-bottom: 16px; }
 .card-filter label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.card-filter a.badge { cursor: pointer; text-decoration: none; }
+.card-filter .thinking-toggle { display: flex; align-items: center; gap: 6px; color: var(--text-2); cursor: pointer; }
+.card-filter .thinking-toggle input { accent-color: var(--neon); cursor: pointer; }
+.section-label { color: var(--text-3); font-size: 0.8125rem; text-transform: lowercase; }
 #context-target { display: inline-flex; align-items: center; gap: 8px; }
 .card-error { border-color: var(--rose); }
 .card-disabled { opacity: 0.55; }

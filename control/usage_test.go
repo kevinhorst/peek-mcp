@@ -242,9 +242,16 @@ func TestUsageSubagentsDetail(t *testing.T) {
 		assert.Contains(t, body, "<th>Explore a1</th>")
 		assert.Contains(t, body, "<td>find things</td>")
 		assert.Contains(t, body, "<td>claude-haiku-4-5-20251001</td>")
-		assert.Contains(t, body, "1m30s")
 		assert.Contains(t, body, "<td>30</td>")
 		assert.Contains(t, body, "$0.0")
+		assert.Contains(t, body, "cols=timing")
+		assert.NotContains(t, body, "1m30s", "timestamps live on the timing page")
+
+		body = get(server, "/fragments/sessions/s1/usage?detail=subagents&cols=timing").Body.String()
+		assert.Contains(t, body, "<th>Explore a1</th>")
+		assert.Contains(t, body, "1m30s")
+		assert.Contains(t, body, "<th>Last active")
+		assert.NotContains(t, body, "<td>find things</td>", "usage columns live on the usage page")
 	})
 
 	// sorted-by-start

@@ -18,17 +18,11 @@
   {{if .Info.Cost}}<tr><th>Cost</th><td>{{.Info.Cost}}</td></tr>{{end}}
 </table>
 {{end}}
+{{if .HasSubagents}}
 <div class="tabs subtabs">
-  {{if .HasSubagents}}
   <a hx-get="/fragments/sessions/{{.Id}}/turns{{.MainQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if not .Subagent}}class="active"{{end}}>main</a>
-  {{end}}
-  <a hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries ""}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if not .Role}}class="active"{{end}}>all</a>
-  <a hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries "user"}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if eq .Role "user"}}class="active"{{end}}>user</a>
-  <a hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries "assistant"}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if eq .Role "assistant"}}class="active"{{end}}>assistant</a>
-  {{if .HasThinking}}
-  <label class="thinking-toggle" title="show assistant thinking"><input type="checkbox"{{if .ShowThinking}} checked{{end}} hx-get="/fragments/sessions/{{.Id}}/turns{{.ToggleQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML"> thinking</label>
-  {{end}}
 </div>
+{{end}}
 {{if .Groups}}
 <div class="subagent-groups">
   {{range .Groups}}
@@ -46,6 +40,15 @@
   {{end}}
 </div>
 {{end}}
+<div class="card card-filter">
+  <span class="section-label">turns</span>
+  <a class="badge {{if not .Role}}badge-ok{{else}}badge-dim{{end}}" hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries ""}}" hx-target="closest .turns-panel" hx-swap="outerHTML">all</a>
+  <a class="badge {{if eq .Role "user"}}badge-ok{{else}}badge-dim{{end}}" hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries "user"}}" hx-target="closest .turns-panel" hx-swap="outerHTML">user</a>
+  <a class="badge {{if eq .Role "assistant"}}badge-ok{{else}}badge-dim{{end}}" hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries "assistant"}}" hx-target="closest .turns-panel" hx-swap="outerHTML">assistant</a>
+  {{if .HasThinking}}
+  <label class="thinking-toggle" title="show assistant thinking"><input type="checkbox"{{if .ShowThinking}} checked{{end}} hx-get="/fragments/sessions/{{.Id}}/turns{{.ToggleQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML"> thinking</label>
+  {{end}}
+</div>
 {{if .Turns}}
 {{range .Turns}}
 {{if or .Text $root.ShowThinking (not .Thinking)}}
