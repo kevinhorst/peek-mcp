@@ -217,6 +217,7 @@ func newSubagentStatViews(currentSession *session.Session) []*subagentStatView {
 }
 
 type skillStatView struct {
+	Agent     string         `json:"agent,omitempty"`
 	Skill     string         `json:"skill"`
 	Args      string         `json:"args,omitempty"`
 	StartedAt time.Time      `json:"started_at"`
@@ -238,6 +239,7 @@ func newSkillStatViews(currentSession *session.Session) []*skillStatView {
 		}
 		usage := stat.Usage
 		views = append(views, &skillStatView{
+			Agent:     stat.AgentId,
 			Skill:     stat.Skill,
 			Args:      stat.Args,
 			StartedAt: stat.StartedAt,
