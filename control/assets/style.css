@@ -248,7 +248,7 @@ nav a.active::after { content: ']'; }
 .evidence-change { margin-top: 6px; }
 .snippet { margin: 4px 0; }
 .snippet summary { color: var(--text-2); cursor: pointer; }
-.snippet pre { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; margin: 4px 0 0; overflow-x: auto; padding: 6px 10px; }
+.snippet pre { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; margin: 4px 0 0; overflow-x: auto; overflow-wrap: anywhere; padding: 6px 10px; white-space: pre-wrap; }
 .snippet.thinking pre { color: var(--text-2); font-style: italic; }
 .session-card > summary, .entry-card > summary {
   display: flex;
