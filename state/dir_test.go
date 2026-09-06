@@ -265,3 +265,30 @@ func TestInstances(t *testing.T) {
 		assert.Equal(t, []string{`{"pid":2}`}, dir.ReadInstances(10))
 	})
 }
+
+func TestPruneInstances(t *testing.T) {
+	// old-removed-fresh-kept
+	t.Run("old-removed-fresh-kept", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstance("100-1", `{"pid":1}`))
+		require.NoError(t, dir.WriteInstance("200-2", `{"pid":2}`))
+		require.NoError(t, os.WriteFile(filepath.Join(root, "instances", "notes.txt"), []byte("keep"), 0o644))
+
+		old := time.Now().Add(-49 * time.Hour)
+		require.NoError(t, os.Chtimes(filepath.Join(root, "instances", "100-1.json"), old, old))
+		require.NoError(t, os.Chtimes(filepath.Join(root, "instances", "notes.txt"), old, old))
+
+		dir.PruneInstances(48 * time.Hour)
+
+		assert.Equal(t, []string{`{"pid":2}`}, dir.ReadInstances(10))
+		_, err := os.Stat(filepath.Join(root, "instances", "notes.txt"))
+		assert.NoError(t, err, "non-json files are ignored")
+	})
+
+	// missing-dir-noop
+	t.Run("missing-dir-noop", func(t *testing.T) {
+		dir := NewDir(t.TempDir())
+		dir.PruneInstances(48 * time.Hour)
+	})
+}

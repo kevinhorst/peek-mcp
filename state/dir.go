@@ -215,6 +215,26 @@ func (d *Dir) WriteInstance(id, content string) error {
 	return d.writeFile(filepath.Join(d.root, instancesDir, sanitize(id)+".json"), content)
 }
 
+func (d *Dir) PruneInstances(olderThan time.Duration) {
+	dir := filepath.Join(d.root, instancesDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if time.Since(info.ModTime()) > olderThan {
+			os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
+}
+
 func (d *Dir) ReadInstances(limit int) []string {
 	dir := filepath.Join(d.root, instancesDir)
 	entries, err := os.ReadDir(dir)
