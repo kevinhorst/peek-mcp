@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -66,6 +67,7 @@ func New(opts *Options) (*Server, error) {
 			return t.Format("2006-01-02 15:04:05")
 		},
 		"bytes": formatBytes,
+		"lower": strings.ToLower,
 	}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html")
 	if err != nil {

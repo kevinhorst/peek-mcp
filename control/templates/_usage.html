@@ -1,7 +1,9 @@
-<div class="usage-panel" hx-get="/fragments/sessions/{{.Id}}/usage{{if .Detail}}?detail={{.Detail}}{{end}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+<div class="usage-panel" hx-get="/fragments/sessions/{{.Id}}/usage{{if .Detail}}?detail={{.Detail}}{{if .Sort.Key}}&sort={{.Sort.Key}}&dir={{.Sort.Dir}}{{end}}{{end}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
 <div class="usage-grid">
 <table class="usage-table">
-  {{if .SessionTime}}<tr><th>Session time</th><td>{{.SessionTime}}</td></tr>
+  {{if .SessionTime}}<tr><th>Started at</th><td>{{ts .StartedAt}}</td></tr>
+  <tr><th>Last active</th><td>{{ts .LastActive}}</td></tr>
+  <tr><th>Session time</th><td>{{.SessionTime}}</td></tr>
   <tr><th>Idle time</th><td>{{.IdleTime}}</td></tr>
   <tr><th>Active time</th><td>{{.ActiveTime}}</td></tr>{{end}}
   <tr><th>Input tokens</th><td>{{.Usage.InputTokens}}</td></tr>

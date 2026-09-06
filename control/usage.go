@@ -2,7 +2,9 @@ package control
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,6 +13,52 @@ import (
 	"github.com/kevinhorst/peek-mcp/pricing"
 	"github.com/kevinhorst/peek-mcp/session"
 )
+
+const (
+	sortDirAsc  = "asc"
+	sortDirDesc = "desc"
+)
+
+var usageSortKeys = map[string][]string{
+	usageDetailSkills:    {"agent", "skill", "started", "ended", "tokens"},
+	usageDetailSubagents: {"agent", "model", "started", "lastactive", "tokens", "cost"},
+}
+
+func usageSortParam(r *http.Request, detail string) (string, string) {
+	key := r.URL.Query().Get("sort")
+	if !slices.Contains(usageSortKeys[detail], key) {
+		return "", ""
+	}
+	if r.URL.Query().Get("dir") == sortDirDesc {
+		return key, sortDirDesc
+	}
+	return key, sortDirAsc
+}
+
+type sortState struct {
+	Id     session.Id
+	Detail string
+	Key    string
+	Dir    string
+}
+
+func (s sortState) Query(column string) string {
+	dir := sortDirAsc
+	if s.Key == column && s.Dir == sortDirAsc {
+		dir = sortDirDesc
+	}
+	return fmt.Sprintf("?detail=%s&sort=%s&dir=%s", s.Detail, column, dir)
+}
+
+func (s sortState) Marker(column string) string {
+	if s.Key != column {
+		return ""
+	}
+	if s.Dir == sortDirDesc {
+		return " ▼"
+	}
+	return " ▲"
+}
 
 const (
 	usageDetailCost      = "cost"
@@ -37,6 +85,14 @@ func displayTotalTokens(usage *session.Usage) int {
 	}
 	return usage.InputTokens + usage.OutputTokens +
 		usage.CacheCreationInputTokens + usage.CacheReadInputTokens
+}
+
+func aggregateUsage(sess *session.Session) session.Usage {
+	total := *sess.CurrentUsage()
+	for _, stat := range sess.Subagents {
+		total.Add(&stat.Usage)
+	}
+	return total
 }
 
 func cachePercent(agent session.Agent, usage *session.Usage) string {
@@ -66,6 +122,8 @@ type costData struct {
 	Known bool
 	Rows  []costRow
 	Total string
+
+	totalValue float64
 }
 
 func newCostRow(component string, tokens int, ratePerMTok float64, total *float64) costRow {
@@ -108,6 +166,41 @@ func newCostData(id session.Id, agent session.Agent, model string, usage *sessio
 		}
 	}
 	data.Total = fmt.Sprintf("$%.4f", total)
+	data.totalValue = total
+	return data
+}
+
+func newSessionCostData(id session.Id, sess *session.Session) costData {
+	data := newCostData(id, sess.Agent, sess.Meta.Model, sess.CurrentUsage())
+
+	models := make(map[string]*session.Usage)
+	counts := make(map[string]int)
+	for _, stat := range sess.Subagents {
+		model := subagentModel(stat, sess)
+		if models[model] == nil {
+			models[model] = &session.Usage{}
+		}
+		models[model].Add(&stat.Usage)
+		counts[model]++
+	}
+
+	total := data.totalValue
+	for _, model := range slices.Sorted(maps.Keys(models)) {
+		group := newCostData(id, sess.Agent, model, models[model])
+		row := costRow{
+			Component: fmt.Sprintf("Subagents %s ×%d", model, counts[model]),
+			Tokens:    displayTotalTokens(models[model]),
+			Rate:      "—",
+			Cost:      group.Total,
+		}
+		if !group.Known {
+			row.Cost = "?"
+		}
+		data.Rows = append(data.Rows, row)
+		total += group.totalValue
+	}
+	data.Total = fmt.Sprintf("$%.4f", total)
+	data.totalValue = total
 	return data
 }
 
@@ -177,8 +270,10 @@ func truncatedLineCount(count int) string {
 }
 
 type skillRow struct {
+	Agent     string
 	Skill     string
 	StartedAt time.Time
+	EndedAt   time.Time
 	Duration  string
 	Tokens    int
 	Cost      string
@@ -186,11 +281,26 @@ type skillRow struct {
 
 type skillsData struct {
 	Id     session.Id
+	Sort   sortState
 	Skills []skillRow
 }
 
-func newSkillsData(id session.Id, sess *session.Session) *skillsData {
-	data := &skillsData{Id: id}
+func skillAgentLabel(agentId string, sess *session.Session) string {
+	if agentId == "" {
+		return "main"
+	}
+	if stat, ok := sess.Subagents[agentId]; ok {
+		return subagentTabLabel(agentId, stat)
+	}
+	runes := []rune(agentId)
+	if len(runes) > 8 {
+		return string(runes[:8])
+	}
+	return agentId
+}
+
+func newSkillsData(id session.Id, sess *session.Session, sort sortState) *skillsData {
+	data := &skillsData{Id: id, Sort: sort}
 	for _, skill := range sess.Skills {
 		duration := "running"
 		if !skill.EndedAt.IsZero() {
@@ -202,14 +312,42 @@ func newSkillsData(id session.Id, sess *session.Session) *skillsData {
 		}
 		cost := newCostData(id, sess.Agent, model, &skill.Usage)
 		data.Skills = append(data.Skills, skillRow{
+			Agent:     skillAgentLabel(skill.AgentId, sess),
 			Skill:     skill.Skill,
 			StartedAt: skill.StartedAt,
+			EndedAt:   skill.EndedAt,
 			Duration:  duration,
 			Tokens:    displayTotalTokens(&skill.Usage),
 			Cost:      cost.Total,
 		})
 	}
+	sortSkillRows(data.Skills, sort.Key, sort.Dir)
 	return data
+}
+
+func sortSkillRows(rows []skillRow, key, dir string) {
+	if key == "" {
+		return
+	}
+	slices.SortFunc(rows, func(a, b skillRow) int {
+		var c int
+		switch key {
+		case "agent":
+			c = strings.Compare(a.Agent, b.Agent)
+		case "skill":
+			c = strings.Compare(a.Skill, b.Skill)
+		case "started":
+			c = a.StartedAt.Compare(b.StartedAt)
+		case "ended":
+			c = a.EndedAt.Compare(b.EndedAt)
+		case "tokens":
+			c = a.Tokens - b.Tokens
+		}
+		if dir == sortDirDesc {
+			return -c
+		}
+		return c
+	})
 }
 
 type subagentRow struct {
@@ -217,14 +355,23 @@ type subagentRow struct {
 	Description string
 	Model       string
 	StartedAt   time.Time
+	LastActive  time.Time
 	Duration    string
 	Tokens      int
 	Cost        string
+
+	costValue float64
+}
+
+type subagentTableGroup struct {
+	Name string
+	Rows []subagentRow
 }
 
 type subagentsData struct {
-	Id        session.Id
-	Subagents []subagentRow
+	Id     session.Id
+	Sort   sortState
+	Groups []subagentTableGroup
 }
 
 func subagentModel(stat *session.SubagentStat, sess *session.Session) string {
@@ -234,23 +381,75 @@ func subagentModel(stat *session.SubagentStat, sess *session.Session) string {
 	return sess.Meta.Model
 }
 
-func newSubagentsData(id session.Id, sess *session.Session) *subagentsData {
-	data := &subagentsData{Id: id}
-	for _, stat := range sess.Subagents {
+func newSubagentsData(id session.Id, sess *session.Session, sort sortState) *subagentsData {
+	data := &subagentsData{Id: id, Sort: sort}
+	byType := make(map[string]int)
+	for _, agentId := range sess.SubagentIds() {
+		stat := sess.Subagents[agentId]
 		model := subagentModel(stat, sess)
 		cost := newCostData(id, sess.Agent, model, &stat.Usage)
-		data.Subagents = append(data.Subagents, subagentRow{
-			Agent:       stat.AgentType,
+		row := subagentRow{
+			Agent:       subagentTabLabel(agentId, stat),
 			Description: stat.Description,
 			Model:       model,
 			StartedAt:   stat.FirstActive,
+			LastActive:  stat.LastActive,
 			Duration:    stat.LastActive.Sub(stat.FirstActive).Round(time.Second).String(),
 			Tokens:      displayTotalTokens(&stat.Usage),
 			Cost:        cost.Total,
-		})
+			costValue:   cost.totalValue,
+		}
+		name := stat.AgentType
+		if name == "" {
+			name = "unknown"
+		}
+		index, ok := byType[name]
+		if !ok {
+			index = len(data.Groups)
+			byType[name] = index
+			data.Groups = append(data.Groups, subagentTableGroup{Name: name})
+		}
+		data.Groups[index].Rows = append(data.Groups[index].Rows, row)
 	}
-	slices.SortFunc(data.Subagents, func(a, b subagentRow) int { return a.StartedAt.Compare(b.StartedAt) })
+	slices.SortFunc(data.Groups, func(a, b subagentTableGroup) int { return strings.Compare(a.Name, b.Name) })
+	for i := range data.Groups {
+		sortSubagentRows(data.Groups[i].Rows, sort.Key, sort.Dir)
+	}
 	return data
+}
+
+func sortSubagentRows(rows []subagentRow, key, dir string) {
+	sortKey := key
+	if sortKey == "" {
+		sortKey = "started"
+		dir = sortDirAsc
+	}
+	slices.SortFunc(rows, func(a, b subagentRow) int {
+		var c int
+		switch sortKey {
+		case "agent":
+			c = strings.Compare(a.Agent, b.Agent)
+		case "model":
+			c = strings.Compare(a.Model, b.Model)
+		case "started":
+			c = a.StartedAt.Compare(b.StartedAt)
+		case "lastactive":
+			c = a.LastActive.Compare(b.LastActive)
+		case "tokens":
+			c = a.Tokens - b.Tokens
+		case "cost":
+			switch {
+			case a.costValue < b.costValue:
+				c = -1
+			case a.costValue > b.costValue:
+				c = 1
+			}
+		}
+		if dir == sortDirDesc {
+			return -c
+		}
+		return c
+	})
 }
 
 type fileRow struct {
@@ -259,25 +458,54 @@ type fileRow struct {
 	Writes int
 }
 
+type fileGroup struct {
+	Ext   string
+	Files []fileRow
+}
+
 type filesData struct {
 	Id     session.Id
-	Files  []fileRow
+	Groups []fileGroup
 	Config []fileRow
+}
+
+func fileExtension(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" {
+		return "(none)"
+	}
+	return ext
 }
 
 func newFilesData(sess *session.Session) *filesData {
 	data := &filesData{Id: sess.Meta.SessionId}
+	byExt := make(map[string]int)
 	for path, counts := range sess.TouchedFiles {
 		row := fileRow{Path: path, Reads: counts.Reads, Writes: counts.Writes}
 		if isClaudeConfigPath(path) {
 			data.Config = append(data.Config, row)
 			continue
 		}
-		data.Files = append(data.Files, row)
+		ext := fileExtension(path)
+		index, ok := byExt[ext]
+		if !ok {
+			index = len(data.Groups)
+			byExt[ext] = index
+			data.Groups = append(data.Groups, fileGroup{Ext: ext})
+		}
+		data.Groups[index].Files = append(data.Groups[index].Files, row)
 	}
 	byPath := func(a, b fileRow) int { return strings.Compare(a.Path, b.Path) }
-	slices.SortFunc(data.Files, byPath)
+	for i := range data.Groups {
+		slices.SortFunc(data.Groups[i].Files, byPath)
+	}
 	slices.SortFunc(data.Config, byPath)
+	slices.SortFunc(data.Groups, func(a, b fileGroup) int {
+		if c := len(b.Files) - len(a.Files); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Ext, b.Ext)
+	})
 	return data
 }
 

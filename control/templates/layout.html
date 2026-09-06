@@ -19,6 +19,56 @@
   document.body.addEventListener('htmx:afterSwap', function () {
     document.getElementById('error-banner').style.display = 'none';
   });
+
+  var uiOpen = {};
+  var uiSearch = {};
+  var uiFocusKey = null;
+
+  function applySearch(input) {
+    var root = document.querySelector(input.getAttribute('data-search-target'));
+    if (!root) return;
+    var query = input.value.toLowerCase();
+    root.querySelectorAll('tr[data-search]').forEach(function (row) {
+      row.hidden = query !== '' && row.getAttribute('data-search').indexOf(query) === -1;
+    });
+    root.querySelectorAll('details[data-search-group]').forEach(function (group) {
+      if (query !== '') group.open = group.querySelectorAll('tr[data-search]:not([hidden])').length > 0;
+    });
+  }
+
+  document.body.addEventListener('toggle', function (evt) {
+    var key = evt.target.getAttribute && evt.target.getAttribute('data-key');
+    if (key) uiOpen[key] = evt.target.open;
+  }, true);
+  document.body.addEventListener('input', function (evt) {
+    var key = evt.target.getAttribute && evt.target.getAttribute('data-search-key');
+    if (key) {
+      uiSearch[key] = evt.target.value;
+      applySearch(evt.target);
+    }
+  });
+  document.body.addEventListener('focusin', function (evt) {
+    var key = evt.target.getAttribute && evt.target.getAttribute('data-search-key');
+    uiFocusKey = key || null;
+  });
+  document.body.addEventListener('htmx:afterSwap', function (evt) {
+    var root = evt.detail.elt;
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll('details[data-key]').forEach(function (d) {
+      var key = d.getAttribute('data-key');
+      if (key in uiOpen) d.open = uiOpen[key];
+    });
+    root.querySelectorAll('input[data-search-key]').forEach(function (input) {
+      var key = input.getAttribute('data-search-key');
+      if (key in uiSearch) input.value = uiSearch[key];
+      if (uiFocusKey === key) {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+      applySearch(input);
+    });
+  });
+
   var source = new EventSource('/api/events');
   ['session_created', 'turn_added', 'event_added', 'usage_updated', 'plan_updated', 'diff_updated', 'uncommitted_diff_updated'].forEach(function (type) {
     source.addEventListener(type, function () { htmx.trigger(document.body, 'peek-refresh'); });

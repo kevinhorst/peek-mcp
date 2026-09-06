@@ -186,8 +186,8 @@ func TestSessionDetailPage(t *testing.T) {
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/usage"`)
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/events"`)
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/memory"`)
-	assert.Equal(t, 6, strings.Count(body, `<details class="section">`))
-	assert.Equal(t, 1, strings.Count(body, `<details class="section" open>`))
+	assert.Equal(t, 5, strings.Count(body, `<details class="section">`))
+	assert.Equal(t, 2, strings.Count(body, `<details class="section" open>`))
 
 	assert.Equal(t, http.StatusNotFound, get(server, "/sessions/unknown").Code)
 }
@@ -200,7 +200,23 @@ func TestTurnsFragment(t *testing.T) {
 	body := response.Body.String()
 	assert.Contains(t, body, "What does this do?")
 	assert.Contains(t, body, "It does things.")
-	assert.NotContains(t, body, `class="tabs subtabs"`)
+	assert.Contains(t, body, `class="tabs subtabs"`)
+	assert.Contains(t, body, `?role=user`)
+	assert.Contains(t, body, `?role=assistant`)
+	assert.NotContains(t, body, ">main</a>")
+	assert.NotContains(t, body, "subagent-groups")
+
+	response = get(server, "/fragments/sessions/s1/turns?role=user")
+	require.Equal(t, http.StatusOK, response.Code)
+	body = response.Body.String()
+	assert.Contains(t, body, "What does this do?")
+	assert.NotContains(t, body, "It does things.")
+
+	response = get(server, "/fragments/sessions/s1/turns?role=assistant")
+	require.Equal(t, http.StatusOK, response.Code)
+	body = response.Body.String()
+	assert.Contains(t, body, "It does things.")
+	assert.NotContains(t, body, "What does this do?")
 }
 
 func TestTurnsFragment_SubagentTabs(t *testing.T) {
@@ -233,7 +249,9 @@ func TestTurnsFragment_SubagentTabs(t *testing.T) {
 	body := response.Body.String()
 	assert.Contains(t, body, `class="tabs subtabs"`)
 	assert.Contains(t, body, `?subagent=ag1`)
-	assert.Contains(t, body, ">Explore ag1</a>")
+	assert.Contains(t, body, `class="section subagent-group" data-key="turns-group-s1-Explore"`)
+	assert.Contains(t, body, "<summary>Explore <span class=\"meta\">1</span></summary>")
+	assert.Contains(t, body, "<th>Explore ag1</th>")
 	assert.Contains(t, body, "What does this do?")
 	assert.NotContains(t, body, "sub prompt")
 
@@ -242,7 +260,8 @@ func TestTurnsFragment_SubagentTabs(t *testing.T) {
 	body = response.Body.String()
 	assert.Contains(t, body, "sub prompt")
 	assert.NotContains(t, body, "What does this do?")
-	assert.Contains(t, body, `class="active" title="scan">Explore ag1</a>`)
+	assert.Contains(t, body, `data-key="turns-group-s1-Explore" open`)
+	assert.Contains(t, body, `class="usage-row active-row"`)
 	assert.Contains(t, body, `class="usage-table turns-info"`)
 	assert.Contains(t, body, "<th>Id</th><td>ag1</td>")
 	assert.Contains(t, body, "<th>Model</th><td>claude-haiku-4-5-20251001</td>")

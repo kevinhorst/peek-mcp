@@ -1,7 +1,16 @@
 {{if .Skills}}
+{{$sort := .Sort}}{{$id := .Id}}
 <table class="usage-table">
-  <tr><th>Skill</th><th>Started</th><th>Duration</th><th>Tokens</th><th>Cost</th></tr>
-  {{range .Skills}}<tr><th>{{.Skill}}</th><td>{{ts .StartedAt}}</td><td>{{.Duration}}</td><td>{{.Tokens}}</td><td>{{.Cost}}</td></tr>
+  <tr>
+    <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "agent"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Agent{{$sort.Marker "agent"}}</a></th>
+    <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "skill"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Skill{{$sort.Marker "skill"}}</a></th>
+    <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "started"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Started{{$sort.Marker "started"}}</a></th>
+    <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "ended"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Ended{{$sort.Marker "ended"}}</a></th>
+    <th>Duration</th>
+    <th><a hx-get="/fragments/sessions/{{$id}}/usage{{$sort.Query "tokens"}}" hx-target="closest .usage-panel" hx-swap="outerHTML">Tokens{{$sort.Marker "tokens"}}</a></th>
+    <th>Cost</th>
+  </tr>
+  {{range .Skills}}<tr><th>{{.Agent}}</th><td>{{.Skill}}</td><td>{{ts .StartedAt}}</td><td>{{if .EndedAt.IsZero}}running{{else}}{{ts .EndedAt}}{{end}}</td><td>{{.Duration}}</td><td>{{.Tokens}}</td><td>{{.Cost}}</td></tr>
   {{end}}
 </table>
 {{else}}

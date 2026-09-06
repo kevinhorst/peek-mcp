@@ -5,6 +5,8 @@
   <tr><th>Id</th><td>{{.Info.Id}}</td></tr>
   {{if .Info.Description}}<tr><th>Description</th><td>{{.Info.Description}}</td></tr>{{end}}
   {{if .Info.Model}}<tr><th>Model</th><td>{{.Info.Model}}</td></tr>{{end}}
+  {{if not .Info.StartedAt.IsZero}}<tr><th>Started at</th><td>{{ts .Info.StartedAt}}</td></tr>
+  <tr><th>Last active</th><td>{{ts .Info.LastActive}}</td></tr>{{end}}
   {{if .Info.Duration}}<tr><th>Runtime</th><td>{{.Info.Duration}}</td></tr>{{end}}
   <tr><th>Input tokens</th><td>{{.Info.Usage.InputTokens}}</td></tr>
   <tr><th>Output tokens</th><td>{{.Info.Usage.OutputTokens}}</td></tr>
@@ -16,16 +18,31 @@
   {{if .Info.Cost}}<tr><th>Cost</th><td>{{.Info.Cost}}</td></tr>{{end}}
 </table>
 {{end}}
-{{if or .Tabs .HasThinking}}
 <div class="tabs subtabs">
-  {{if .Tabs}}
+  {{if .HasSubagents}}
   <a hx-get="/fragments/sessions/{{.Id}}/turns{{.MainQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if not .Subagent}}class="active"{{end}}>main</a>
-  {{range .Tabs}}
-  <a hx-get="/fragments/sessions/{{$root.Id}}/turns{{.Query}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if eq $root.Subagent .Id}}class="active"{{end}} title="{{.Description}}">{{.Label}}</a>
   {{end}}
-  {{end}}
+  <a hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries ""}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if not .Role}}class="active"{{end}}>all</a>
+  <a hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries "user"}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if eq .Role "user"}}class="active"{{end}}>user</a>
+  <a hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries "assistant"}}" hx-target="closest .turns-panel" hx-swap="outerHTML" {{if eq .Role "assistant"}}class="active"{{end}}>assistant</a>
   {{if .HasThinking}}
   <label class="thinking-toggle" title="show assistant thinking"><input type="checkbox"{{if .ShowThinking}} checked{{end}} hx-get="/fragments/sessions/{{.Id}}/turns{{.ToggleQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML"> thinking</label>
+  {{end}}
+</div>
+{{if .Groups}}
+<div class="subagent-groups">
+  {{range .Groups}}
+  <details class="section subagent-group" data-key="turns-group-{{$root.Id}}-{{.Name}}"{{if .Open}} open{{end}}>
+    <summary>{{.Name}} <span class="meta">{{len .Rows}}</span></summary>
+    <table class="usage-table">
+      <tr><th>Id</th><th>Description</th><th>Last active</th></tr>
+      {{range .Rows}}
+      <tr class="usage-row{{if .Active}} active-row{{end}}" hx-get="/fragments/sessions/{{$root.Id}}/turns{{.Query}}" hx-target="closest .turns-panel" hx-swap="outerHTML">
+        <th>{{.Label}}</th><td>{{.Description}}</td><td>{{ts .LastActive}}</td>
+      </tr>
+      {{end}}
+    </table>
+  </details>
   {{end}}
 </div>
 {{end}}

@@ -1,18 +1,28 @@
 {{define "usage_files_table"}}
 <table class="usage-table">
   <tr><th>Path</th><th>Reads</th><th>Writes</th></tr>
-  {{range .}}<tr><th>{{.Path}}</th><td>{{.Reads}}</td><td>{{.Writes}}</td></tr>
+  {{range .}}<tr data-search="{{lower .Path}}"><th>{{.Path}}</th><td>{{.Reads}}</td><td>{{.Writes}}</td></tr>
   {{end}}
 </table>
 {{end}}
-{{if or .Files .Config}}
-{{if .Files}}{{template "usage_files_table" .Files}}{{end}}
+{{if or .Groups .Config}}
+<input class="files-search" type="search" placeholder="filter paths…"
+       data-search-key="files-{{.Id}}" data-search-target="#files-detail-{{.Id}}">
+<div id="files-detail-{{.Id}}">
+{{$id := .Id}}
+{{range .Groups}}
+<details class="section" data-key="files-{{$id}}-{{.Ext}}" data-search-group>
+  <summary>{{.Ext}} <span class="meta">{{len .Files}} files</span></summary>
+  {{template "usage_files_table" .Files}}
+</details>
+{{end}}
 {{if .Config}}
-<details class="section">
+<details class="section" data-key="files-{{$id}}-claude" data-search-group>
   <summary>.claude <span class="meta">{{len .Config}} files</span></summary>
   {{template "usage_files_table" .Config}}
 </details>
 {{end}}
+</div>
 {{else}}
 <div class="empty">No touched files.</div>
 {{end}}

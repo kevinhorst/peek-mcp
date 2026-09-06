@@ -178,7 +178,8 @@ func TestUsageSkillsDetail(t *testing.T) {
 		response := get(server, "/fragments/sessions/s1/usage?detail=skills")
 		require.Equal(t, http.StatusOK, response.Code)
 		body := response.Body.String()
-		assert.Contains(t, body, "<th>jq</th>")
+		assert.Contains(t, body, "<th>main</th>")
+		assert.Contains(t, body, "<td>jq</td>")
 		assert.Contains(t, body, "1m30s")
 		assert.Contains(t, body, "<td>30</td>")
 		assert.Contains(t, body, "<th>Cost</th>")
@@ -237,7 +238,8 @@ func TestUsageSubagentsDetail(t *testing.T) {
 		response := get(server, "/fragments/sessions/s1/usage?detail=subagents")
 		require.Equal(t, http.StatusOK, response.Code)
 		body := response.Body.String()
-		assert.Contains(t, body, "<th>Explore</th>")
+		assert.Contains(t, body, "<summary>Explore <span class=\"meta\">1</span></summary>")
+		assert.Contains(t, body, "<th>Explore a1</th>")
 		assert.Contains(t, body, "<td>find things</td>")
 		assert.Contains(t, body, "<td>claude-haiku-4-5-20251001</td>")
 		assert.Contains(t, body, "1m30s")
@@ -251,8 +253,8 @@ func TestUsageSubagentsDetail(t *testing.T) {
 		started := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
 		require.True(t, store.WithSession("s1", func(sess *session.Session) {
 			sess.Subagents = map[string]*session.SubagentStat{
-				"a2": {AgentType: "later", FirstActive: started.Add(time.Minute), LastActive: started.Add(2 * time.Minute)},
-				"a1": {AgentType: "earlier", FirstActive: started, LastActive: started.Add(time.Minute)},
+				"a2": {AgentType: "worker", FirstActive: started, LastActive: started.Add(time.Minute)},
+				"a1": {AgentType: "worker", FirstActive: started.Add(time.Minute), LastActive: started.Add(2 * time.Minute)},
 			}
 		}))
 		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
@@ -261,7 +263,7 @@ func TestUsageSubagentsDetail(t *testing.T) {
 		response := get(server, "/fragments/sessions/s1/usage?detail=subagents")
 		require.Equal(t, http.StatusOK, response.Code)
 		body := response.Body.String()
-		assert.Less(t, strings.Index(body, "<th>earlier</th>"), strings.Index(body, "<th>later</th>"))
+		assert.Less(t, strings.Index(body, "<th>worker a2</th>"), strings.Index(body, "<th>worker a1</th>"))
 	})
 
 	// empty-state
@@ -320,7 +322,7 @@ func TestUsageFilesDetail(t *testing.T) {
 		require.NoError(t, err)
 
 		body := get(server, "/fragments/sessions/s1/usage?detail=files").Body.String()
-		assert.Contains(t, body, `<details class="section">`)
+		assert.Contains(t, body, `data-search-group`)
 		assert.Contains(t, body, "<summary>.claude")
 		// worktree file stays in the open list, above the .claude dropdown
 		assert.Less(t, strings.Index(body, "worktrees/w/control/api.go"), strings.Index(body, "<summary>.claude"))
@@ -464,4 +466,161 @@ func TestIsClaudeConfigPath(t *testing.T) {
 	for _, c := range cases {
 		assert.Equal(t, c.want, isClaudeConfigPath(c.path), c.path)
 	}
+}
+
+func TestAggregateUsage(t *testing.T) {
+	sess := &session.Session{
+		TotalUsage: session.Usage{InputTokens: 10, OutputTokens: 5},
+		Subagents: map[string]*session.SubagentStat{
+			"a1": {Usage: session.Usage{InputTokens: 100, OutputTokens: 50}},
+			"a2": {Usage: session.Usage{InputTokens: 200, OutputTokens: 100}},
+		},
+	}
+
+	total := aggregateUsage(sess)
+	assert.Equal(t, 310, total.InputTokens)
+	assert.Equal(t, 155, total.OutputTokens)
+	assert.Equal(t, 10, sess.TotalUsage.InputTokens, "session state untouched")
+
+	sess.Subagents = nil
+	total = aggregateUsage(sess)
+	assert.Equal(t, 10, total.InputTokens)
+}
+
+func TestSessionCostData(t *testing.T) {
+	// mixed-models-grouped
+	t.Run("mixed-models-grouped", func(t *testing.T) {
+		sess := &session.Session{
+			Agent:      session.AgentClaude,
+			Meta:       session.Meta{SessionId: "s1", Model: "claude-fable-5"},
+			TotalUsage: session.Usage{InputTokens: 1000, OutputTokens: 1000},
+			Subagents: map[string]*session.SubagentStat{
+				"a1": {Model: "claude-haiku-4-5-20251001", Usage: session.Usage{InputTokens: 1000, OutputTokens: 1000}},
+				"a2": {Model: "claude-haiku-4-5-20251001", Usage: session.Usage{InputTokens: 1000, OutputTokens: 1000}},
+				"a3": {Usage: session.Usage{InputTokens: 1000, OutputTokens: 1000}},
+			},
+		}
+
+		data := newSessionCostData("s1", sess)
+		require.True(t, data.Known)
+		components := make([]string, 0, len(data.Rows))
+		for _, row := range data.Rows {
+			components = append(components, row.Component)
+		}
+		assert.Contains(t, components, "Subagents claude-haiku-4-5-20251001 ×2")
+		assert.Contains(t, components, "Subagents claude-fable-5 ×1", "model-less subagent falls back to the session model")
+
+		main := newCostData("s1", sess.Agent, sess.Meta.Model, &session.Usage{InputTokens: 1000, OutputTokens: 1000})
+		assert.Greater(t, data.totalValue, main.totalValue, "grand total exceeds the main-only total")
+	})
+
+	// unknown-model-marked
+	t.Run("unknown-model-marked", func(t *testing.T) {
+		sess := &session.Session{
+			Agent:      session.AgentClaude,
+			Meta:       session.Meta{SessionId: "s1", Model: "claude-fable-5"},
+			TotalUsage: session.Usage{InputTokens: 1000},
+			Subagents: map[string]*session.SubagentStat{
+				"a1": {Model: "mystery-model", Usage: session.Usage{InputTokens: 1000}},
+			},
+		}
+
+		data := newSessionCostData("s1", sess)
+		last := data.Rows[len(data.Rows)-1]
+		assert.Equal(t, "Subagents mystery-model ×1", last.Component)
+		assert.Equal(t, "?", last.Cost)
+		main := newCostData("s1", sess.Agent, sess.Meta.Model, &session.Usage{InputTokens: 1000})
+		assert.Equal(t, main.totalValue, data.totalValue, "unknown group excluded from the total")
+	})
+}
+
+func TestUsageSortParam(t *testing.T) {
+	request := func(query string) *http.Request {
+		r, _ := http.NewRequest(http.MethodGet, "/fragments/sessions/s1/usage?"+query, nil)
+		return r
+	}
+
+	key, dir := usageSortParam(request("detail=skills&sort=agent&dir=desc"), usageDetailSkills)
+	assert.Equal(t, "agent", key)
+	assert.Equal(t, sortDirDesc, dir)
+
+	key, dir = usageSortParam(request("detail=skills&sort=agent"), usageDetailSkills)
+	assert.Equal(t, "agent", key)
+	assert.Equal(t, sortDirAsc, dir)
+
+	key, dir = usageSortParam(request("detail=skills&sort=bogus"), usageDetailSkills)
+	assert.Equal(t, "", key)
+	assert.Equal(t, "", dir)
+
+	key, _ = usageSortParam(request("detail=cost&sort=agent"), usageDetailCost)
+	assert.Equal(t, "", key, "detail without sortable columns rejects every key")
+}
+
+func TestSortSkillRows(t *testing.T) {
+	rows := func() []skillRow {
+		return []skillRow{
+			{Agent: "main", Skill: "b", Tokens: 30},
+			{Agent: "worker a1", Skill: "a", Tokens: 10},
+			{Agent: "explore a2", Skill: "c", Tokens: 20},
+		}
+	}
+
+	sorted := rows()
+	sortSkillRows(sorted, "agent", sortDirAsc)
+	assert.Equal(t, []string{"explore a2", "main", "worker a1"}, []string{sorted[0].Agent, sorted[1].Agent, sorted[2].Agent})
+
+	sorted = rows()
+	sortSkillRows(sorted, "tokens", sortDirDesc)
+	assert.Equal(t, []int{30, 20, 10}, []int{sorted[0].Tokens, sorted[1].Tokens, sorted[2].Tokens})
+
+	sorted = rows()
+	sortSkillRows(sorted, "", sortDirAsc)
+	assert.Equal(t, "main", sorted[0].Agent, "empty key preserves order")
+}
+
+func TestSortSubagentRows(t *testing.T) {
+	started := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+	rows := func() []subagentRow {
+		return []subagentRow{
+			{Agent: "w a1", StartedAt: started.Add(time.Minute), costValue: 0.5},
+			{Agent: "w a2", StartedAt: started, costValue: 1.5},
+		}
+	}
+
+	sorted := rows()
+	sortSubagentRows(sorted, "", "")
+	assert.Equal(t, "w a2", sorted[0].Agent, "default order is started ascending")
+
+	sorted = rows()
+	sortSubagentRows(sorted, "cost", sortDirDesc)
+	assert.Equal(t, "w a2", sorted[0].Agent)
+
+	sorted = rows()
+	sortSubagentRows(sorted, "cost", sortDirAsc)
+	assert.Equal(t, "w a1", sorted[0].Agent)
+}
+
+func TestFileExtension(t *testing.T) {
+	assert.Equal(t, ".go", fileExtension("/a/b/main.go"))
+	assert.Equal(t, ".md", fileExtension("/a/README.MD"))
+	assert.Equal(t, "(none)", fileExtension("/a/Makefile"))
+}
+
+func TestNewFilesData_ExtensionGroups(t *testing.T) {
+	sess := &session.Session{
+		Meta: session.Meta{SessionId: "s1"},
+		TouchedFiles: map[string]*session.FileTouchCounts{
+			"/a/one.go":                  {Reads: 1},
+			"/a/two.go":                  {Reads: 1},
+			"/a/readme.md":               {Reads: 1},
+			"/home/k/.claude/plans/x.md": {Reads: 1},
+		},
+	}
+
+	data := newFilesData(sess)
+	require.Len(t, data.Groups, 2)
+	assert.Equal(t, ".go", data.Groups[0].Ext, "largest group first")
+	assert.Len(t, data.Groups[0].Files, 2)
+	assert.Equal(t, ".md", data.Groups[1].Ext)
+	require.Len(t, data.Config, 1, "claude config stays out of extension groups")
 }

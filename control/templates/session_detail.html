@@ -19,7 +19,7 @@
     <div class="empty">Loading…</div>
   </div>
 </details>
-<details class="section">
+<details class="section" open>
   <summary>Turns</summary>
   <div hx-get="/fragments/sessions/{{.Summary.Id}}/turns" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
     <div class="empty">Loading…</div>

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -58,8 +59,11 @@ type turnsData struct {
 	Id           session.Id
 	Turns        []*session.Turn
 	Subagent     string
-	Tabs         []subagentTab
+	Groups       []subagentGroup
+	HasSubagents bool
 	Info         *turnsInfo
+	Role         string
+	RoleQueries  map[string]string
 	ShowThinking bool
 	HasThinking  bool
 	Query        string
@@ -67,10 +71,18 @@ type turnsData struct {
 	ToggleQuery  string
 }
 
+type subagentGroup struct {
+	Name string
+	Open bool
+	Rows []subagentTab
+}
+
 type subagentTab struct {
 	Id          string
 	Label       string
 	Description string
+	LastActive  time.Time
+	Active      bool
 	Query       string
 }
 
@@ -78,6 +90,8 @@ type turnsInfo struct {
 	Id          string
 	Description string
 	Model       string
+	StartedAt   time.Time
+	LastActive  time.Time
 	Duration    string
 	Usage       session.Usage
 	Tokens      int
@@ -96,6 +110,8 @@ func newMainInfo(sess *session.Session) *turnsInfo {
 		Cost:        cost.Total,
 	}
 	if !sess.StartedAt.IsZero() {
+		info.StartedAt = sess.StartedAt
+		info.LastActive = sess.LastActive
 		info.Duration = sess.LastActive.Sub(sess.StartedAt).Round(time.Second).String()
 	}
 	return info
@@ -168,6 +184,8 @@ func (s *Server) handleSessionsFragment(w http.ResponseWriter, r *http.Request) 
 type usageData struct {
 	Id           session.Id
 	Counters     session.Counters
+	StartedAt    time.Time
+	LastActive   time.Time
 	Usage        session.Usage
 	TotalTokens  int
 	CachePercent string
@@ -176,6 +194,7 @@ type usageData struct {
 	IdleTime     string
 	ActiveTime   string
 	Detail       string
+	Sort         sortState
 	Cost         *costData
 	Denials      *denialsData
 	Models       *modelsData
@@ -194,14 +213,18 @@ type eventsData struct {
 func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
 	id := session.Id(r.PathValue("id"))
 	data := usageData{Id: id, Detail: usageDetailParam(r)}
+	key, dir := usageSortParam(r, data.Detail)
+	data.Sort = sortState{Id: id, Detail: data.Detail, Key: key, Dir: dir}
 	if !s.store.WithSession(id, func(sess *session.Session) {
 		data.Counters = sess.Counters
-		data.Usage = *sess.CurrentUsage()
+		data.Usage = aggregateUsage(sess)
 		data.TotalTokens = displayTotalTokens(&data.Usage)
 		data.CachePercent = cachePercent(sess.Agent, &data.Usage)
 		data.PlanVersions = len(sess.PlanRevisions)
 		data.TouchedFiles = len(sess.TouchedFiles)
 		if !sess.StartedAt.IsZero() {
+			data.StartedAt = sess.StartedAt
+			data.LastActive = sess.LastActive
 			wall := sess.LastActive.Sub(sess.StartedAt)
 			data.SessionTime = wall.Round(time.Second).String()
 			data.IdleTime = sess.Idle.Round(time.Second).String()
@@ -209,7 +232,7 @@ func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
 		}
 		switch data.Detail {
 		case usageDetailCost:
-			cost := newCostData(id, sess.Agent, sess.Meta.Model, sess.CurrentUsage())
+			cost := newSessionCostData(id, sess)
 			data.Cost = &cost
 		case usageDetailDenials:
 			data.Denials = newDenialsData(sess)
@@ -218,9 +241,9 @@ func (s *Server) handleUsageFragment(w http.ResponseWriter, r *http.Request) {
 		case usageDetailPlans:
 			data.Plans = newPlanVersionsData(sess)
 		case usageDetailSkills:
-			data.Skills = newSkillsData(id, sess)
+			data.Skills = newSkillsData(id, sess, data.Sort)
 		case usageDetailSubagents:
-			data.Subagents = newSubagentsData(id, sess)
+			data.Subagents = newSubagentsData(id, sess, data.Sort)
 		case usageDetailFiles:
 			data.Files = newFilesData(sess)
 		}
@@ -253,18 +276,12 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 	data := turnsData{
 		Id:           id,
 		Subagent:     r.URL.Query().Get("subagent"),
+		Role:         roleParam(r),
 		ShowThinking: r.URL.Query().Get("thinking") != "off",
 	}
 	if !s.store.WithSession(id, func(sess *session.Session) {
-		for _, agentId := range sess.SubagentIds() {
-			stat := sess.Subagents[agentId]
-			data.Tabs = append(data.Tabs, subagentTab{
-				Id:          agentId,
-				Label:       subagentTabLabel(agentId, stat),
-				Description: stat.Description,
-				Query:       turnsQuery(agentId, data.ShowThinking),
-			})
-		}
+		data.Groups = newSubagentGroups(sess, data.Subagent, data.Role, data.ShowThinking)
+		data.HasSubagents = len(data.Groups) > 0
 		if data.Subagent != "" {
 			if turns, ok := sess.SubagentTurns(data.Subagent, session.AllTurns); ok {
 				data.Turns = turns
@@ -286,10 +303,63 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	data.Query = turnsQuery(data.Subagent, data.ShowThinking)
-	data.MainQuery = turnsQuery("", data.ShowThinking)
-	data.ToggleQuery = turnsQuery(data.Subagent, !data.ShowThinking)
+	if data.Role != "" {
+		filtered := data.Turns[:0]
+		for _, turn := range data.Turns {
+			if string(turn.Role) == data.Role {
+				filtered = append(filtered, turn)
+			}
+		}
+		data.Turns = filtered
+	}
+	data.Query = turnsQuery(data.Subagent, data.Role, data.ShowThinking)
+	data.MainQuery = turnsQuery("", data.Role, data.ShowThinking)
+	data.ToggleQuery = turnsQuery(data.Subagent, data.Role, !data.ShowThinking)
+	data.RoleQueries = map[string]string{
+		"":          turnsQuery(data.Subagent, "", data.ShowThinking),
+		"user":      turnsQuery(data.Subagent, "user", data.ShowThinking),
+		"assistant": turnsQuery(data.Subagent, "assistant", data.ShowThinking),
+	}
 	s.renderFragment(w, tmplTurns, data)
+}
+
+func roleParam(r *http.Request) string {
+	switch role := r.URL.Query().Get("role"); role {
+	case "user", "assistant":
+		return role
+	}
+	return ""
+}
+
+func newSubagentGroups(sess *session.Session, selected, role string, showThinking bool) []subagentGroup {
+	byType := make(map[string]int)
+	var groups []subagentGroup
+	for _, agentId := range sess.SubagentIds() {
+		stat := sess.Subagents[agentId]
+		name := stat.AgentType
+		if name == "" {
+			name = "unknown"
+		}
+		index, ok := byType[name]
+		if !ok {
+			index = len(groups)
+			byType[name] = index
+			groups = append(groups, subagentGroup{Name: name})
+		}
+		groups[index].Rows = append(groups[index].Rows, subagentTab{
+			Id:          agentId,
+			Label:       subagentTabLabel(agentId, stat),
+			Description: stat.Description,
+			LastActive:  stat.LastActive,
+			Active:      agentId == selected,
+			Query:       turnsQuery(agentId, role, showThinking),
+		})
+		if agentId == selected {
+			groups[index].Open = true
+		}
+	}
+	slices.SortFunc(groups, func(a, b subagentGroup) int { return strings.Compare(a.Name, b.Name) })
+	return groups
 }
 
 func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *turnsInfo {
@@ -304,6 +374,8 @@ func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *turn
 		Id:          agentId,
 		Description: stat.Description,
 		Model:       model,
+		StartedAt:   stat.FirstActive,
+		LastActive:  stat.LastActive,
 		Duration:    stat.LastActive.Sub(stat.FirstActive).Round(time.Second).String(),
 		Usage:       stat.Usage,
 		Tokens:      displayTotalTokens(&stat.Usage),
@@ -311,10 +383,13 @@ func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *turn
 	}
 }
 
-func turnsQuery(subagent string, showThinking bool) string {
+func turnsQuery(subagent, role string, showThinking bool) string {
 	values := url.Values{}
 	if subagent != "" {
 		values.Set("subagent", subagent)
+	}
+	if role != "" {
+		values.Set("role", role)
 	}
 	if !showThinking {
 		values.Set("thinking", "off")

@@ -45,6 +45,7 @@ func (s *Server) stats() statsResponse {
 		RestartAvailable: s.restart != nil,
 	}
 	if s.stateDir != nil {
+		s.stateDir.PruneInstances(instanceRetention)
 		resp.StateDiskBytes = s.stateDir.Size()
 		for _, content := range s.stateDir.ReadInstances(maxInstancesShown) {
 			var record tools.InstanceRecord
