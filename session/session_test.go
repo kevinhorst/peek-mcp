@@ -253,3 +253,46 @@ func TestSession_Turns_ActiveKeptOverOldest(t *testing.T) {
 	require.Len(t, turns, 2)
 	assert.Equal(t, "active", turns[len(turns)-1].Text, "active turn survives the cap")
 }
+
+func TestSession_SkillWindowsPerActor(t *testing.T) {
+	s := provideCompleteSession()
+	now := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+
+	s.AddEvent(&Event{Kind: EventKindSkillInvoked, Skill: &SkillPayload{Skill: "main-skill"}, Timestamp: now})
+	s.AddEvent(&Event{Kind: EventKindSkillInvoked, Actor: "ag1", Skill: &SkillPayload{Skill: "sub-skill"}, Timestamp: now})
+
+	require.Len(t, s.Skills, 2)
+	assert.Equal(t, "", s.Skills[0].AgentId, "main window keeps an empty actor")
+	assert.Equal(t, "ag1", s.Skills[1].AgentId)
+
+	s.AddTurn(provideUsageTurn("req-main", 10))
+	assert.Equal(t, 10, s.Skills[0].Usage.OutputTokens, "main turn usage lands on main's window")
+	assert.Equal(t, 0, s.Skills[1].Usage.OutputTokens, "subagent window untouched by main turns")
+
+	s.AddSubagentTurn(&Turn{
+		SubagentId: "ag1",
+		Role:       RoleAssistant,
+		RequestId:  "req-sub",
+		Timestamp:  now.Add(time.Minute),
+		Usage:      &Usage{OutputTokens: 7},
+		Meta:       &Meta{SessionId: Id("sess-123"), Model: "haiku"},
+	})
+	assert.Equal(t, 10, s.Skills[0].Usage.OutputTokens, "main window untouched by subagent turns")
+	assert.Equal(t, 7, s.Skills[1].Usage.OutputTokens, "subagent turn usage lands on its actor's window")
+	assert.Equal(t, "haiku", s.Skills[1].Model)
+
+	s.CloseSkillWindow(now.Add(2 * time.Minute))
+	s.AddSubagentTurn(&Turn{
+		SubagentId: "ag1",
+		Role:       RoleAssistant,
+		RequestId:  "req-sub-2",
+		Timestamp:  now.Add(3 * time.Minute),
+		Usage:      &Usage{OutputTokens: 5},
+		Meta:       &Meta{SessionId: Id("sess-123")},
+	})
+	assert.Equal(t, 12, s.Skills[1].Usage.OutputTokens, "prompt boundary closes only main's window")
+
+	s.AddEvent(&Event{Kind: EventKindSkillInvoked, Actor: "ag1", Skill: &SkillPayload{Skill: "sub-skill-2"}, Timestamp: now.Add(4 * time.Minute)})
+	require.Len(t, s.Skills, 3)
+	assert.Equal(t, now.Add(3*time.Minute), s.Skills[1].EndedAt, "next skill of the same actor closes its predecessor")
+}

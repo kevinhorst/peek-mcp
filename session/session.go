@@ -29,7 +29,7 @@ const EventBufferCapacity = 500
 
 const idleThreshold = 5 * time.Minute
 
-const maxTouchedFiles = 1000
+const maxTouchedFiles = 2000
 
 const maxSubagentStats = 200
 
@@ -37,7 +37,7 @@ const subagentTurnDepth = 200
 
 const AllTurns = math.MaxInt
 
-const maxSkillStats = 100
+const maxSkillStats = 200
 
 const StopReasonToolUse = "tool_use"
 
@@ -49,7 +49,7 @@ const (
 )
 
 type Session struct {
-	activeSkill     *SkillStat
+	activeSkills    map[string]*SkillStat
 	currentPromptId string
 	planExitSeen    bool
 	usageRequestIds map[string]struct{}
@@ -144,6 +144,7 @@ func (s *Session) AddFileTouch(touch *FileTouch) {
 }
 
 type SkillStat struct {
+	AgentId   string    `json:"agent_id,omitempty"`
 	Skill     string    `json:"skill"`
 	Args      string    `json:"args,omitempty"`
 	Model     string    `json:"model,omitempty"`
@@ -162,28 +163,37 @@ func (s *Session) HandlePromptBoundary(promptId string, timestamp time.Time) {
 }
 
 func (s *Session) CloseSkillWindow(timestamp time.Time) {
-	if s.activeSkill == nil {
+	s.closeSkillWindow("", timestamp)
+}
+
+func (s *Session) closeSkillWindow(actor string, timestamp time.Time) {
+	stat, ok := s.activeSkills[actor]
+	if !ok {
 		return
 	}
-	if s.activeSkill.EndedAt.IsZero() && !timestamp.IsZero() {
-		s.activeSkill.EndedAt = timestamp
+	if stat.EndedAt.IsZero() && !timestamp.IsZero() {
+		stat.EndedAt = timestamp
 	}
-	s.activeSkill = nil
+	delete(s.activeSkills, actor)
 }
 
 func (s *Session) openSkillWindow(event *Event) {
-	s.CloseSkillWindow(event.Timestamp)
+	s.closeSkillWindow(event.Actor, event.Timestamp)
 	if len(s.Skills) >= maxSkillStats {
 		return
 	}
+	if s.activeSkills == nil {
+		s.activeSkills = make(map[string]*SkillStat)
+	}
 
 	stat := &SkillStat{
+		AgentId:   event.Actor,
 		Skill:     event.Skill.Skill,
 		Args:      event.Skill.Args,
 		StartedAt: event.Timestamp,
 	}
 	s.Skills = append(s.Skills, stat)
-	s.activeSkill = stat
+	s.activeSkills[event.Actor] = stat
 }
 
 type SubagentStat struct {
@@ -244,6 +254,13 @@ func (s *Session) AddSubagentTurn(turn *Turn) {
 	}
 	s.usageRequestIds[turn.RequestId] = struct{}{}
 	stat.Usage.Add(turn.Usage)
+	if skill, ok := s.activeSkills[turn.SubagentId]; ok {
+		skill.Usage.Add(turn.Usage)
+		skill.EndedAt = turn.Timestamp
+		if skill.Model == "" && turn.Meta != nil {
+			skill.Model = turn.Meta.Model
+		}
+	}
 }
 
 func (s *Session) AddTurn(nextTurn *Turn) {
@@ -267,11 +284,11 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 		if _, counted := s.usageRequestIds[nextTurn.RequestId]; !counted {
 			s.usageRequestIds[nextTurn.RequestId] = struct{}{}
 			s.TotalUsage.Add(nextTurn.Usage)
-			if s.activeSkill != nil {
-				s.activeSkill.Usage.Add(nextTurn.Usage)
-				s.activeSkill.EndedAt = nextTurn.Timestamp
-				if s.activeSkill.Model == "" {
-					s.activeSkill.Model = nextTurn.Meta.Model
+			if skill, ok := s.activeSkills[""]; ok {
+				skill.Usage.Add(nextTurn.Usage)
+				skill.EndedAt = nextTurn.Timestamp
+				if skill.Model == "" {
+					skill.Model = nextTurn.Meta.Model
 				}
 			}
 		}
