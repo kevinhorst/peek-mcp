@@ -322,7 +322,7 @@ var startCmd = &cobra.Command{
 func init() {
 	flags := startCmd.Flags()
 	flags.String("transport", "http", "Transport: http or stdio")
-	flags.Int("port", 4242, "HTTP port (http transport only)")
+	flags.Int("port", 4244, "HTTP port (http transport only)")
 	flags.Int("depth", 200, "Ring buffer size per session (max turns kept)")
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
