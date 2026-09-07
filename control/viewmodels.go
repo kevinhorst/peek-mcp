@@ -52,10 +52,11 @@ type usageResponse struct {
 }
 
 type eventsResponse struct {
-	Counters      session.Counters    `json:"counters"`
-	Events        []*tools.EventEntry `json:"events"`
-	PlanRevisions int                 `json:"plan_revisions"`
-	Usage         session.Usage       `json:"usage"`
+	Counters      session.Counters       `json:"counters"`
+	Events        []*tools.EventEntry    `json:"events"`
+	PlanRevisions int                    `json:"plan_revisions"`
+	Time          *tools.SessionTimeView `json:"time,omitempty"`
+	Usage         session.Usage          `json:"usage"`
 }
 
 type healthzResponse struct {

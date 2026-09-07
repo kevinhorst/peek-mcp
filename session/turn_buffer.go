@@ -6,6 +6,7 @@ import "errors"
 type TurnBuffer struct {
 	capacity int
 	items    []*Turn
+	pushed   int
 }
 
 func NewTurnBuffer(capacity int) *TurnBuffer {
@@ -29,6 +30,7 @@ func (b *TurnBuffer) Validate() error {
 }
 
 func (b *TurnBuffer) Push(turn *Turn) {
+	b.pushed++
 	if len(b.items) < b.capacity {
 		b.items = append(b.items, turn)
 		return
@@ -51,4 +53,10 @@ func (b *TurnBuffer) Last(n int) []*Turn {
 
 func (b *TurnBuffer) Len() int {
 	return len(b.items)
+}
+
+// Pushed is the total number of turns ever pushed, independent of the ring
+// capacity — the buffer only retains the last `capacity` of them.
+func (b *TurnBuffer) Pushed() int {
+	return b.pushed
 }

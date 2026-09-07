@@ -356,8 +356,26 @@ func TestSessionEvents(t *testing.T) {
 	assert.Equal(t, "peek", resp.Events[0].Summary)
 	assert.Equal(t, 10, resp.Usage.InputTokens)
 	assert.Equal(t, 1, resp.PlanRevisions)
+	assert.Equal(t, 2, resp.Counters.Turns)
 
 	assert.Equal(t, http.StatusNotFound, get(server, "/api/sessions/unknown/events").Code)
+}
+
+func TestSessionEvents_TimeBlock(t *testing.T) {
+	base := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+	store, broker := newTestStore()
+	store.AddTurnBySessionId("s9", session.AgentClaude, &session.Turn{RequestId: "r1", Role: session.RoleUser, Text: "a", Timestamp: base, Meta: &session.Meta{SessionId: "s9"}})
+	store.AddTurnBySessionId("s9", session.AgentClaude, &session.Turn{RequestId: "r2", Role: session.RoleAssistant, Text: "b", Timestamp: base.Add(time.Minute), Meta: &session.Meta{SessionId: "s9"}})
+	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+	require.NoError(t, err)
+
+	response := get(server, "/api/sessions/s9/events")
+	require.Equal(t, http.StatusOK, response.Code)
+	resp := decode[eventsResponse](t, response)
+	require.NotNil(t, resp.Time)
+	assert.Equal(t, 60, resp.Time.WallSeconds)
+	assert.Equal(t, base, resp.Time.StartedAt)
+	assert.Equal(t, 2, resp.Counters.Turns)
 }
 
 func TestMemoryAPI(t *testing.T) {

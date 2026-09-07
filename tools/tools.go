@@ -405,12 +405,13 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 			)
 		}
 		counters := currentSession.Counters
+		counters.Turns = currentSession.TotalTurns()
 		firstPage.Counters = &counters
 		firstPage.Diff = diffAvailability(currentSession)
 		firstPage.PlanRevisions = newPlanRevisionsView(currentSession)
-		firstPage.Time = newSessionTimeView(currentSession)
+		firstPage.Time = NewSessionTimeView(currentSession)
 		if firstPage.Time != nil {
-			firstPage.Time.Telemetry = newTelemetryTimeView(currentSession, detector, telemetryStore, s.StateDir)
+			firstPage.Time.Telemetry = NewTelemetryTimeView(currentSession, detector, telemetryStore, s.StateDir)
 		}
 		firstPage.Permissions = newPermissionsView(currentSession, telemetryStore, s.StateDir)
 		firstPage.TouchedFiles = newTouchedFileViews(currentSession)

@@ -242,6 +242,17 @@ func TestSession_Turns_ActiveLast(t *testing.T) {
 	assert.Equal(t, "active", turns[1].Text, "in-progress turn is last, never dropped")
 }
 
+func TestSession_TotalTurns_BeyondRingCap(t *testing.T) {
+	s := &Session{TurnsFinished: NewTurnBuffer(2)}
+	ts := time.Now()
+	for index := range 5 {
+		s.AddTurn(&Turn{Role: RoleUser, Text: "t", RequestId: fmt.Sprintf("r%d", index), Timestamp: ts, Meta: &Meta{SessionId: "s"}})
+	}
+
+	assert.Equal(t, 5, s.TotalTurns(), "parse-time count survives the ring cap")
+	assert.Equal(t, 2, s.TurnsFinished.Len())
+}
+
 func TestSession_Turns_ActiveKeptOverOldest(t *testing.T) {
 	s := &Session{TurnsFinished: NewTurnBuffer(2)}
 	ts := time.Now()

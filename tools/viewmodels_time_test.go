@@ -24,7 +24,7 @@ func TestNewSessionTimeView(t *testing.T) {
 			Idle:       10 * time.Minute,
 		}
 
-		view := newSessionTimeView(s)
+		view := NewSessionTimeView(s)
 		assert.Equal(t, 1800, view.WallSeconds)
 		assert.Equal(t, 600, view.IdleSeconds)
 		assert.Equal(t, 1200, view.ActiveSeconds)
@@ -34,13 +34,13 @@ func TestNewSessionTimeView(t *testing.T) {
 	// nil-without-started-at
 	t.Run("nil-without-started-at", func(t *testing.T) {
 		s := &session.Session{LastActive: base}
-		assert.Nil(t, newSessionTimeView(s))
+		assert.Nil(t, NewSessionTimeView(s))
 	})
 
 	// single-entry-zero-wall
 	t.Run("single-entry-zero-wall", func(t *testing.T) {
 		s := &session.Session{StartedAt: base, LastActive: base}
-		view := newSessionTimeView(s)
+		view := NewSessionTimeView(s)
 		assert.Equal(t, 0, view.WallSeconds)
 		assert.Equal(t, 0, view.IdleSeconds)
 		assert.Equal(t, 0, view.ActiveSeconds)
@@ -73,7 +73,7 @@ func TestNewTelemetryTimeView(t *testing.T) {
 		require.NoError(t, store.IngestMetrics([]byte(payload)))
 		detector := telemetry.NewDetector(42442, writeSettings(t, configuredSettings))
 
-		view := newTelemetryTimeView(claudeSession(), detector, store, nil)
+		view := NewTelemetryTimeView(claudeSession(), detector, store, nil)
 
 		assert.Equal(t, telemetry.ExportReceiving, view.Status)
 		assert.Equal(t, 42, view.ActiveSeconds)
@@ -83,7 +83,7 @@ func TestNewTelemetryTimeView(t *testing.T) {
 	t.Run("configured-without-data", func(t *testing.T) {
 		detector := telemetry.NewDetector(42442, writeSettings(t, configuredSettings))
 
-		view := newTelemetryTimeView(claudeSession(), detector, telemetry.NewStore(), nil)
+		view := NewTelemetryTimeView(claudeSession(), detector, telemetry.NewStore(), nil)
 
 		assert.Equal(t, telemetry.ExportConfigured, view.Status)
 		assert.Empty(t, view.Detail)
@@ -100,7 +100,7 @@ func TestNewTelemetryTimeView(t *testing.T) {
 		}}`
 		detector := telemetry.NewDetector(42442, writeSettings(t, grpcSettings))
 
-		view := newTelemetryTimeView(claudeSession(), detector, telemetry.NewStore(), nil)
+		view := NewTelemetryTimeView(claudeSession(), detector, telemetry.NewStore(), nil)
 
 		assert.Equal(t, telemetry.ExportMisconfigured, view.Status)
 		assert.Contains(t, view.Detail, "grpc")
@@ -111,21 +111,21 @@ func TestNewTelemetryTimeView(t *testing.T) {
 		s := &session.Session{Agent: session.AgentCodex, Meta: session.Meta{SessionId: "s1"}}
 		detector := telemetry.NewDetector(42442, writeSettings(t, configuredSettings))
 
-		assert.Nil(t, newTelemetryTimeView(s, detector, telemetry.NewStore(), nil))
+		assert.Nil(t, NewTelemetryTimeView(s, detector, telemetry.NewStore(), nil))
 	})
 
 	// nil-store-detector-fallback
 	t.Run("nil-store-detector-fallback", func(t *testing.T) {
 		detector := telemetry.NewDetector(42442, writeSettings(t, configuredSettings))
 
-		view := newTelemetryTimeView(claudeSession(), detector, nil, nil)
+		view := NewTelemetryTimeView(claudeSession(), detector, nil, nil)
 
 		assert.Equal(t, telemetry.ExportConfigured, view.Status)
 	})
 
 	// nil-detector-nil
 	t.Run("nil-detector-nil", func(t *testing.T) {
-		assert.Nil(t, newTelemetryTimeView(claudeSession(), nil, telemetry.NewStore(), nil))
+		assert.Nil(t, NewTelemetryTimeView(claudeSession(), nil, telemetry.NewStore(), nil))
 	})
 
 	// nil-store-persisted-fallback
@@ -133,7 +133,7 @@ func TestNewTelemetryTimeView(t *testing.T) {
 		dir := state.NewDir(t.TempDir())
 		require.NoError(t, dir.WriteTelemetry("claude", "s1", `{"active_seconds":12.7,"cost_usd":0.5,"updated_at":"2026-08-13T09:00:00Z"}`))
 
-		view := newTelemetryTimeView(claudeSession(), nil, nil, dir)
+		view := NewTelemetryTimeView(claudeSession(), nil, nil, dir)
 
 		assert.Equal(t, telemetry.ExportReceiving, view.Status)
 		assert.Equal(t, "persisted", view.Detail)
@@ -149,7 +149,7 @@ func TestNewTelemetryTimeView(t *testing.T) {
 		dir := state.NewDir(t.TempDir())
 		require.NoError(t, dir.WriteTelemetry("claude", "s1", `{"active_seconds":1,"cost_usd":9.9,"updated_at":"2026-08-13T09:00:00Z"}`))
 
-		view := newTelemetryTimeView(claudeSession(), nil, store, dir)
+		view := NewTelemetryTimeView(claudeSession(), nil, store, dir)
 
 		assert.Equal(t, telemetry.ExportReceiving, view.Status)
 		assert.Empty(t, view.Detail)
@@ -160,6 +160,6 @@ func TestNewTelemetryTimeView(t *testing.T) {
 	t.Run("nil-store-no-file-nil-detector-nil", func(t *testing.T) {
 		dir := state.NewDir(t.TempDir())
 
-		assert.Nil(t, newTelemetryTimeView(claudeSession(), nil, nil, dir))
+		assert.Nil(t, NewTelemetryTimeView(claudeSession(), nil, nil, dir))
 	})
 }

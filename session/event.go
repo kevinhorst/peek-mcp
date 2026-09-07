@@ -39,6 +39,7 @@ type Counters struct {
 	PlanRejections        int `json:"plan_rejections"`
 	SkillsInvoked         int `json:"skills_invoked"`
 	SubagentsSpawned      int `json:"subagents_spawned"`
+	Turns                 int `json:"turns"`
 }
 
 type Event struct {

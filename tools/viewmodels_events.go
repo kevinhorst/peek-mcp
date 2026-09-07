@@ -25,20 +25,20 @@ type planRevisionsView struct {
 	Timestamps []time.Time `json:"timestamps,omitempty"`
 }
 
-type telemetryTimeView struct {
+type TelemetryTimeView struct {
 	ActiveSeconds int                   `json:"active_seconds,omitempty"`
 	CostUSD       float64               `json:"cost_usd,omitempty"`
 	Detail        string                `json:"detail,omitempty"`
 	Status        telemetry.ExportState `json:"status"`
 }
 
-type sessionTimeView struct {
+type SessionTimeView struct {
 	StartedAt     time.Time          `json:"started_at"`
 	LastActive    time.Time          `json:"last_active"`
 	WallSeconds   int                `json:"wall_seconds"`
 	IdleSeconds   int                `json:"idle_seconds"`
 	ActiveSeconds int                `json:"active_seconds"`
-	Telemetry     *telemetryTimeView `json:"telemetry,omitempty"`
+	Telemetry     *TelemetryTimeView `json:"telemetry,omitempty"`
 }
 
 type sessionEventsResult struct {
@@ -51,7 +51,7 @@ type sessionEventsResult struct {
 	Skills        []*skillStatView    `json:"skills,omitempty"`
 	SubagentIds   []string            `json:"subagent_ids,omitempty"`
 	Subagents     []*subagentStatView `json:"subagents,omitempty"`
-	Time          *sessionTimeView    `json:"time,omitempty"`
+	Time          *SessionTimeView    `json:"time,omitempty"`
 	TouchedFiles  []*touchedFileView  `json:"touched_files,omitempty"`
 	Unsupported   []string            `json:"unsupported,omitempty"`
 	Usage         *session.Usage      `json:"usage,omitempty"`
@@ -118,14 +118,14 @@ func permissionsViewFromStats(stats *telemetry.PermissionStats, detail string) *
 	}
 }
 
-func newTelemetryTimeView(currentSession *session.Session, detector *telemetry.Detector, telemetryStore *telemetry.Store, stateDir *state.Dir) *telemetryTimeView {
+func NewTelemetryTimeView(currentSession *session.Session, detector *telemetry.Detector, telemetryStore *telemetry.Store, stateDir *state.Dir) *TelemetryTimeView {
 	if currentSession.Agent != session.AgentClaude {
 		return nil
 	}
 
 	if telemetryStore != nil {
 		if stats, ok := telemetryStore.Get(string(currentSession.Meta.SessionId)); ok {
-			return &telemetryTimeView{
+			return &TelemetryTimeView{
 				ActiveSeconds: int(stats.ActiveSeconds),
 				CostUSD:       stats.CostUSD,
 				Status:        telemetry.ExportReceiving,
@@ -134,7 +134,7 @@ func newTelemetryTimeView(currentSession *session.Session, detector *telemetry.D
 	}
 
 	if stats, ok := telemetry.ReadPersisted(stateDir, string(currentSession.Meta.SessionId)); ok {
-		return &telemetryTimeView{
+		return &TelemetryTimeView{
 			ActiveSeconds: int(stats.ActiveSeconds),
 			CostUSD:       stats.CostUSD,
 			Detail:        "persisted",
@@ -146,17 +146,17 @@ func newTelemetryTimeView(currentSession *session.Session, detector *telemetry.D
 		return nil
 	}
 	status := detector.Status()
-	return &telemetryTimeView{Detail: status.Detail, Status: status.State}
+	return &TelemetryTimeView{Detail: status.Detail, Status: status.State}
 }
 
-func newSessionTimeView(currentSession *session.Session) *sessionTimeView {
+func NewSessionTimeView(currentSession *session.Session) *SessionTimeView {
 	if currentSession.StartedAt.IsZero() {
 		return nil
 	}
 
 	wall := currentSession.LastActive.Sub(currentSession.StartedAt)
 	idle := currentSession.Idle
-	return &sessionTimeView{
+	return &SessionTimeView{
 		StartedAt:     currentSession.StartedAt,
 		LastActive:    currentSession.LastActive,
 		WallSeconds:   int(wall.Seconds()),

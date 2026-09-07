@@ -251,11 +251,17 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 	var resp eventsResponse
 	found := s.store.WithSession(session.Id(r.PathValue("id")), func(sess *session.Session) {
+		counters := sess.Counters
+		counters.Turns = sess.TotalTurns()
 		resp = eventsResponse{
-			Counters:      sess.Counters,
+			Counters:      counters,
 			Events:        tools.NewEventEntries(sess.Events.All()),
 			PlanRevisions: len(sess.PlanRevisions),
+			Time:          tools.NewSessionTimeView(sess),
 			Usage:         *sess.CurrentUsage(),
+		}
+		if resp.Time != nil {
+			resp.Time.Telemetry = tools.NewTelemetryTimeView(sess, s.detector, s.telemetry, s.stateDir)
 		}
 	})
 	if !found {

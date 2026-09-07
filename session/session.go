@@ -339,6 +339,16 @@ func (s *Session) HasNewTitle(title string, source TitleSource) bool {
 	return s.Title != title
 }
 
+// TotalTurns is the total turn count of the session, counted at parse time —
+// unlike the ring-capped TurnsFinished buffer it never loses old turns.
+func (s *Session) TotalTurns() int {
+	total := s.TurnsFinished.Pushed()
+	if s.TurnActive != nil {
+		total++
+	}
+	return total
+}
+
 func (s *Session) Turns(number int) []*Turn {
 	return lastTurns(s.TurnActive, s.TurnsFinished, number)
 }
