@@ -68,7 +68,11 @@ var startCmd = &cobra.Command{
 		controlPort, _ := flags.GetInt("control-port")
 		controlToken, _ := flags.GetString("control-token")
 		backLink, _ := flags.GetString("back-link")
+		ingestDays, _ := flags.GetInt("ingest-days")
 		ingestHorizon := time.Duration(stateRetentionDays) * 24 * time.Hour
+		if ingestDays > 0 {
+			ingestHorizon = time.Duration(ingestDays) * 24 * time.Hour
+		}
 
 		level := slog.LevelInfo
 		switch logLevel {
@@ -331,6 +335,7 @@ func init() {
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("state-dir", filepath.Join(defaultHome(".peek"), "state"), "State directory for diff pins/snapshots and plan revisions (empty disables persistence)")
 	flags.Int("state-retention-days", 90, "Days to keep per-session state before GC removes it, and how far back startup ingests transcripts (0 disables both)")
+	flags.Int("ingest-days", 0, "How far back startup ingests transcripts (0 = follow state-retention-days)")
 	flags.Int("snapshot-retention-days", 14, "Days to keep diff snapshots before GC removes them; session dirs and plans follow state-retention-days (0 disables)")
 	flags.Int("diff-cache-sessions", 25, "How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching)")
 	flags.Int("control-port", controlPortBase, "Control server start port; walks up to +57 if taken (dashboard + JSON API + SSE); 0 disables")
@@ -397,6 +402,7 @@ var envFallbacks = map[string]string{
 	"poll-window":             "PEEK_POLL_WINDOW",
 	"state-dir":               "PEEK_STATE_DIR",
 	"state-retention-days":    "PEEK_STATE_RETENTION_DAYS",
+	"ingest-days":             "PEEK_INGEST_DAYS",
 	"snapshot-retention-days": "PEEK_SNAPSHOT_RETENTION_DAYS",
 	"diff-cache-sessions":     "PEEK_DIFF_CACHE_SESSIONS",
 	"control-port":            "PEEK_CONTROL_PORT",

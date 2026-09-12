@@ -205,6 +205,43 @@ func TestDiffWatcher_Refresh(t *testing.T) {
 	assert.NotContains(t, sess.DiffOutput, "upstream")
 }
 
+func TestDiffWatcher_RefreshDirty(t *testing.T) {
+	dir := initRepo(t, "main")
+	gitRun(t, dir, "checkout", "-b", "feature", "main")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "work.txt"), []byte("committed\n"), 0o644))
+	gitRun(t, dir, "add", "work.txt")
+	gitRun(t, dir, "commit", "-m", "feature work")
+
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	turn := &session.Turn{
+		Meta:      &session.Meta{SessionId: "sess-1", CWD: dir},
+		Role:      session.RoleUser,
+		Text:      "hello",
+		Timestamp: time.Now(),
+	}
+	store.AddTurnBySessionId("sess-1", session.AgentClaude, turn)
+	w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, nil)
+
+	// two-marks-same-session-one-pending-entry
+	w.markDirty("sess-1", dir)
+	w.markDirty("sess-1", dir)
+	assert.Len(t, w.dirty, 1)
+
+	// flush-refreshes-and-empties-map
+	w.refreshDirty(context.Background())
+	assert.Empty(t, w.dirty)
+	require.Eventually(t, func() bool {
+		sess, ok := store.GetById("sess-1")
+		return ok && sess.DiffOutput != ""
+	}, 5*time.Second, 10*time.Millisecond)
+
+	// mark-while-refresh-in-flight-skipped-not-requeued
+	w.running.Store(session.Id("sess-1"), struct{}{})
+	w.markDirty("sess-1", dir)
+	w.refreshDirty(context.Background())
+	assert.Empty(t, w.dirty)
+}
+
 func TestDiffWatcher_IsWithinWindow(t *testing.T) {
 	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
 	w := NewDiffWatcher(store, events.NewBroker(), time.Second, time.Hour, nil)

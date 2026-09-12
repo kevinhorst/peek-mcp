@@ -22,6 +22,41 @@ const (
 	jsonlSuffix = ".jsonl"
 )
 
+const eventChannelBuffer = 1024
+
+type eventBatch struct {
+	created []string
+	dirty   map[string]struct{}
+}
+
+func newEventBatch() *eventBatch {
+	return &eventBatch{dirty: make(map[string]struct{})}
+}
+
+func (b *eventBatch) add(event fsnotify.Event) {
+	if event.Has(fsnotify.Create) {
+		b.created = append(b.created, event.Name)
+		return
+	}
+	if event.Has(fsnotify.Write) {
+		b.dirty[event.Name] = struct{}{}
+	}
+}
+
+func (b *eventBatch) drain(events <-chan fsnotify.Event) {
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return
+			}
+			b.add(event)
+		default:
+			return
+		}
+	}
+}
+
 func isBeforeCutoff(entry fs.DirEntry, cutoff time.Time) bool {
 	if cutoff.IsZero() {
 		return false
@@ -79,7 +114,7 @@ func New(agent session.Agent, agentDir string, horizon time.Duration, newParser 
 }
 
 func (w *Watcher) Run(ctx context.Context) error {
-	watcher, err := fsnotify.NewWatcher()
+	watcher, err := fsnotify.NewBufferedWatcher(eventChannelBuffer)
 	if err != nil {
 		return err
 	}
@@ -98,38 +133,43 @@ func (w *Watcher) Run(ctx context.Context) error {
 				slog.Info("watcher closed")
 				return nil
 			}
-			if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) {
-				continue
-			}
-
-			// new directory, new session has been started
-			path := event.Name
-			if info, err := os.Stat(path); err == nil && info.IsDir() {
-				if !event.Has(fsnotify.Create) {
-					continue
-				}
-
-				w.walkAndWatch(watcher, path)
-				continue
-			}
-
-			// new or changed file
-			if w.isTranscriptPath(path) {
-				err = w.readNewLines(path)
-				if err != nil {
-					slog.Warn("readNewLines", "err", err)
-				}
-			}
-
-			if isSubagentMetaPath(path) {
-				w.readSubagentMeta(path)
-			}
+			batch := newEventBatch()
+			batch.add(event)
+			batch.drain(watcher.Events)
+			w.processBatch(watcher, batch)
 
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return nil
 			}
 			slog.Error("watcher error", "err", err)
+		}
+	}
+}
+
+// processBatch handles a coalesced burst: creates first (a new directory must
+// be watched before its files' writes are read), then each dirty path once.
+func (w *Watcher) processBatch(watcher *fsnotify.Watcher, batch *eventBatch) {
+	for _, path := range batch.created {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			w.walkAndWatch(watcher, path)
+			continue
+		}
+		batch.dirty[path] = struct{}{}
+	}
+
+	for path := range batch.dirty {
+		if w.isTranscriptPath(path) {
+			if err := w.readNewLines(path); err != nil {
+				slog.Warn("readNewLines", "err", err)
+			}
+		}
+		if isSubagentMetaPath(path) {
+			w.readSubagentMeta(path)
 		}
 	}
 }

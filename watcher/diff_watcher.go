@@ -31,6 +31,9 @@ type DiffWatcher struct {
 	polling  sync.Map // cwd -> struct{}; one in-flight poll per repo
 	lastDiff sync.Map // gitDir -> string; last written uncommitted diff, to skip no-op writes
 
+	dirtyMu sync.Mutex
+	dirty   map[session.Id]string // session -> cwd; turn-diff refreshes pending for the next tick
+
 	baseMu    sync.Mutex
 	baseByKey map[diffBaseKey]string
 }
@@ -42,6 +45,7 @@ func NewDiffWatcher(store *session.Store, broker *events.Broker, interval, windo
 		interval:  interval,
 		window:    window,
 		stateDir:  stateDir,
+		dirty:     make(map[session.Id]string),
 		baseByKey: make(map[diffBaseKey]string),
 	}
 }
@@ -72,14 +76,34 @@ func (w *DiffWatcher) Run(ctx context.Context) error {
 			if !w.isWithinWindow(sess) {
 				continue
 			}
-			if _, loaded := w.running.LoadOrStore(id, struct{}{}); loaded {
-				continue
-			}
-			go w.refresh(ctx, id, sess.Meta.CWD)
+			w.markDirty(id, sess.Meta.CWD)
 
 		case <-ticker.C:
+			w.refreshDirty(ctx)
 			w.pollAll(ctx)
 		}
+	}
+}
+
+func (w *DiffWatcher) markDirty(id session.Id, cwd string) {
+	w.dirtyMu.Lock()
+	defer w.dirtyMu.Unlock()
+	w.dirty[id] = cwd
+}
+
+// refreshDirty flushes turn-diff refreshes accumulated since the last tick —
+// one refresh per session regardless of how many turns arrived in between.
+func (w *DiffWatcher) refreshDirty(ctx context.Context) {
+	w.dirtyMu.Lock()
+	pending := w.dirty
+	w.dirty = make(map[session.Id]string)
+	w.dirtyMu.Unlock()
+
+	for id, cwd := range pending {
+		if _, loaded := w.running.LoadOrStore(id, struct{}{}); loaded {
+			continue
+		}
+		go w.refresh(ctx, id, cwd)
 	}
 }
 

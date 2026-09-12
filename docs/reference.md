@@ -23,6 +23,7 @@ peek-mcp start --port 4242 --depth 200
 | `--poll-window` | `1h` | Only poll repos whose session was active within this window |
 | `--state-dir` | `~/.peek/state` | State directory for diff pins/snapshots and plan revisions (empty disables persistence) |
 | `--state-retention-days` | `90` | Days to keep per-session state before GC removes it, and how far back startup ingests transcripts (0 disables both) |
+| `--ingest-days` | `0` | How far back startup ingests transcripts (0 = follow `--state-retention-days`) |
 | `--snapshot-retention-days` | `14` | Days to keep diff snapshots before GC removes them; session dirs and plans follow `--state-retention-days` (0 disables) |
 | `--diff-cache-sessions` | `25` | How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching) |
 | `--control-port` | `42442` | Control server start port (dashboard + JSON API + SSE); the default walks up to `42499` if taken, an explicitly set port (flag or `PEEK_CONTROL_PORT`) binds exactly or fails; `0` disables |
@@ -45,6 +46,7 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_POLL_WINDOW` | `--poll-window` |
 | `PEEK_STATE_DIR` | `--state-dir` |
 | `PEEK_STATE_RETENTION_DAYS` | `--state-retention-days` |
+| `PEEK_INGEST_DAYS` | `--ingest-days` |
 | `PEEK_SNAPSHOT_RETENTION_DAYS` | `--snapshot-retention-days` |
 | `PEEK_DIFF_CACHE_SESSIONS` | `--diff-cache-sessions` |
 | `PEEK_CONTROL_PORT` | `--control-port` |
