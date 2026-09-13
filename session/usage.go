@@ -42,6 +42,21 @@ func (u *Usage) Validate() error {
 	return nil
 }
 
+func (u *Usage) Sub(other *Usage) {
+	if other == nil {
+		return
+	}
+	u.InputTokens -= other.InputTokens
+	u.CachedInputTokens -= other.CachedInputTokens
+	u.OutputTokens -= other.OutputTokens
+	u.ReasoningOutputTokens -= other.ReasoningOutputTokens
+	u.TotalTokens -= other.TotalTokens
+	u.CacheCreationInputTokens -= other.CacheCreationInputTokens
+	u.CacheCreation5mInputTokens -= other.CacheCreation5mInputTokens
+	u.CacheCreation1hInputTokens -= other.CacheCreation1hInputTokens
+	u.CacheReadInputTokens -= other.CacheReadInputTokens
+}
+
 func (u *Usage) Add(other *Usage) {
 	if other == nil {
 		return

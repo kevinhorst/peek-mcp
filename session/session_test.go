@@ -208,6 +208,34 @@ func TestSession_AddTurn_UsageDedupByRequestId(t *testing.T) {
 	assert.Equal(t, 2, s.TotalUsage.InputTokens)
 }
 
+func TestSession_AddTurn_UsageKeepsLastChunkPerRequestId(t *testing.T) {
+	s := provideCompleteSession()
+
+	s.AddTurn(provideUsageTurn("req-a", 10))
+	s.AddTurn(provideUsageTurn("req-a", 15))
+	s.AddTurn(provideUsageTurn("req-b", 20))
+
+	assert.Equal(t, 35, s.TotalUsage.OutputTokens)
+	assert.Equal(t, 2, s.TotalUsage.InputTokens)
+}
+
+func TestSession_AddSubagentTurn_UsageKeepsLastChunkPerRequestId(t *testing.T) {
+	s := provideCompleteSession()
+	subagentTurn := func(requestId string, outputTokens int) *Turn {
+		turn := provideUsageTurn(requestId, outputTokens)
+		turn.SubagentId = "ag1"
+		return turn
+	}
+
+	s.AddSubagentTurn(subagentTurn("req-a", 10))
+	s.AddSubagentTurn(subagentTurn("req-a", 15))
+	s.AddSubagentTurn(subagentTurn("req-a", 15))
+	s.AddSubagentTurn(subagentTurn("req-b", 20))
+
+	assert.Equal(t, 35, s.Subagents["ag1"].Usage.OutputTokens)
+	assert.Equal(t, 2, s.Subagents["ag1"].Usage.InputTokens)
+}
+
 func TestSession_AddTurn_UsageCountsActiveTurn(t *testing.T) {
 	s := provideCompleteSession()
 

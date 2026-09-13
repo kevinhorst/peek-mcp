@@ -49,10 +49,10 @@ const (
 )
 
 type Session struct {
-	activeSkills    map[string]*SkillStat
-	currentPromptId string
-	planExitSeen    bool
-	usageRequestIds map[string]struct{}
+	activeSkills     map[string]*SkillStat
+	currentPromptId  string
+	planExitSeen     bool
+	usageByRequestId map[string]*requestUsage
 
 	Agent           Agent                       `json:"agent"`
 	Counters        Counters                    `json:"-"`
@@ -246,21 +246,35 @@ func (s *Session) AddSubagentTurn(turn *Turn) {
 	if turn.Usage == nil || turn.RequestId == "" {
 		return
 	}
-	if s.usageRequestIds == nil {
-		s.usageRequestIds = make(map[string]struct{})
-	}
-	if _, counted := s.usageRequestIds[turn.RequestId]; counted {
-		return
-	}
-	s.usageRequestIds[turn.RequestId] = struct{}{}
-	stat.Usage.Add(turn.Usage)
+	targets := []*Usage{&stat.Usage}
 	if skill, ok := s.activeSkills[turn.SubagentId]; ok {
-		skill.Usage.Add(turn.Usage)
+		targets = append(targets, &skill.Usage)
 		skill.EndedAt = turn.Timestamp
 		if skill.Model == "" && turn.Meta != nil {
 			skill.Model = turn.Meta.Model
 		}
 	}
+	s.applyRequestUsage(turn.RequestId, turn.Usage, targets)
+}
+
+type requestUsage struct {
+	counted Usage
+	targets []*Usage
+}
+
+func (s *Session) applyRequestUsage(requestId string, usage *Usage, targets []*Usage) {
+	if s.usageByRequestId == nil {
+		s.usageByRequestId = make(map[string]*requestUsage)
+	}
+	if previous, counted := s.usageByRequestId[requestId]; counted {
+		for _, target := range previous.targets {
+			target.Sub(&previous.counted)
+		}
+	}
+	for _, target := range targets {
+		target.Add(usage)
+	}
+	s.usageByRequestId[requestId] = &requestUsage{counted: *usage, targets: targets}
 }
 
 func (s *Session) AddTurn(nextTurn *Turn) {
@@ -278,20 +292,15 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 	}
 
 	if nextTurn.Usage != nil && nextTurn.RequestId != "" {
-		if s.usageRequestIds == nil {
-			s.usageRequestIds = make(map[string]struct{})
-		}
-		if _, counted := s.usageRequestIds[nextTurn.RequestId]; !counted {
-			s.usageRequestIds[nextTurn.RequestId] = struct{}{}
-			s.TotalUsage.Add(nextTurn.Usage)
-			if skill, ok := s.activeSkills[""]; ok {
-				skill.Usage.Add(nextTurn.Usage)
-				skill.EndedAt = nextTurn.Timestamp
-				if skill.Model == "" {
-					skill.Model = nextTurn.Meta.Model
-				}
+		targets := []*Usage{&s.TotalUsage}
+		if skill, ok := s.activeSkills[""]; ok {
+			targets = append(targets, &skill.Usage)
+			skill.EndedAt = nextTurn.Timestamp
+			if skill.Model == "" {
+				skill.Model = nextTurn.Meta.Model
 			}
 		}
+		s.applyRequestUsage(nextTurn.RequestId, nextTurn.Usage, targets)
 	}
 
 	if nextTurn.StopReason != "" && nextTurn.StopReason != StopReasonToolUse {
