@@ -83,6 +83,52 @@ func TestReadSubagentMeta(t *testing.T) {
 		assert.False(t, isSubagentMetaPath("/x/y/agent-1.meta.json"), "not under a subagents dir")
 		assert.True(t, isSubagentMetaPath("/x/sess/subagents/agent-1.meta.json"))
 	})
+
+	// workflow-nested-paths
+	t.Run("workflow-nested-paths", func(t *testing.T) {
+		assert.True(t, isSubagentMetaPath("/x/sess/subagents/workflows/wf_1/agent-1.meta.json"))
+		assert.True(t, isSubagentPath("/x/sess/subagents/workflows/wf_1/agent-1.jsonl"))
+		assert.True(t, isSubagentPath("/x/sess/subagents/workflows/wf_1/journal.jsonl"))
+		assert.False(t, isSubagentMetaPath("/x/sess/subagents/workflows/wf_1/journal.jsonl"))
+		assert.False(t, isSubagentPath("/x/sess/workflows/wf_1.json"), "run manifest is outside subagents")
+	})
+
+	// workflow-spawned-event-on-parent
+	t.Run("workflow-spawned-event-on-parent", func(t *testing.T) {
+		projectDir := t.TempDir()
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		turn := &session.Turn{
+			Role:      session.RoleUser,
+			Text:      "start",
+			Timestamp: time.Now(),
+			Meta:      &session.Meta{SessionId: "parent-sess"},
+		}
+		store.AddTurnBySessionId("parent-sess", session.AgentClaude, turn)
+		w := claudeWatcher(projectDir, store)
+
+		path := writeWorkflowSubagentMeta(t, projectDir, "parent-sess", "wf_1", "sub1",
+			`{"agentType":"railroad-refuter","spawnDepth":1}`)
+		w.readSubagentMeta(path)
+
+		sess, ok := store.GetById("parent-sess")
+		require.True(t, ok)
+		events := sess.Events.All()
+		require.Len(t, events, 1)
+		assert.Equal(t, session.EventKindSubagentSpawned, events[0].Kind)
+		assert.Equal(t, "sub1", events[0].Subagent.AgentId)
+		assert.Equal(t, "railroad-refuter", events[0].Subagent.AgentType)
+		assert.Empty(t, events[0].Subagent.Description)
+		assert.Empty(t, events[0].Subagent.ToolUseId)
+	})
+}
+
+func writeWorkflowSubagentMeta(t *testing.T, projectDir, parentId, runId, agentId, body string) string {
+	t.Helper()
+	runDir := filepath.Join(projectDir, parentId, subagentsDirName, "workflows", runId)
+	require.NoError(t, os.MkdirAll(runDir, 0o755))
+	path := filepath.Join(runDir, agentFilePrefix+agentId+metaJsonSuffix)
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+	return path
 }
 
 func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
@@ -110,6 +156,37 @@ func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
 	require.Len(t, events, 1, "spawned event must land on the parent, not be dropped")
 	assert.Equal(t, session.EventKindSubagentSpawned, events[0].Kind)
 	assert.Equal(t, "sub1", events[0].Subagent.AgentId)
+}
+
+func TestWalkAndWatch_ColdBackfillWorkflowSubagents(t *testing.T) {
+	projectDir := t.TempDir()
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	w := claudeWatcher(projectDir, store)
+
+	// On-disk layout as left behind by a finished workflow run: the nested
+	// wf dir sorts lexically before the parent transcript file
+	transcript := filepath.Join(projectDir, "parent-sess.jsonl")
+	line := `{"type":"user","promptId":"p1","sessionId":"parent-sess","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"user","content":"hello"}}` + "\n"
+	require.NoError(t, os.WriteFile(transcript, []byte(line), 0o644))
+
+	metaPath := writeWorkflowSubagentMeta(t, projectDir, "parent-sess", "wf_1", "sub1",
+		`{"agentType":"railroad-refuter","spawnDepth":1}`)
+	agentLine := `{"type":"assistant","agentId":"sub1","sessionId":"parent-sess","requestId":"req_1","timestamp":"2026-04-05T15:01:00.000Z","isSidechain":true,"message":{"role":"assistant","model":"claude-sonnet-5","content":[{"type":"text","text":"working"}],"usage":{"input_tokens":100,"output_tokens":50}}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(metaPath), agentFilePrefix+"sub1"+jsonlSuffix), []byte(agentLine), 0o644))
+
+	fsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer fsWatcher.Close()
+
+	w.walkAndWatch(fsWatcher, projectDir)
+
+	sess, ok := store.GetById("parent-sess")
+	require.True(t, ok, "parent transcript must be backfilled")
+	stat, ok := sess.Subagents["sub1"]
+	require.True(t, ok, "workflow agent turns must not be dropped for a missing parent")
+	assert.Equal(t, "railroad-refuter", stat.AgentType)
+	assert.EqualValues(t, 100, stat.Usage.InputTokens)
+	assert.EqualValues(t, 50, stat.Usage.OutputTokens)
 }
 
 func TestWalkAndWatch_NewDirBackfill(t *testing.T) {

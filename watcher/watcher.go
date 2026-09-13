@@ -317,8 +317,12 @@ func (w *Watcher) readSubagentMeta(path string) {
 
 	w.files[path] = &watchedFile{offset: info.Size()}
 
+	root := subagentsRootDir(path)
+	if root == "" {
+		return
+	}
 	agentId := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(path), agentFilePrefix), metaJsonSuffix)
-	sessionId := session.Id(filepath.Base(filepath.Dir(filepath.Dir(path))))
+	sessionId := session.Id(filepath.Base(root))
 
 	payload := &session.SubagentPayload{
 		AgentId:     agentId,
@@ -390,9 +394,23 @@ func isSubagentMetaPath(path string) bool {
 	if !strings.HasPrefix(filepath.Base(path), agentFilePrefix) {
 		return false
 	}
-	return filepath.Base(filepath.Dir(path)) == subagentsDirName
+	return subagentsRootDir(path) != ""
 }
 
 func isSubagentPath(path string) bool {
-	return filepath.Base(filepath.Dir(path)) == subagentsDirName
+	return subagentsRootDir(path) != ""
+}
+
+func subagentsRootDir(path string) string {
+	dir := filepath.Dir(path)
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		if filepath.Base(dir) == subagentsDirName {
+			return parent
+		}
+		dir = parent
+	}
 }
