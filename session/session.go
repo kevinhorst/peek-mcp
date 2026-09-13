@@ -31,7 +31,7 @@ const idleThreshold = 5 * time.Minute
 
 const maxTouchedFiles = 2000
 
-const maxSubagentStats = 200
+const maxSubagentStats = 1000
 
 const subagentTurnDepth = 200
 
