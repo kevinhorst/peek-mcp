@@ -414,7 +414,7 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 			firstPage.Time.Telemetry = NewTelemetryTimeView(currentSession, detector, telemetryStore, s.StateDir)
 		}
 		firstPage.Permissions = newPermissionsView(currentSession, telemetryStore, s.StateDir)
-		firstPage.TouchedFiles = newTouchedFileViews(currentSession)
+		firstPage.TouchedFiles = newTouchedFileViews(currentSession.TouchedFiles)
 		if boolArgFromRequest(request, "breakdown", false) {
 			firstPage.Skills = newSkillStatViews(currentSession)
 			firstPage.Subagents = newSubagentStatViews(currentSession)

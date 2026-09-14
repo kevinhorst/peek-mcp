@@ -17,7 +17,7 @@ func TestNewSubagentStatViews(t *testing.T) {
 		s := &session.Session{
 			Subagents: map[string]*session.SubagentStat{
 				"sub-2": {FirstActive: base.Add(time.Hour), LastActive: base.Add(time.Hour + time.Minute)},
-				"sub-1": {AgentType: "Explore", FirstActive: base, LastActive: base.Add(2 * time.Minute), Usage: session.Usage{InputTokens: 9}},
+				"sub-1": {AgentType: "Explore", FirstActive: base, LastActive: base.Add(2 * time.Minute), Usage: session.Usage{InputTokens: 9}, TouchedFiles: map[string]*session.FileTouchCounts{"/a.go": {Reads: 2, Writes: 1}}},
 			},
 		}
 
@@ -26,6 +26,10 @@ func TestNewSubagentStatViews(t *testing.T) {
 		assert.Equal(t, "sub-1", views[0].AgentId)
 		assert.Equal(t, 120, views[0].Seconds)
 		assert.Equal(t, 9, views[0].Usage.InputTokens)
+		require.Len(t, views[0].TouchedFiles, 1)
+		assert.Equal(t, "/a.go", views[0].TouchedFiles[0].Path)
+		assert.Equal(t, 2, views[0].TouchedFiles[0].Reads)
+		assert.Equal(t, 1, views[0].TouchedFiles[0].Writes)
 		assert.Equal(t, "sub-2", views[1].AgentId)
 	})
 
