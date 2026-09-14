@@ -195,6 +195,30 @@ func TestSession_AddSubagentTurn_Transcript(t *testing.T) {
 	assert.Equal(t, "claude-haiku-4-5-20251001", s.Subagents["ag1"].Model)
 }
 
+func TestSession_AddSubagentTurn_TouchedFiles(t *testing.T) {
+	s := provideCompleteSession()
+	timestamp := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+	meta := &Meta{SessionId: Id("sess-123")}
+
+	s.AddSubagentTurn(&Turn{
+		SubagentId: "ag1",
+		Timestamp:  timestamp,
+		Meta:       meta,
+		FileTouches: []*FileTouch{
+			{Path: "/a.go"},
+			{Path: "/a.go", Write: true},
+			{Path: "/b.go", Write: true},
+		},
+	})
+
+	stat := s.Subagents["ag1"]
+	require.NotNil(t, stat)
+	require.Len(t, stat.TouchedFiles, 2)
+	assert.Equal(t, 1, stat.TouchedFiles["/a.go"].Reads)
+	assert.Equal(t, 1, stat.TouchedFiles["/a.go"].Writes)
+	assert.Equal(t, 1, stat.TouchedFiles["/b.go"].Writes)
+}
+
 func TestSession_AddTurn_UsageDedupByRequestId(t *testing.T) {
 	s := provideCompleteSession()
 

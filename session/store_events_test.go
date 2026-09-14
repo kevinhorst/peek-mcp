@@ -94,6 +94,7 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 		result := events[len(events)-1]
 		assert.Equal(t, EventKindSubagentResult, result.Kind)
 		assert.Equal(t, "sub-9", result.Subagent.AgentId)
+		assert.Equal(t, "sub-9", result.Actor)
 	})
 
 	// subagent-spawn-backfills-earlier-result
@@ -131,6 +132,32 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 		}
 		require.NotNil(t, result)
 		assert.Equal(t, "sub-9", result.Subagent.AgentId)
+		assert.Equal(t, "sub-9", result.Actor)
+	})
+
+	// subagent-result-payload-agent-id-backfills-actor
+	t.Run("subagent-result-payload-agent-id-backfills-actor", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		chatTurn := &Turn{
+			Role:      RoleUser,
+			Text:      "start",
+			Timestamp: now,
+			Meta:      &Meta{SessionId: "p"},
+		}
+		s.AddTurnBySessionId("p", AgentClaude, chatTurn)
+		resultTurn := &Turn{
+			Events:     []*Event{{Kind: EventKindSubagentResult, Subagent: &SubagentPayload{AgentId: "sub-9"}}},
+			SubagentId: "sub-9",
+			Meta:       &Meta{SessionId: "p"},
+		}
+		s.AddTurnBySessionId("p", AgentClaude, resultTurn)
+
+		sess, ok := s.GetById("p")
+		require.True(t, ok)
+		events := sess.Events.All()
+		result := events[len(events)-1]
+		assert.Equal(t, EventKindSubagentResult, result.Kind)
+		assert.Equal(t, "sub-9", result.Actor)
 	})
 
 	// usage-signal-keep-last

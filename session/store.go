@@ -615,6 +615,9 @@ func resolveSubagentActor(event *Event, session *Session) {
 	switch event.Kind {
 	case EventKindSubagentResult:
 		if event.Subagent.AgentId != "" {
+			if event.Actor == "" {
+				event.Actor = event.Subagent.AgentId
+			}
 			return
 		}
 		for _, seen := range session.Events.All() {
@@ -625,6 +628,7 @@ func resolveSubagentActor(event *Event, session *Session) {
 				continue
 			}
 			event.Subagent.AgentId = seen.Subagent.AgentId
+			event.Actor = seen.Subagent.AgentId
 			return
 		}
 	case EventKindSubagentSpawned:
@@ -639,6 +643,7 @@ func resolveSubagentActor(event *Event, session *Session) {
 				continue
 			}
 			seen.Subagent.AgentId = event.Subagent.AgentId
+			seen.Actor = event.Subagent.AgentId
 		}
 	}
 }

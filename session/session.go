@@ -123,24 +123,29 @@ type FileTouchCounts struct {
 }
 
 func (s *Session) AddFileTouch(touch *FileTouch) {
-	if s.TouchedFiles == nil {
-		s.TouchedFiles = make(map[string]*FileTouchCounts)
+	s.TouchedFiles = addFileTouch(s.TouchedFiles, touch)
+}
+
+func addFileTouch(files map[string]*FileTouchCounts, touch *FileTouch) map[string]*FileTouchCounts {
+	if files == nil {
+		files = make(map[string]*FileTouchCounts)
 	}
 
-	counts, ok := s.TouchedFiles[touch.Path]
+	counts, ok := files[touch.Path]
 	if !ok {
-		if len(s.TouchedFiles) >= maxTouchedFiles {
-			return
+		if len(files) >= maxTouchedFiles {
+			return files
 		}
 		counts = &FileTouchCounts{}
-		s.TouchedFiles[touch.Path] = counts
+		files[touch.Path] = counts
 	}
 
 	if touch.Write {
 		counts.Writes++
-		return
+		return files
 	}
 	counts.Reads++
+	return files
 }
 
 type SkillStat struct {
@@ -197,14 +202,15 @@ func (s *Session) openSkillWindow(event *Event) {
 }
 
 type SubagentStat struct {
-	AgentType   string      `json:"agent_type,omitempty"`
-	Description string      `json:"description,omitempty"`
-	FirstActive time.Time   `json:"first_active"`
-	LastActive  time.Time   `json:"last_active"`
-	Model       string      `json:"model,omitempty"`
-	TurnActive  *Turn       `json:"-"`
-	Turns       *TurnBuffer `json:"-"`
-	Usage       Usage       `json:"usage"`
+	AgentType    string                      `json:"agent_type,omitempty"`
+	Description  string                      `json:"description,omitempty"`
+	FirstActive  time.Time                   `json:"first_active"`
+	LastActive   time.Time                   `json:"last_active"`
+	Model        string                      `json:"model,omitempty"`
+	TouchedFiles map[string]*FileTouchCounts `json:"-"`
+	TurnActive   *Turn                       `json:"-"`
+	Turns        *TurnBuffer                 `json:"-"`
+	Usage        Usage                       `json:"usage"`
 }
 
 func (s *Session) AddSubagentTurn(turn *Turn) {
@@ -241,6 +247,10 @@ func (s *Session) AddSubagentTurn(turn *Turn) {
 			stat.AgentType = event.Subagent.AgentType
 			stat.Description = event.Subagent.Description
 		}
+	}
+
+	for _, touch := range turn.FileTouches {
+		stat.TouchedFiles = addFileTouch(stat.TouchedFiles, touch)
 	}
 
 	if turn.Usage == nil || turn.RequestId == "" {
