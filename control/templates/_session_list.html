@@ -1,5 +1,6 @@
 <div id="sessions-{{.Agent}}" hx-get="/fragments/sessions?agent={{.Agent}}&amp;offset={{.Offset}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
 {{if .Sessions}}
+{{template "sessionPagination" .}}
 <table class="evidence-table">
   <thead>
     <tr><th>Id</th><th>Title</th><th>Branch</th><th>Timestamp</th><th>Status</th></tr>
@@ -20,6 +21,13 @@
   {{end}}
   </tbody>
 </table>
+{{template "sessionPagination" .}}
+{{else}}
+<div class="empty">No {{.Agent}} sessions yet.</div>
+{{end}}
+</div>
+<span id="last-active-{{.Agent}}" class="meta" hx-swap-oob="true">{{if not .LastActive.IsZero}}{{ts .LastActive}}{{end}}</span>
+{{define "sessionPagination"}}
 {{if or .HasPrev .HasNext}}
 <div class="section-controls">
   {{if .HasPrev}}<button class="small" hx-get="/fragments/sessions?agent={{.Agent}}&amp;offset={{.PrevOffset}}" hx-target="#sessions-{{.Agent}}" hx-swap="outerHTML">prev</button>{{end}}
@@ -27,8 +35,4 @@
   {{if .HasNext}}<button class="small" hx-get="/fragments/sessions?agent={{.Agent}}&amp;offset={{.NextOffset}}" hx-target="#sessions-{{.Agent}}" hx-swap="outerHTML">next</button>{{end}}
 </div>
 {{end}}
-{{else}}
-<div class="empty">No {{.Agent}} sessions yet.</div>
 {{end}}
-</div>
-<span id="last-active-{{.Agent}}" class="meta" hx-swap-oob="true">{{if not .LastActive.IsZero}}{{ts .LastActive}}{{end}}</span>

@@ -69,6 +69,17 @@
     });
   });
 
+  document.body.addEventListener('click', function (evt) {
+    var btn = evt.target.closest && evt.target.closest('button[data-copy-target]');
+    if (!btn) return;
+    var source = document.querySelector(btn.getAttribute('data-copy-target'));
+    if (!source) return;
+    navigator.clipboard.writeText(source.content.textContent).then(function () {
+      btn.classList.add('copied');
+      setTimeout(function () { btn.classList.remove('copied'); }, 1500);
+    });
+  });
+
   var source = new EventSource('/api/events');
   ['session_created', 'turn_added', 'event_added', 'usage_updated', 'plan_updated', 'diff_updated', 'uncommitted_diff_updated'].forEach(function (type) {
     source.addEventListener(type, function () { htmx.trigger(document.body, 'peek-refresh'); });

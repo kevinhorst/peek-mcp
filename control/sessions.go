@@ -120,6 +120,7 @@ func newMainInfo(sess *session.Session) *turnsInfo {
 type planData struct {
 	Id       session.Id
 	PlanHTML any
+	PlanRaw  string
 	Empty    bool
 }
 
@@ -431,6 +432,7 @@ func (s *Server) handlePlanFragment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data.PlanHTML = html
+		data.PlanRaw = content
 	}
 	s.renderFragment(w, tmplPlan, data)
 }

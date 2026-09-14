@@ -156,6 +156,7 @@ func TestSessionsFragment_Pagination(t *testing.T) {
 	require.Equal(t, http.StatusOK, page1.Code)
 	assert.Equal(t, defaultSessionLimit, strings.Count(page1.Body.String(), `href="/sessions/`))
 	assert.Contains(t, page1.Body.String(), "offset=50")
+	assert.Equal(t, 2, strings.Count(page1.Body.String(), "section-controls"))
 
 	page2 := get(server, "/fragments/sessions?agent=claude&offset=50")
 	require.Equal(t, http.StatusOK, page2.Code)
@@ -312,11 +313,16 @@ func TestPlanFragment(t *testing.T) {
 
 	response := get(server, "/fragments/sessions/s1/plan")
 	require.Equal(t, http.StatusOK, response.Code)
-	assert.Contains(t, response.Body.String(), "<h1>Plan</h1>")
+	body := response.Body.String()
+	assert.Contains(t, body, "<h1>Plan</h1>")
+	assert.Contains(t, body, `id="plan-raw"`)
+	assert.Contains(t, body, "# Plan")
+	assert.Contains(t, body, `data-copy-target="#plan-raw"`)
 
 	response = get(server, "/fragments/sessions/s2/plan")
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Contains(t, response.Body.String(), "No plan.")
+	assert.NotContains(t, response.Body.String(), "data-copy-target")
 }
 
 func TestMemoryFragment(t *testing.T) {

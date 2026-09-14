@@ -368,6 +368,10 @@ button.small::before { content: '[ '; color: var(--text-3); }
 button.small::after { content: ' ]'; color: var(--text-3); }
 button.small:hover { color: var(--neon); border-color: var(--brand-emerald); box-shadow: none; }
 button.small:hover::before, button.small:hover::after { color: var(--brand-emerald); }
+.fragment-controls { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+button.icon { background: none; border: none; padding: 4px; cursor: pointer; color: var(--text-dim); display: inline-flex; }
+button.icon:hover { color: var(--neon); box-shadow: none; }
+button.icon.copied { color: var(--brand-emerald); }
 
 details.section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); margin-bottom: 8px; }
 details.section > summary { cursor: pointer; padding: 10px 16px; color: var(--text-2); }
@@ -375,7 +379,7 @@ details.section > summary:hover { color: var(--neon); }
 details.section > summary::marker { color: var(--text-dim); }
 details.section[open] > summary { border-bottom: 1px solid var(--line); color: var(--text); }
 details.section > :not(summary) { margin: 12px 16px; }
-.section-controls { display: flex; gap: 8px; margin-bottom: 12px; }
+.section-controls { display: flex; gap: 8px; margin-top: 12px; margin-bottom: 12px; }
 .config-actions { margin-top: 20px; }
 
 .list-editor { display: flex; flex-direction: column; gap: 4px; flex-basis: 100%; }
