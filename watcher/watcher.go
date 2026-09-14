@@ -73,6 +73,7 @@ const (
 	agentFilePrefix  = "agent-"
 	metaJsonSuffix   = ".meta.json"
 	subagentsDirName = "subagents"
+	journalFileName  = "journal.jsonl"
 )
 
 type subagentMeta struct {
@@ -163,6 +164,12 @@ func (w *Watcher) processBatch(watcher *fsnotify.Watcher, batch *eventBatch) {
 	}
 
 	for path := range batch.dirty {
+		if isWorkflowJournalPath(path) {
+			if err := w.readJournal(path); err != nil {
+				slog.Warn("readJournal", "err", err)
+			}
+			continue
+		}
 		if w.isTranscriptPath(path) {
 			if err := w.readNewLines(path); err != nil {
 				slog.Warn("readNewLines", "err", err)
@@ -219,6 +226,13 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 	}
 
 	for _, path := range subagentPaths {
+		if isWorkflowJournalPath(path) {
+			err = w.readJournal(path)
+			if err != nil {
+				slog.Warn("walkAndWatch: readJournal", "err", err)
+			}
+			continue
+		}
 		if strings.HasSuffix(path, jsonlSuffix) {
 			err = w.readNewLines(path)
 			if err != nil {
@@ -324,10 +338,15 @@ func (w *Watcher) readSubagentMeta(path string) {
 	agentId := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(path), agentFilePrefix), metaJsonSuffix)
 	sessionId := session.Id(filepath.Base(root))
 
+	description := meta.Description
+	if description == "" {
+		description = workflowAgentLabel(path, agentId, root)
+	}
+
 	payload := &session.SubagentPayload{
 		AgentId:     agentId,
 		AgentType:   meta.AgentType,
-		Description: meta.Description,
+		Description: description,
 		SpawnDepth:  meta.SpawnDepth,
 		ToolUseId:   meta.ToolUseId,
 	}
@@ -344,6 +363,111 @@ func (w *Watcher) readSubagentMeta(path string) {
 	}
 
 	w.store.AddTurnBySessionId(sessionId, w.agent, turn)
+}
+
+// maxJournalResultBytes mirrors claude.maxSubagentResultBytes.
+const maxJournalResultBytes = 32 * 1024
+
+type journalRecord struct {
+	Type    string          `json:"type"`
+	AgentId string          `json:"agentId"`
+	Result  json.RawMessage `json:"result"`
+}
+
+func (w *Watcher) readJournal(path string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	root := subagentsRootDir(path)
+	if root == "" {
+		return nil
+	}
+	sessionId := session.Id(filepath.Base(root))
+
+	file, err := os.Open(path)
+	if err != nil {
+		return errors.Wrapf(err, "Watcher.readJournal")
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return errors.Wrapf(err, "Watcher.readJournal")
+	}
+	modTime := info.ModTime()
+
+	watched, ok := w.files[path]
+	if !ok {
+		watched = &watchedFile{}
+	}
+
+	if watched.offset > 0 {
+		if _, err := file.Seek(watched.offset, io.SeekStart); err != nil {
+			return errors.Wrapf(err, "Watcher.readJournal")
+		}
+	}
+
+	newLines, err := io.ReadAll(file)
+	if err != nil {
+		return errors.Wrapf(err, "Watcher.readJournal")
+	}
+
+	// only count bytes from complete lines
+	var consumed int64
+
+	for _, part := range bytes.SplitAfter(newLines, []byte{'\n'}) {
+		if len(part) == 0 {
+			continue
+		}
+		if part[len(part)-1] != '\n' {
+			break // incomplete line, stop — we'll re-read it next time
+		}
+
+		consumed += int64(len(part))
+
+		line := bytes.TrimSuffix(part, []byte{'\n'})
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		if len(line) == 0 {
+			continue
+		}
+
+		var record journalRecord
+		if err := json.Unmarshal(line, &record); err != nil {
+			continue
+		}
+		if record.Type != "result" || record.AgentId == "" {
+			continue
+		}
+
+		content := string(record.Result)
+		if len(content) > maxJournalResultBytes {
+			content = content[:maxJournalResultBytes]
+		}
+
+		event := &session.Event{
+			Actor: record.AgentId,
+			Kind:  session.EventKindSubagentResult,
+			Subagent: &session.SubagentPayload{
+				AgentId: record.AgentId,
+				Content: content,
+			},
+			Timestamp: modTime,
+		}
+		turn := &session.Turn{
+			Events:     []*session.Event{event},
+			SubagentId: record.AgentId,
+			Meta:       &session.Meta{SessionId: sessionId},
+		}
+		w.store.AddTurnBySessionId(sessionId, w.agent, turn)
+	}
+
+	watched.offset += consumed
+	w.files[path] = watched
+	return nil
+}
+
+func isWorkflowJournalPath(path string) bool {
+	return filepath.Base(path) == journalFileName && subagentsRootDir(path) != ""
 }
 
 func (w *Watcher) isTranscriptPath(path string) bool {
@@ -413,4 +537,32 @@ func subagentsRootDir(path string) string {
 		}
 		dir = parent
 	}
+}
+
+type workflowManifest struct {
+	WorkflowProgress []struct {
+		AgentId string `json:"agentId"`
+		Label   string `json:"label"`
+	} `json:"workflowProgress"`
+}
+
+func workflowAgentLabel(metaPath, agentId, root string) string {
+	runDir := filepath.Base(filepath.Dir(metaPath))
+	if !strings.HasPrefix(runDir, "wf_") {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(root, "workflows", runDir+".json"))
+	if err != nil {
+		return ""
+	}
+	var manifest workflowManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return ""
+	}
+	for _, agent := range manifest.WorkflowProgress {
+		if agent.AgentId == agentId {
+			return agent.Label
+		}
+	}
+	return ""
 }

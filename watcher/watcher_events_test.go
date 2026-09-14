@@ -120,6 +120,66 @@ func TestReadSubagentMeta(t *testing.T) {
 		assert.Empty(t, events[0].Subagent.Description)
 		assert.Empty(t, events[0].Subagent.ToolUseId)
 	})
+
+	// workflow-label-from-manifest
+	t.Run("workflow-label-from-manifest", func(t *testing.T) {
+		projectDir := t.TempDir()
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		turn := &session.Turn{
+			Role:      session.RoleUser,
+			Text:      "start",
+			Timestamp: time.Now(),
+			Meta:      &session.Meta{SessionId: "parent-sess"},
+		}
+		store.AddTurnBySessionId("parent-sess", session.AgentClaude, turn)
+		w := claudeWatcher(projectDir, store)
+
+		path := writeWorkflowSubagentMeta(t, projectDir, "parent-sess", "wf_1", "sub1",
+			`{"agentType":"railroad-refuter","spawnDepth":1}`)
+		writeWorkflowManifest(t, projectDir, "parent-sess", "wf_1",
+			`{"workflowProgress":[{"type":"workflow_phase","title":"Setup"},{"type":"workflow_agent","agentId":"sub1","label":"refute:claim-3"}]}`)
+		w.readSubagentMeta(path)
+
+		sess, ok := store.GetById("parent-sess")
+		require.True(t, ok)
+		events := sess.Events.All()
+		require.Len(t, events, 1)
+		assert.Equal(t, "refute:claim-3", events[0].Subagent.Description)
+	})
+
+	// meta-description-wins-over-manifest
+	t.Run("meta-description-wins-over-manifest", func(t *testing.T) {
+		projectDir := t.TempDir()
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		turn := &session.Turn{
+			Role:      session.RoleUser,
+			Text:      "start",
+			Timestamp: time.Now(),
+			Meta:      &session.Meta{SessionId: "parent-sess"},
+		}
+		store.AddTurnBySessionId("parent-sess", session.AgentClaude, turn)
+		w := claudeWatcher(projectDir, store)
+
+		path := writeWorkflowSubagentMeta(t, projectDir, "parent-sess", "wf_1", "sub1",
+			`{"agentType":"railroad-refuter","description":"from meta","spawnDepth":1}`)
+		writeWorkflowManifest(t, projectDir, "parent-sess", "wf_1",
+			`{"workflowProgress":[{"type":"workflow_agent","agentId":"sub1","label":"refute:claim-3"}]}`)
+		w.readSubagentMeta(path)
+
+		sess, _ := store.GetById("parent-sess")
+		events := sess.Events.All()
+		require.Len(t, events, 1)
+		assert.Equal(t, "from meta", events[0].Subagent.Description)
+	})
+}
+
+func writeWorkflowManifest(t *testing.T, projectDir, parentId, runId, body string) string {
+	t.Helper()
+	workflowsDir := filepath.Join(projectDir, parentId, "workflows")
+	require.NoError(t, os.MkdirAll(workflowsDir, 0o755))
+	path := filepath.Join(workflowsDir, runId+".json")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+	return path
 }
 
 func writeWorkflowSubagentMeta(t *testing.T, projectDir, parentId, runId, agentId, body string) string {
@@ -129,6 +189,80 @@ func writeWorkflowSubagentMeta(t *testing.T, projectDir, parentId, runId, agentI
 	path := filepath.Join(runDir, agentFilePrefix+agentId+metaJsonSuffix)
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
 	return path
+}
+
+func TestReadJournal(t *testing.T) {
+	// result-record-event-on-parent
+	t.Run("result-record-event-on-parent", func(t *testing.T) {
+		projectDir := t.TempDir()
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		turn := &session.Turn{
+			Role:      session.RoleUser,
+			Text:      "start",
+			Timestamp: time.Now(),
+			Meta:      &session.Meta{SessionId: "parent-sess"},
+		}
+		store.AddTurnBySessionId("parent-sess", session.AgentClaude, turn)
+		w := claudeWatcher(projectDir, store)
+
+		path := writeWorkflowJournal(t, projectDir, "parent-sess", "wf_1",
+			`{"type":"started","key":"k1","agentId":"sub1"}`+"\n"+
+				`{"type":"result","key":"k1","agentId":"sub1","result":{"ok":true}}`+"\n")
+		require.NoError(t, w.readJournal(path))
+
+		sess, ok := store.GetById("parent-sess")
+		require.True(t, ok)
+		events := sess.Events.All()
+		require.Len(t, events, 1, "started record must be ignored")
+		assert.Equal(t, session.EventKindSubagentResult, events[0].Kind)
+		assert.Equal(t, "sub1", events[0].Actor)
+		assert.Equal(t, "sub1", events[0].Subagent.AgentId)
+		assert.JSONEq(t, `{"ok":true}`, events[0].Subagent.Content)
+	})
+
+	// incremental-second-read
+	t.Run("incremental-second-read", func(t *testing.T) {
+		projectDir := t.TempDir()
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		turn := &session.Turn{
+			Role:      session.RoleUser,
+			Text:      "start",
+			Timestamp: time.Now(),
+			Meta:      &session.Meta{SessionId: "parent-sess"},
+		}
+		store.AddTurnBySessionId("parent-sess", session.AgentClaude, turn)
+		w := claudeWatcher(projectDir, store)
+
+		path := writeWorkflowJournal(t, projectDir, "parent-sess", "wf_1",
+			`{"type":"result","key":"k1","agentId":"sub1","result":1}`+"\n")
+		require.NoError(t, w.readJournal(path))
+		appendFile(t, path, `{"type":"result","key":"k2","agentId":"sub2","result":2}`+"\n")
+		require.NoError(t, w.readJournal(path))
+
+		sess, _ := store.GetById("parent-sess")
+		events := sess.Events.All()
+		require.Len(t, events, 2, "second read must emit only the new line")
+		assert.Equal(t, "sub1", events[0].Subagent.AgentId)
+		assert.Equal(t, "sub2", events[1].Subagent.AgentId)
+	})
+}
+
+func writeWorkflowJournal(t *testing.T, projectDir, parentId, runId, body string) string {
+	t.Helper()
+	runDir := filepath.Join(projectDir, parentId, subagentsDirName, "workflows", runId)
+	require.NoError(t, os.MkdirAll(runDir, 0o755))
+	path := filepath.Join(runDir, journalFileName)
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+	return path
+}
+
+func appendFile(t *testing.T, path, body string) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+	defer file.Close()
+	_, err = file.WriteString(body)
+	require.NoError(t, err)
 }
 
 func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
@@ -173,6 +307,8 @@ func TestWalkAndWatch_ColdBackfillWorkflowSubagents(t *testing.T) {
 		`{"agentType":"railroad-refuter","spawnDepth":1}`)
 	agentLine := `{"type":"assistant","agentId":"sub1","sessionId":"parent-sess","requestId":"req_1","timestamp":"2026-04-05T15:01:00.000Z","isSidechain":true,"message":{"role":"assistant","model":"claude-sonnet-5","content":[{"type":"text","text":"working"}],"usage":{"input_tokens":100,"output_tokens":50}}}` + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(metaPath), agentFilePrefix+"sub1"+jsonlSuffix), []byte(agentLine), 0o644))
+	journalLine := `{"type":"result","key":"k1","agentId":"sub1","result":{"ok":true}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(metaPath), journalFileName), []byte(journalLine), 0o644))
 
 	fsWatcher, err := fsnotify.NewWatcher()
 	require.NoError(t, err)
@@ -187,6 +323,15 @@ func TestWalkAndWatch_ColdBackfillWorkflowSubagents(t *testing.T) {
 	assert.Equal(t, "railroad-refuter", stat.AgentType)
 	assert.EqualValues(t, 100, stat.Usage.InputTokens)
 	assert.EqualValues(t, 50, stat.Usage.OutputTokens)
+
+	var resultEvents []*session.Event
+	for _, event := range sess.Events.All() {
+		if event.Kind == session.EventKindSubagentResult {
+			resultEvents = append(resultEvents, event)
+		}
+	}
+	require.Len(t, resultEvents, 1, "journal result must be backfilled as a result event")
+	assert.Equal(t, "sub1", resultEvents[0].Subagent.AgentId)
 }
 
 func TestWalkAndWatch_NewDirBackfill(t *testing.T) {
