@@ -50,7 +50,7 @@ type sessionEventsResult struct {
 	Revisions     any                 `json:"revisions,omitempty"`
 	Skills        []*skillStatView    `json:"skills,omitempty"`
 	SubagentIds   []string            `json:"subagent_ids,omitempty"`
-	Subagents     []*subagentStatView `json:"subagents,omitempty"`
+	Subagents     []*SubagentStatView `json:"subagents,omitempty"`
 	Time          *SessionTimeView    `json:"time,omitempty"`
 	TouchedFiles  []*touchedFileView  `json:"touched_files,omitempty"`
 	Unsupported   []string            `json:"unsupported,omitempty"`
@@ -182,7 +182,7 @@ func (p *sessionEventsResultPage) WithRequestId(id string) {
 	p.RequestId = id
 }
 
-type subagentStatView struct {
+type SubagentStatView struct {
 	AgentId      string             `json:"agent_id"`
 	AgentType    string             `json:"agent_type,omitempty"`
 	Description  string             `json:"description,omitempty"`
@@ -194,15 +194,15 @@ type subagentStatView struct {
 	Usage        *session.Usage     `json:"usage,omitempty"`
 }
 
-func newSubagentStatViews(currentSession *session.Session) []*subagentStatView {
+func NewSubagentStatViews(currentSession *session.Session) []*SubagentStatView {
 	if len(currentSession.Subagents) == 0 {
 		return nil
 	}
 
-	views := make([]*subagentStatView, 0, len(currentSession.Subagents))
+	views := make([]*SubagentStatView, 0, len(currentSession.Subagents))
 	for agentId, stat := range currentSession.Subagents {
 		usage := stat.Usage
-		views = append(views, &subagentStatView{
+		views = append(views, &SubagentStatView{
 			AgentId:      agentId,
 			AgentType:    stat.AgentType,
 			Description:  stat.Description,

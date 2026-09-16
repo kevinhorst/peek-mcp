@@ -21,7 +21,7 @@ func TestNewSubagentStatViews(t *testing.T) {
 			},
 		}
 
-		views := newSubagentStatViews(s)
+		views := NewSubagentStatViews(s)
 		require.Len(t, views, 2)
 		assert.Equal(t, "sub-1", views[0].AgentId)
 		assert.Equal(t, 120, views[0].Seconds)
@@ -35,7 +35,7 @@ func TestNewSubagentStatViews(t *testing.T) {
 
 	// nil-when-empty
 	t.Run("nil-when-empty", func(t *testing.T) {
-		assert.Nil(t, newSubagentStatViews(&session.Session{}))
+		assert.Nil(t, NewSubagentStatViews(&session.Session{}))
 	})
 }
 

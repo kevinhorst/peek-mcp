@@ -417,7 +417,7 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 		firstPage.TouchedFiles = newTouchedFileViews(currentSession.TouchedFiles)
 		if boolArgFromRequest(request, "breakdown", false) {
 			firstPage.Skills = newSkillStatViews(currentSession)
-			firstPage.Subagents = newSubagentStatViews(currentSession)
+			firstPage.Subagents = NewSubagentStatViews(currentSession)
 			if subagentId != "" {
 				firstPage.Skills = nil
 				stats := firstPage.Subagents[:0]
