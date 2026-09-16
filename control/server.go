@@ -140,6 +140,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/uncommitted-diff", s.handleUncommittedDiff)
 	mux.HandleFunc("GET /api/sessions/{id}/usage", s.handleUsage)
 	mux.HandleFunc("GET /api/sessions/{id}/events", s.handleSessionEvents)
+	mux.HandleFunc("GET /api/sessions/{id}/subagents", s.handleSubagents)
 	mux.HandleFunc("GET /api/sessions/{id}/memory", s.handleMemory)
 	mux.HandleFunc("POST /api/restart", s.handleRestart)
 	mux.HandleFunc("POST /api/config/{key}", s.handleConfigSet)

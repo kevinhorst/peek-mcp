@@ -361,6 +361,58 @@ func TestSessionEvents(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, get(server, "/api/sessions/unknown/events").Code)
 }
 
+func TestSubagents(t *testing.T) {
+	base := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+	store, broker := newTestStore()
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "sub-1",
+		Events: []*session.Event{{
+			Actor:     "sub-1",
+			Kind:      session.EventKindSubagentSpawned,
+			Subagent:  &session.SubagentPayload{AgentId: "sub-1", AgentType: "railroad-lane-correctness", Description: "lane"},
+			Timestamp: base,
+		}},
+		Meta: &session.Meta{SessionId: "s1"},
+	})
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Role:       session.RoleAssistant,
+		SubagentId: "sub-1",
+		Text:       "lane output",
+		Timestamp:  base,
+		RequestId:  "r3",
+		Usage:      &session.Usage{InputTokens: 7, OutputTokens: 3},
+		Meta:       &session.Meta{SessionId: "s1", Model: "sonnet"},
+	})
+	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Role:       session.RoleAssistant,
+		SubagentId: "sub-1",
+		Text:       "lane output end",
+		Timestamp:  base.Add(2 * time.Minute),
+		RequestId:  "r3",
+		Usage:      &session.Usage{InputTokens: 7, OutputTokens: 9},
+		Meta:       &session.Meta{SessionId: "s1", Model: "sonnet"},
+	})
+	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+	require.NoError(t, err)
+
+	response := get(server, "/api/sessions/s1/subagents")
+	require.Equal(t, http.StatusOK, response.Code)
+	resp := decode[subagentsResponse](t, response)
+	require.Len(t, resp.Subagents, 1)
+	assert.Equal(t, "sub-1", resp.Subagents[0].AgentId)
+	assert.Equal(t, "railroad-lane-correctness", resp.Subagents[0].AgentType)
+	assert.Equal(t, "lane", resp.Subagents[0].Description)
+	assert.Equal(t, "sonnet", resp.Subagents[0].Model)
+	assert.Equal(t, base, resp.Subagents[0].StartedAt)
+	assert.Equal(t, 120, resp.Subagents[0].Seconds)
+	assert.Equal(t, 9, resp.Subagents[0].Usage.OutputTokens)
+
+	empty := decode[subagentsResponse](t, get(server, "/api/sessions/s2/subagents"))
+	assert.Empty(t, empty.Subagents)
+
+	assert.Equal(t, http.StatusNotFound, get(server, "/api/sessions/unknown/subagents").Code)
+}
+
 func TestSessionEvents_TimeBlock(t *testing.T) {
 	base := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
 	store, broker := newTestStore()

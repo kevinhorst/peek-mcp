@@ -248,6 +248,20 @@ func (s *Server) handleMemory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, memory)
 }
 
+func (s *Server) handleSubagents(w http.ResponseWriter, r *http.Request) {
+	resp := subagentsResponse{Subagents: make([]*tools.SubagentStatView, 0)}
+	found := s.store.WithSession(session.Id(r.PathValue("id")), func(sess *session.Session) {
+		if views := tools.NewSubagentStatViews(sess); views != nil {
+			resp.Subagents = views
+		}
+	})
+	if !found {
+		respondNotFound("unknown session", w)
+		return
+	}
+	writeJSON(w, resp)
+}
+
 func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 	var resp eventsResponse
 	found := s.store.WithSession(session.Id(r.PathValue("id")), func(sess *session.Session) {

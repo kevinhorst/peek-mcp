@@ -59,6 +59,10 @@ type eventsResponse struct {
 	Usage         session.Usage          `json:"usage"`
 }
 
+type subagentsResponse struct {
+	Subagents []*tools.SubagentStatView `json:"subagents"`
+}
+
 type healthzResponse struct {
 	Status  string `json:"status"`
 	Version string `json:"version"`
