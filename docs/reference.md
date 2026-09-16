@@ -70,6 +70,7 @@ Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — sess
 curl -s http://127.0.0.1:42442/api/sessions | jq
 curl -s "http://127.0.0.1:42442/api/sessions/<id>/diff?size=0" | jq -r .diff
 curl -s "http://127.0.0.1:42442/api/sessions/<id>/events" | jq
+curl -s "http://127.0.0.1:42442/api/sessions/<id>/subagents" | jq
 curl -s http://127.0.0.1:42442/api/stats | jq
 curl -N http://127.0.0.1:42442/api/events
 ```
