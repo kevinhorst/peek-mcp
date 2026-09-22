@@ -24,6 +24,8 @@ const (
 
 const eventChannelBuffer = 1024
 
+const rescanInterval = 5 * time.Minute
+
 type eventBatch struct {
 	created []string
 	dirty   map[string]struct{}
@@ -67,6 +69,20 @@ func isBeforeCutoff(entry fs.DirEntry, cutoff time.Time) bool {
 		return false
 	}
 	return info.ModTime().Before(cutoff)
+}
+
+// recordModTime tracks, per directory, the newest ModTime of itself or any direct file child —
+// the walk folds child directories into their parents afterward to get the newest descendant.
+func recordModTime(newest map[string]time.Time, path string, entry fs.DirEntry, info fs.FileInfo) {
+	if entry.IsDir() {
+		newest[path] = info.ModTime()
+		return
+	}
+
+	parent := filepath.Dir(path)
+	if info.ModTime().After(newest[parent]) {
+		newest[parent] = info.ModTime()
+	}
 }
 
 const (
@@ -125,10 +141,19 @@ func (w *Watcher) Run(ctx context.Context) error {
 	w.walkAndWatch(watcher, w.agentDir)
 	w.store.SeedDiffCache()
 
+	var rescan <-chan time.Time
+	if w.horizon > 0 {
+		ticker := time.NewTicker(rescanInterval)
+		defer ticker.Stop()
+		rescan = ticker.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-rescan:
+			w.walkAndWatch(watcher, w.agentDir)
 		case event, ok := <-watcher.Events:
 			if !ok {
 				slog.Info("watcher closed")
@@ -194,16 +219,22 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		cutoff = time.Now().Add(-w.horizon)
 	}
 
+	var dirs []string
+	newest := make(map[string]time.Time)
+
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if entry.IsDir() {
 
-			err = watcher.Add(path)
-			if err != nil {
-				return err
-			}
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		recordModTime(newest, path, entry, info)
+
+		if entry.IsDir() {
+			dirs = append(dirs, path)
 			return nil
 		}
 		if isBeforeCutoff(entry, cutoff) {
@@ -223,6 +254,23 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 	})
 	if err != nil {
 		slog.Error("walkAndWatch error", "err", err)
+	}
+
+	for index := len(dirs) - 1; index > 0; index-- {
+		dir := dirs[index]
+		parent := filepath.Dir(dir)
+		if newest[dir].After(newest[parent]) {
+			newest[parent] = newest[dir]
+		}
+	}
+
+	for _, dir := range dirs {
+		if dir != root && !cutoff.IsZero() && newest[dir].Before(cutoff) {
+			continue
+		}
+		if err := watcher.Add(dir); err != nil {
+			slog.Warn("walkAndWatch: watcher.Add", "path", dir, "err", err)
+		}
 	}
 
 	for _, path := range subagentPaths {

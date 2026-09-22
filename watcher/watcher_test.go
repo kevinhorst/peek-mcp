@@ -62,6 +62,89 @@ func TestWalkAndWatch_Horizon(t *testing.T) {
 	assert.True(t, ok)
 }
 
+func TestWalkAndWatch_WatchPruning(t *testing.T) {
+	dir := t.TempDir()
+	coldDir := filepath.Join(dir, "cold")
+	require.NoError(t, os.Mkdir(coldDir, 0o755))
+	coldFile := filepath.Join(coldDir, "rollout-cold.jsonl")
+	appendLine(t, coldFile, `{"timestamp":"2026-07-11T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-cold","cwd":"/project"}}`)
+	stale := time.Now().Add(-48 * time.Hour)
+	require.NoError(t, os.Chtimes(coldFile, stale, stale))
+	require.NoError(t, os.Chtimes(coldDir, stale, stale))
+
+	hotDir := filepath.Join(dir, "hot")
+	require.NoError(t, os.Mkdir(hotDir, 0o755))
+	hotFile := filepath.Join(hotDir, "rollout-hot.jsonl")
+	appendLine(t, hotFile, `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-hot","cwd":"/project"}}`)
+
+	deepDir := filepath.Join(dir, "deep", "subagents", "nested")
+	require.NoError(t, os.MkdirAll(deepDir, 0o755))
+	deepFile := filepath.Join(deepDir, "rollout-deep.jsonl")
+	appendLine(t, deepFile, `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-deep","cwd":"/project"}}`)
+
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	newParser := func() Parser { return codex.NewParser() }
+	w := New(session.AgentCodex, dir, 24*time.Hour, newParser, store)
+	fsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer fsWatcher.Close()
+
+	w.walkAndWatch(fsWatcher, dir)
+	watched := fsWatcher.WatchList()
+
+	// cold-dir-not-watched
+	assert.NotContains(t, watched, coldDir)
+
+	// cold-dir-not-ingested
+	_, ok := store.GetById("sess-cold")
+	assert.False(t, ok)
+
+	// deep-hot-file-keeps-ancestor-chain-watched
+	assert.Contains(t, watched, filepath.Join(dir, "deep"))
+	assert.Contains(t, watched, filepath.Join(dir, "deep", "subagents"))
+	assert.Contains(t, watched, deepDir)
+
+	// root-always-watched-even-when-cold
+	assert.Contains(t, watched, dir)
+
+	// new-file-in-cold-dir-then-rescan
+	appendLine(t, coldFile, `{"timestamp":"2026-08-30T21:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"resumed"}]}}`)
+	require.NoError(t, os.Chtimes(coldFile, time.Now(), time.Now()))
+	w.walkAndWatch(fsWatcher, dir)
+	assert.Contains(t, fsWatcher.WatchList(), coldDir)
+	_, ok = store.GetById("sess-cold")
+	assert.True(t, ok)
+
+	// zero-horizon-watches-everything
+	allStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	allWatcher := New(session.AgentCodex, dir, 0, newParser, allStore)
+	allFsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer allFsWatcher.Close()
+	allWatcher.walkAndWatch(allFsWatcher, dir)
+	assert.Contains(t, allFsWatcher.WatchList(), coldDir)
+}
+
+func TestWalkAndWatch_AddFailure(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "sessions")
+	require.NoError(t, os.Mkdir(subDir, 0o755))
+	transcript := filepath.Join(subDir, "rollout-fresh.jsonl")
+	appendLine(t, transcript, `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-fresh","cwd":"/project"}}`)
+
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	newParser := func() Parser { return codex.NewParser() }
+	w := New(session.AgentCodex, dir, 0, newParser, store)
+	fsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	require.NoError(t, fsWatcher.Close())
+
+	// closed-watcher-add-fails-walk-still-ingests
+	w.walkAndWatch(fsWatcher, dir)
+	_, ok := store.GetById("sess-fresh")
+	assert.True(t, ok)
+}
+
 func TestEventBatch_Coalesce(t *testing.T) {
 	batch := newEventBatch()
 
