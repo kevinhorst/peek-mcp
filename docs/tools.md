@@ -8,6 +8,7 @@ Full parameter reference for every tool peek-mcp exposes. For task-oriented walk
 
 - **Title matching** — a `title` is matched exact-first (case-insensitive), then falls back to substring match. When `agent` is provided, matching is scoped to that agent. For Codex, titles come from Codex's session index (the thread name).
 - **Pagination** — responses that carry turns or diffs are paginated by the client's capability. When a response has `has_more: true`, call the same tool again with the returned `request_id` to fetch the next page. Chunked payload fields (`turns`, `events`, `revisions`) are JSON-encoded strings split at page boundaries — concatenate the chunks across pages, then parse the result. `json: true` responses are never paginated.
+- **Startup wait** — right after peek starts, tool calls wait until the initial session load (all transcripts inside the watch window) is complete, so the first answer is never a partial session list. If the load takes longer than 2 minutes, the call returns `initial session load still in progress; retry shortly`.
 - **Most-recent default** — `session_get` uses the most recently active session when `id` and `title` are omitted (an `agent` is then required when more than one agent is enabled, so the lookup knows which side to read).
 
 ## `session_get`

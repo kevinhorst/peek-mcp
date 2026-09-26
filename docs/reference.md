@@ -13,7 +13,7 @@ peek-mcp start --port 4242 --depth 200
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--transport` | `http` | Transport: `http` or `stdio` |
-| `--port` | `4242` | HTTP port (http transport only); also serves `GET /healthz` — a JSON identity probe (`version`, `claudeHome`, `codexHome`, `controlPort`) for supervisors that need to tell instances apart |
+| `--port` | `4242` | HTTP port (http transport only); also serves `GET /healthz` — a JSON identity probe (`version`, `claudeHome`, `codexHome`, `controlPort`, `ready`) for supervisors that need to tell instances apart; `ready` turns true once the initial session load completes |
 | `--depth` | `200` | Ring buffer depth per session (max turns kept) |
 | `--claude-home` | `~/.claude` | Override Claude Code session root |
 | `--codex-home` | `~/.codex` | Override Codex session root |
