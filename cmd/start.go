@@ -111,11 +111,15 @@ var startCmd = &cobra.Command{
 			telemetryStore.StateDir = stateDir
 		}
 
+		var loads []<-chan struct{}
+
 		if claudeHome != "" {
+			watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
+			newParser := func() watcher.Parser { return claude.NewParser() }
+			claudeWatcher := watcher.New(session.AgentClaude, watchedDir, watchWindow, newParser, store)
+			loads = append(loads, claudeWatcher.Loaded())
 			go func() {
-				watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
-				newParser := func() watcher.Parser { return claude.NewParser() }
-				err := watcher.New(session.AgentClaude, watchedDir, watchWindow, newParser, store).Run(ctx)
+				err := claudeWatcher.Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("claude watcher error", "err", err)
 					os.Exit(1)
@@ -138,12 +142,13 @@ var startCmd = &cobra.Command{
 				if info, err := os.Stat(storeDir); err != nil || !info.IsDir() {
 					continue
 				}
+				newParser := func() watcher.Parser { return claude.NewParser() }
+				coworkWatcher := watcher.New(session.AgentClaude, storeDir, watchWindow, newParser, store)
+				coworkWatcher.TranscriptPathOk = isCoworkTranscriptPath
+				coworkWatcher.Project = "cowork"
+				loads = append(loads, coworkWatcher.Loaded())
 				go func() {
-					newParser := func() watcher.Parser { return claude.NewParser() }
-					w := watcher.New(session.AgentClaude, storeDir, watchWindow, newParser, store)
-					w.TranscriptPathOk = isCoworkTranscriptPath
-					w.Project = "cowork"
-					if err := w.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+					if err := coworkWatcher.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 						slog.Error("cowork watcher error", "err", err)
 						os.Exit(1)
 					}
@@ -152,24 +157,30 @@ var startCmd = &cobra.Command{
 		}
 
 		if codexHome != "" {
+			watchedDir := filepath.Join(codexHome, codex.SessionDir)
+			newParser := func() watcher.Parser { return codex.NewParser() }
+			codexWatcher := watcher.New(session.AgentCodex, watchedDir, watchWindow, newParser, store)
+			loads = append(loads, codexWatcher.Loaded())
 			go func() {
-				watchedDir := filepath.Join(codexHome, codex.SessionDir)
-				newParser := func() watcher.Parser { return codex.NewParser() }
-				err := watcher.New(session.AgentCodex, watchedDir, watchWindow, newParser, store).Run(ctx)
+				err := codexWatcher.Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("codex watcher error", "err", err)
 					os.Exit(1)
 				}
 			}()
 
+			indexWatcher := watcher.NewCodexIndexWatcher(codexHome, store)
+			loads = append(loads, indexWatcher.Loaded())
 			go func() {
-				err := watcher.NewCodexIndexWatcher(codexHome, store).Run(ctx)
+				err := indexWatcher.Run(ctx)
 				if err != nil && !errors.Is(err, context.Canceled) {
 					slog.Error("codex index watcher error", "err", err)
 					os.Exit(1)
 				}
 			}()
 		}
+
+		go awaitInitialLoad(ctx, store, loads, startedAt)
 
 		go func() {
 			err := watcher.NewDiffWatcher(store, broker, pollInterval, pollWindow, stateDir).Run(ctx)
@@ -293,7 +304,7 @@ var startCmd = &cobra.Command{
 			httpSrv := server.NewStreamableHTTPServer(srv)
 
 			mux := http.NewServeMux()
-			mux.HandleFunc("GET /healthz", healthzHandler(claudeHome, codexHome, boundControlPort))
+			mux.HandleFunc("GET /healthz", healthzHandler(claudeHome, codexHome, boundControlPort, store))
 			mux.Handle("/", requestLogger(httpSrv))
 
 			addr := fmt.Sprintf("127.0.0.1:%d", port)
@@ -363,6 +374,19 @@ func runStateGc(ctx context.Context, stateDir *state.Dir, retentionDays, snapsho
 			stateDir.Gc(retention, snapshotRetention)
 		}
 	}
+}
+
+func awaitInitialLoad(ctx context.Context, store *session.Store, loads []<-chan struct{}, startedAt time.Time) {
+	for _, loaded := range loads {
+		select {
+		case <-ctx.Done():
+			return
+		case <-loaded:
+		}
+	}
+
+	store.MarkReady()
+	slog.Info("awaitInitialLoad: Initial session load complete", "sessions", len(store.List()), "took", time.Since(startedAt).Round(time.Millisecond))
 }
 
 func requestLogger(next http.Handler) http.Handler {
@@ -479,7 +503,7 @@ func changedConfigKeys(cmd *cobra.Command) map[string]bool {
 	return changed
 }
 
-func healthzHandler(claudeHome, codexHome string, controlPort int) http.HandlerFunc {
+func healthzHandler(claudeHome, codexHome string, controlPort int, store *session.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -487,6 +511,7 @@ func healthzHandler(claudeHome, codexHome string, controlPort int) http.HandlerF
 			"claudeHome":  claudeHome,
 			"codexHome":   codexHome,
 			"controlPort": controlPort,
+			"ready":       store.IsReady(),
 		})
 	}
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/config"
+	"github.com/kevinhorst/peek-mcp/events"
+	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,18 +96,89 @@ func TestChangedConfigKeys(t *testing.T) {
 	assert.False(t, changed[config.KeyLogLevel])
 }
 
-func TestHealthzHandler(t *testing.T) {
+func serveHealthz(t *testing.T, store *session.Store) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 
-	healthzHandler("/home/a/.claude", "/home/a/.codex", 42443)(rec, req)
+	healthzHandler("/home/a/.claude", "/home/a/.codex", 42443, store)(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	return rec, body
+}
+
+func TestHealthzHandler(t *testing.T) {
+	store := session.NewStore(10, 25, events.NewBroker())
+
+	// ready-false-before-mark
+	rec, body := serveHealthz(t, store)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 	assert.Equal(t, Version(), body["version"])
 	assert.Equal(t, "/home/a/.claude", body["claudeHome"])
 	assert.Equal(t, "/home/a/.codex", body["codexHome"])
 	assert.Equal(t, float64(42443), body["controlPort"])
+	assert.Equal(t, false, body["ready"])
+
+	// ready-true-after-mark
+	store.MarkReady()
+	rec, body = serveHealthz(t, store)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, true, body["ready"])
+}
+
+func TestAwaitInitialLoad(t *testing.T) {
+	type testCase struct {
+		_expectedReady bool
+		_id            string
+
+		ctx   context.Context
+		loads []<-chan struct{}
+		store *session.Store
+	}
+
+	closedLoad := make(chan struct{})
+	close(closedLoad)
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tests := make([]*testCase, 0)
+
+	// all-loaders-closed-marks-ready
+	tests = append(tests, &testCase{
+		_id:            "all-loaders-closed-marks-ready",
+		_expectedReady: true,
+
+		ctx:   context.Background(),
+		loads: []<-chan struct{}{closedLoad, closedLoad},
+		store: session.NewStore(10, 25, events.NewBroker()),
+	})
+
+	// no-loaders-marks-ready
+	tests = append(tests, &testCase{
+		_id:            "no-loaders-marks-ready",
+		_expectedReady: true,
+
+		ctx:   context.Background(),
+		store: session.NewStore(10, 25, events.NewBroker()),
+	})
+
+	// cancelled-context-leaves-not-ready
+	tests = append(tests, &testCase{
+		_id:            "cancelled-context-leaves-not-ready",
+		_expectedReady: false,
+
+		ctx:   cancelledCtx,
+		loads: []<-chan struct{}{closedLoad, make(chan struct{})},
+		store: session.NewStore(10, 25, events.NewBroker()),
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			awaitInitialLoad(test.ctx, test.store, test.loads, time.Now())
+
+			assert.Equal(t, test._expectedReady, test.store.IsReady())
+		})
+	}
 }
