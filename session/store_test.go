@@ -157,6 +157,22 @@ func TestList_Empty(t *testing.T) {
 	assert.Empty(t, s.List())
 }
 
+func TestStore_Ready(t *testing.T) {
+	s := NewStore(10, 25, events.NewBroker())
+
+	// fresh-store-not-ready
+	assert.False(t, s.IsReady())
+
+	// mark-ready-closes-channel-and-reports-ready
+	s.MarkReady()
+	assert.True(t, s.IsReady())
+	select {
+	case <-s.Ready():
+	default:
+		assert.Fail(t, "Ready channel not closed after MarkReady")
+	}
+}
+
 func TestList_SortedByLastActive(t *testing.T) {
 	s := provideCompleteStore()
 

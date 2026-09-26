@@ -32,6 +32,7 @@ type Store struct {
 	depth          int
 	enabledAgents  []Agent
 	plainTitleById map[Id]string
+	ready          chan struct{}
 	sessions       map[Id]*Session
 	snapshots      *snapshotCache
 }
@@ -43,6 +44,7 @@ func NewStore(depth, diffCacheSessions int, broker *events.Broker, agents ...Age
 		depth:          depth,
 		enabledAgents:  agents,
 		broker:         broker,
+		ready:          make(chan struct{}),
 		snapshots:      newSnapshotCache(diffCacheSessions),
 	}
 }
@@ -490,6 +492,23 @@ func (s *Store) WithSession(id Id, fn func(*Session)) bool {
 	}
 	fn(session)
 	return true
+}
+
+func (s *Store) MarkReady() {
+	close(s.ready)
+}
+
+func (s *Store) Ready() <-chan struct{} {
+	return s.ready
+}
+
+func (s *Store) IsReady() bool {
+	select {
+	case <-s.ready:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Store) getOrCreate(id Id, agent Agent) *Session {
