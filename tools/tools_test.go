@@ -433,6 +433,64 @@ func TestResultBytes(t *testing.T) {
 	assert.Greater(t, resultBytes(mcp.NewToolResultText("hello")), int64(0))
 }
 
+func TestAwaitReady(t *testing.T) {
+	type testCase struct {
+		_expectedErr    error
+		_expectedResult *mcp.CallToolResult
+		_id             string
+
+		ctx   context.Context
+		store *session.Store
+	}
+
+	delegated := mcp.NewToolResultText("delegated")
+	handler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return delegated, nil
+	}
+	tests := make([]*testCase, 0)
+
+	// ready-store-delegates-to-handler
+	readyStore := provideToolStore()
+	readyStore.MarkReady()
+	tests = append(tests, &testCase{
+		_id:             "ready-store-delegates-to-handler",
+		_expectedResult: delegated,
+
+		ctx:   context.Background(),
+		store: readyStore,
+	})
+
+	// pending-store-times-out-with-tool-error
+	tests = append(tests, &testCase{
+		_id:             "pending-store-times-out-with-tool-error",
+		_expectedResult: mcp.NewToolResultError(errInitialLoadPending.Error()),
+
+		ctx:   context.Background(),
+		store: provideToolStore(),
+	})
+
+	// cancelled-context-returns-context-error
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tests = append(tests, &testCase{
+		_id:          "cancelled-context-returns-context-error",
+		_expectedErr: context.Canceled,
+
+		ctx:   cancelledCtx,
+		store: provideToolStore(),
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			result, err := awaitReady(test.store, 10*time.Millisecond, handler)(test.ctx, requestWithArgs(nil))
+
+			assert.ErrorIs(t, err, test._expectedErr)
+			assert.Equal(t, test._expectedResult, result)
+		})
+	}
+}
+
 func TestRegister_ReadOnlyHint(t *testing.T) {
 	srv := server.NewMCPServer("peek-mcp", "test")
 	Register(srv, provideToolStore(), NewInvocationCounter(InstanceInfo{}, nil), telemetry.NewStore(), telemetry.NewDetector(0, ""))

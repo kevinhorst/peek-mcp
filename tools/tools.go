@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kevinhorst/peek-mcp/claude"
@@ -14,10 +15,14 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-var errSessionSelectorMissing = errors.New("id or title parameter is required")
+var (
+	errInitialLoadPending     = errors.New("initial session load still in progress; retry shortly")
+	errSessionSelectorMissing = errors.New("id or title parameter is required")
+)
 
 const (
 	DefaultReturnedTurns = 20
+	readyTimeout         = 2 * time.Minute
 )
 
 func withMaxResultSize() *mcp.Meta {
@@ -31,6 +36,22 @@ func counted(counter *InvocationCounter, name string, handler server.ToolHandler
 		result, err := handler(ctx, req)
 		counter.Inc(name, resultBytes(result))
 		return result, err
+	}
+}
+
+func awaitReady(store *session.Store, timeout time.Duration, handler server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+
+		select {
+		case <-store.Ready():
+			return handler(ctx, request)
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+			return mcp.NewToolResultError(errInitialLoadPending.Error()), nil
+		}
 	}
 }
 
@@ -100,7 +121,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 		),
 	)
 	sessionGet.Meta = withMaxResultSize()
-	server.AddTool(sessionGet, counted(counter, "session_get", sessionGetHandler(store, pageStore)))
+	server.AddTool(sessionGet, counted(counter, "session_get", awaitReady(store, readyTimeout, sessionGetHandler(store, pageStore))))
 
 	sessionList :=
 		mcp.NewTool("session_list",
@@ -114,7 +135,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 			),
 		)
 	sessionList.Meta = withMaxResultSize()
-	server.AddTool(sessionList, counted(counter, "session_list", sessionListHandler(store)))
+	server.AddTool(sessionList, counted(counter, "session_list", awaitReady(store, readyTimeout, sessionListHandler(store))))
 
 	sessionEvents := mcp.NewTool("session_events",
 		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials/grants, permission-mode changes, skill invocations, subagent spawns/results, user answers) plus derived counters, telemetry-based permission decisions (auto-allowed vs. prompted vs. rejected, with the prompted commands), token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_get for those."),
@@ -145,7 +166,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 		),
 	)
 	sessionEvents.Meta = withMaxResultSize()
-	server.AddTool(sessionEvents, counted(counter, "session_events", sessionEventsHandler(detector, store, eventsPageStore, telemetryStore)))
+	server.AddTool(sessionEvents, counted(counter, "session_events", awaitReady(store, readyTimeout, sessionEventsHandler(detector, store, eventsPageStore, telemetryStore))))
 }
 
 func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]) server.ToolHandlerFunc {
