@@ -1,6 +1,7 @@
 package watcher
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,6 +23,26 @@ func appendLine(t *testing.T, path, line string) {
 
 	_, err = file.WriteString(line + "\n")
 	require.NoError(t, err)
+}
+
+func runUntilLoaded(t *testing.T, run func(context.Context) error, loaded <-chan struct{}) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	select {
+	case <-loaded:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "Loaded not signaled within 5s")
+	}
 }
 
 func TestWalkAndWatch_Horizon(t *testing.T) {
@@ -143,6 +164,51 @@ func TestWalkAndWatch_AddFailure(t *testing.T) {
 	w.walkAndWatch(fsWatcher, dir)
 	_, ok := store.GetById("sess-fresh")
 	assert.True(t, ok)
+}
+
+func TestRun_Loaded(t *testing.T) {
+	type testCase struct {
+		_expectedSession bool
+		_id              string
+
+		store   *session.Store
+		watcher *Watcher
+	}
+
+	newParser := func() Parser { return codex.NewParser() }
+	tests := make([]*testCase, 0)
+
+	// loaded-after-transcripts-ingested
+	dir := t.TempDir()
+	appendLine(t, filepath.Join(dir, "rollout-fresh.jsonl"), `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-fresh","cwd":"/project"}}`)
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	tests = append(tests, &testCase{
+		_id:              "loaded-after-transcripts-ingested",
+		_expectedSession: true,
+
+		store:   store,
+		watcher: New(session.AgentCodex, dir, 0, newParser, store),
+	})
+
+	// missing-root-still-signals-loaded
+	missingStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	tests = append(tests, &testCase{
+		_id:              "missing-root-still-signals-loaded",
+		_expectedSession: false,
+
+		store:   missingStore,
+		watcher: New(session.AgentCodex, filepath.Join(t.TempDir(), "missing"), 0, newParser, missingStore),
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			runUntilLoaded(t, test.watcher.Run, test.watcher.Loaded())
+
+			_, ok := test.store.GetById("sess-fresh")
+			assert.Equal(t, test._expectedSession, ok)
+		})
+	}
 }
 
 func TestEventBatch_Coalesce(t *testing.T) {

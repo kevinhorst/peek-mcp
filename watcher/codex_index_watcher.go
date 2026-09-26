@@ -21,14 +21,20 @@ const (
 
 type CodexIndexWatcher struct {
 	codexHome string
+	loaded    chan struct{}
 	store     *session.Store
 }
 
 func NewCodexIndexWatcher(codexHome string, store *session.Store) *CodexIndexWatcher {
 	return &CodexIndexWatcher{
 		codexHome: codexHome,
+		loaded:    make(chan struct{}),
 		store:     store,
 	}
+}
+
+func (w *CodexIndexWatcher) Loaded() <-chan struct{} {
+	return w.loaded
 }
 
 func (w *CodexIndexWatcher) loadIndex() {
@@ -81,11 +87,16 @@ func (w *CodexIndexWatcher) Run(ctx context.Context) error {
 	}
 	defer watcher.Close()
 
-	if err := waitForDir(ctx, watcher, w.codexHome); err != nil {
-		return err
+	if err := watcher.Add(w.codexHome); err != nil {
+		close(w.loaded)
+		if err := waitForDir(ctx, watcher, w.codexHome); err != nil {
+			return err
+		}
+		w.loadIndex()
+	} else {
+		w.loadIndex()
+		close(w.loaded)
 	}
-
-	w.loadIndex()
 
 	debounce := time.NewTimer(indexDebounce)
 	debounce.Stop()

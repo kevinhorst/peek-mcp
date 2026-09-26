@@ -98,3 +98,44 @@ func TestLoadIndex(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexIndexWatcher_Loaded(t *testing.T) {
+	type testCase struct {
+		_expectedSessions int
+		_id               string
+
+		store   *session.Store
+		watcher *CodexIndexWatcher
+	}
+
+	tests := make([]*testCase, 0)
+
+	// home-present-titles-loaded-before-signal
+	watcher, store := provideIndexWatcher(t, `{"id":"s1","thread_name":"Set up pgroll migrations","updated_at":"2026-03-29T20:38:12Z"}`+"\n")
+	tests = append(tests, &testCase{
+		_id:               "home-present-titles-loaded-before-signal",
+		_expectedSessions: 1,
+
+		store:   store,
+		watcher: watcher,
+	})
+
+	// home-missing-signals-immediately
+	missingStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	tests = append(tests, &testCase{
+		_id:               "home-missing-signals-immediately",
+		_expectedSessions: 0,
+
+		store:   missingStore,
+		watcher: NewCodexIndexWatcher(filepath.Join(t.TempDir(), "missing"), missingStore),
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			runUntilLoaded(t, test.watcher.Run, test.watcher.Loaded())
+
+			assert.Len(t, test.store.List(session.AgentCodex), test._expectedSessions)
+		})
+	}
+}

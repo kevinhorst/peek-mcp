@@ -108,6 +108,7 @@ type Watcher struct {
 	agentDir  string
 	files     map[string]*watchedFile
 	horizon   time.Duration
+	loaded    chan struct{}
 	mu        sync.Mutex
 	newParser func() Parser
 	store     *session.Store
@@ -125,9 +126,14 @@ func New(agent session.Agent, agentDir string, horizon time.Duration, newParser 
 		agentDir:  agentDir,
 		files:     make(map[string]*watchedFile),
 		horizon:   horizon,
+		loaded:    make(chan struct{}),
 		newParser: newParser,
 		store:     store,
 	}
+}
+
+func (w *Watcher) Loaded() <-chan struct{} {
+	return w.loaded
 }
 
 func (w *Watcher) Run(ctx context.Context) error {
@@ -140,6 +146,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 	// Add root directories and backfill existing files
 	w.walkAndWatch(watcher, w.agentDir)
 	w.store.SeedDiffCache()
+	close(w.loaded)
 
 	var rescan <-chan time.Time
 	if w.horizon > 0 {
