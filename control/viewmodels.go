@@ -64,6 +64,7 @@ type subagentsResponse struct {
 }
 
 type healthzResponse struct {
+	Ready   bool   `json:"ready"`
 	Status  string `json:"status"`
 	Version string `json:"version"`
 }

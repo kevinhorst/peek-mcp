@@ -26,7 +26,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, healthzResponse{Status: "ok", Version: s.version})
+	writeJSON(w, healthzResponse{Ready: s.store.IsReady(), Status: "ok", Version: s.version})
 }
 
 func intParam(r *http.Request, name string, fallback int) (int, bool) {

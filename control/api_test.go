@@ -185,6 +185,12 @@ func TestHealthz(t *testing.T) {
 	health := decode[healthzResponse](t, response)
 	assert.Equal(t, "ok", health.Status)
 	assert.Equal(t, "test", health.Version)
+	assert.False(t, health.Ready)
+
+	// ready-reflects-store
+	server.store.MarkReady()
+	health = decode[healthzResponse](t, get(server, "/api/healthz"))
+	assert.True(t, health.Ready)
 }
 
 func TestStats(t *testing.T) {
