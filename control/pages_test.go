@@ -187,6 +187,8 @@ func TestSessionDetailPage(t *testing.T) {
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/usage"`)
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/events"`)
 	assert.Contains(t, body, `hx-get="/fragments/sessions/s1/memory"`)
+	assert.Contains(t, body, `data-copy-target="#session-id-raw"`)
+	assert.Contains(t, body, `<template id="session-id-raw">s1</template>`)
 	assert.Equal(t, 5, strings.Count(body, `<details class="section">`))
 	assert.Equal(t, 2, strings.Count(body, `<details class="section" open>`))
 
