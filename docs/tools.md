@@ -39,7 +39,7 @@ With `tools`, every turn carries `tool_calls`, in call order and empty when the 
 
 ## `session_events`
 
-Returns the typed event stream of a session (plan lifecycle, permission denials/grants, permission-mode changes, skill invocations, subagent spawns/results, user answers) plus derived counters, a `permissions` block with telemetry-based permission decisions when [telemetry export](reference.md#telemetry) is enabled (auto-allowed vs. prompted vs. rejected counts, plus each prompted/rejected request with its tool and command — `detail: "persisted"` marks stats read back from the state dir), token usage totals, session time (`time` block: `started_at`, `last_active`, wall/idle/active seconds — idle is the sum of gaps ≥ 5 minutes between transcript timestamps; a `telemetry` sub-block with true active seconds and cost appears when [telemetry export](reference.md#telemetry) is enabled), touched files (`touched_files`: per-path read/write counts from Read/Write/Edit tool results, subagent touches included), plan revision history, and diff availability (`live` \| `snapshot` \| `none`). Turns are not included — use `session_get` for those. The `unsupported` array lists signals not detectable for the session's agent.
+Returns the typed event stream of a session (plan lifecycle, permission denials/grants, permission-mode changes, skill invocations, subagent spawns/results, background task completions, user answers) plus derived counters, a `permissions` block with telemetry-based permission decisions when [telemetry export](reference.md#telemetry) is enabled (auto-allowed vs. prompted vs. rejected counts, plus each prompted/rejected request with its tool and command — `detail: "persisted"` marks stats read back from the state dir), token usage totals, session time (`time` block: `started_at`, `last_active`, wall/idle/active seconds — idle is the sum of gaps ≥ 5 minutes between transcript timestamps; a `telemetry` sub-block with true active seconds and cost appears when [telemetry export](reference.md#telemetry) is enabled), touched files (`touched_files`: per-path read/write counts from Read/Write/Edit tool results, subagent touches included), plan revision history, and diff availability (`live` \| `snapshot` \| `none`). Turns are not included — use `session_get` for those. The `unsupported` array lists signals not detectable for the session's agent.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -51,6 +51,8 @@ Returns the typed event stream of a session (plan lifecycle, permission denials/
 | `subagent` | string | no | Subagent id: scope events (by actor) and the `breakdown` stats to that agent. Valid ids are listed in every response's `subagent_ids` field |
 | `request_id` | string | no | Pagination request ID from a previous response |
 | `json` | boolean | no | Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default `false`: paginated JSON text block) |
+
+A background Agent-tool subagent's `subagent_result` is its launch acknowledgement (content starts `Async agent launched`), not its completion. Its completion is a `task_completed` event with `task` `{task_id, tool_use_id, status, summary}`, where `task_id` is the agent id and `status` is terminal (`completed`, `failed`, `killed`, `stopped`, …). Background shell commands and workflow runs emit `task_completed` too, with their own task ids. Workflow agents report their completion as `subagent_result`.
 
 ## `session_list`
 
