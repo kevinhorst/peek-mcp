@@ -107,6 +107,7 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 	}
 
 	events, touches := p.eventsFromUserContent(entry, &message)
+	results := toolResultsFromContent(&message)
 	if event := p.permissionModeEvent(entry); event != nil {
 		events = append(events, event)
 	}
@@ -118,7 +119,7 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 
 	isPrompt := entry.PromptId != "" && strings.TrimSpace(text) != ""
 	if !isPrompt {
-		return eventTurn(entry, events, touches)
+		return eventTurn(entry, events, results, touches)
 	}
 
 	turn := &session.Turn{
@@ -128,6 +129,7 @@ func (p *Parser) handleUser(entry *Entry) *session.Turn {
 		Role:        session.RoleUser,
 		Text:        text,
 		Timestamp:   entry.Timestamp,
+		ToolResults: results,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
@@ -159,6 +161,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 	text := extractTextBlocks(message.Content)
 	thinking := extractThinkingBlocks(message.Content)
 	events := p.eventsFromAssistantContent(entry, &message)
+	calls := toolCallsFromContent(entry, &message)
 
 	model := message.Model
 	if model == syntheticModel {
@@ -172,6 +175,7 @@ func (p *Parser) handleAssistant(entry *Entry) *session.Turn {
 		Text:       text,
 		Thinking:   thinking,
 		Timestamp:  entry.Timestamp,
+		ToolCalls:  calls,
 		RequestId:  entry.RequestId,
 		StopReason: message.StopReason,
 		Usage:      usage,
@@ -230,7 +234,7 @@ func (p *Parser) handleAttachment(entry *Entry) *session.Turn {
 	events := planModeEvents(attachment.Type, entry)
 
 	if attachment.PlanFilePath == "" {
-		return eventTurn(entry, events, nil)
+		return eventTurn(entry, events, nil, nil)
 	}
 
 	return &session.Turn{
@@ -257,16 +261,20 @@ func (p *Parser) handleSidechain(entry *Entry) *session.Turn {
 
 	var events []*session.Event
 	var touches []*session.FileTouch
+	var calls []*session.ToolCall
+	var results []*session.ToolResult
 	var usage *session.Usage
 	var role session.Role
 	var text, thinking, model string
 	switch entry.Type {
 	case EntryTypeUser:
 		events, touches = p.eventsFromUserContent(entry, &message)
+		results = toolResultsFromContent(&message)
 		role = session.RoleUser
 		text = extractTextBlocks(message.Content)
 	case EntryTypeAssistant:
 		events = p.eventsFromAssistantContent(entry, &message)
+		calls = toolCallsFromContent(entry, &message)
 		role = session.RoleAssistant
 		text = extractTextBlocks(message.Content)
 		thinking = extractThinkingBlocks(message.Content)
@@ -285,6 +293,8 @@ func (p *Parser) handleSidechain(entry *Entry) *session.Turn {
 		Thinking:    thinking,
 		SubagentId:  entry.AgentId,
 		Timestamp:   entry.Timestamp,
+		ToolCalls:   calls,
+		ToolResults: results,
 		Usage:       usage,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
@@ -427,14 +437,16 @@ func contentBlocks(raw json.RawMessage) []ContentBlock {
 	return blocks
 }
 
-func eventTurn(entry *Entry, events []*session.Event, touches []*session.FileTouch) *session.Turn {
-	if len(events) == 0 && len(touches) == 0 {
+func eventTurn(entry *Entry, events []*session.Event, results []*session.ToolResult, touches []*session.FileTouch) *session.Turn {
+	hasNoEvents := len(events) == 0 && len(touches) == 0
+	if hasNoEvents && len(results) == 0 {
 		return nil
 	}
 
 	turn := &session.Turn{
 		Events:      events,
 		FileTouches: touches,
+		ToolResults: results,
 		Meta: &session.Meta{
 			SessionId: entry.SessionId,
 			CWD:       entry.CurrentWorkingDir,
@@ -562,8 +574,8 @@ func (p *Parser) permissionModeEvent(entry *Entry) *session.Event {
 	}
 }
 
-func permissionDeniedEvent(entry *Entry, tool string, command string) *session.Event {
-	payload := &session.PermissionPayload{Command: command, Tool: tool}
+func permissionDeniedEvent(block *ContentBlock, command string, entry *Entry, tool string) *session.Event {
+	payload := &session.PermissionPayload{Command: command, Tool: tool, ToolUseId: block.ToolUseId}
 	return &session.Event{
 		Actor:      entry.AgentId,
 		Kind:       session.EventKindPermissionDenied,
@@ -700,7 +712,7 @@ func slashCommandEvent(entry *Entry, text string) *session.Event {
 
 func subagentResultEvent(block *ContentBlock, entry *Entry, isDenied bool, text string) *session.Event {
 	if isDenied {
-		return permissionDeniedEvent(entry, toolNameAgent, "")
+		return permissionDeniedEvent(block, "", entry, toolNameAgent)
 	}
 
 	content := resolvePersistedOutput(entry.SessionId, text, block.ToolUseId)
@@ -734,6 +746,32 @@ func textBetween(closeTag, openTag, text string) string {
 	return inner
 }
 
+func toolCallsFromContent(entry *Entry, message *Message) []*session.ToolCall {
+	blocks := contentBlocks(message.Content)
+
+	calls := make([]*session.ToolCall, 0)
+	for index := range blocks {
+		block := &blocks[index]
+		if block.Type != contentTypeToolUse {
+			continue
+		}
+
+		call := &session.ToolCall{
+			Id:        block.Id,
+			Input:     block.Input,
+			Name:      block.Name,
+			Timestamp: entry.Timestamp,
+		}
+		calls = append(calls, call)
+	}
+
+	if len(calls) == 0 {
+		return nil
+	}
+
+	return calls
+}
+
 func toolResultEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse) *session.Event {
 	var text string
 	if err := json.Unmarshal(block.Content, &text); err != nil {
@@ -748,18 +786,39 @@ func toolResultEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse)
 	case toolNameAgent:
 		return subagentResultEvent(block, entry, isDenied, text)
 	case toolNameAskUserQuestion:
-		return userAnswerEvent(entry, isDenied, pending, text)
+		return userAnswerEvent(block, entry, isDenied, pending, text)
 	default:
 		if !isDenied {
 			return nil
 		}
-		return permissionDeniedEvent(entry, pending.name, commandFromInput(pending))
+		return permissionDeniedEvent(block, commandFromInput(pending), entry, pending.name)
 	}
 }
 
-func userAnswerEvent(entry *Entry, isDenied bool, pending *pendingToolUse, text string) *session.Event {
+func toolResultsFromContent(message *Message) []*session.ToolResult {
+	blocks := contentBlocks(message.Content)
+
+	results := make([]*session.ToolResult, 0)
+	for index := range blocks {
+		block := &blocks[index]
+		if block.Type != contentTypeToolResult {
+			continue
+		}
+
+		result := &session.ToolResult{IsError: block.IsError, ToolUseId: block.ToolUseId}
+		results = append(results, result)
+	}
+
+	if len(results) == 0 {
+		return nil
+	}
+
+	return results
+}
+
+func userAnswerEvent(block *ContentBlock, entry *Entry, isDenied bool, pending *pendingToolUse, text string) *session.Event {
 	if isDenied {
-		return permissionDeniedEvent(entry, toolNameAskUserQuestion, "")
+		return permissionDeniedEvent(block, "", entry, toolNameAskUserQuestion)
 	}
 
 	var input askUserQuestionInput

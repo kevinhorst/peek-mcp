@@ -121,6 +121,7 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
 	assert.Equal(t, "Edit", turn.Events[0].Permission.Tool)
 	assert.Empty(t, turn.Events[0].Permission.Command)
+	assert.Equal(t, "tu1", turn.Events[0].Permission.ToolUseId)
 
 	// bash-denied-command-captured
 	p = NewParser()
@@ -131,6 +132,7 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
 	assert.Equal(t, "Bash", turn.Events[0].Permission.Tool)
 	assert.Equal(t, "rm -rf /tmp/x", turn.Events[0].Permission.Command)
+	assert.Equal(t, "tu-bash", turn.Events[0].Permission.ToolUseId)
 
 	// file-tool-denied-path-captured
 	p = NewParser()
@@ -158,11 +160,14 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
 	assert.Equal(t, "AskUserQuestion", turn.Events[0].Permission.Tool)
+	assert.Equal(t, "tu3", turn.Events[0].Permission.ToolUseId)
 
 	// unknown-tool-result-ignored
 	p = NewParser()
 	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"never-seen","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
-	assert.Nil(t, turn)
+	require.NotNil(t, turn)
+	assert.Empty(t, turn.Events)
+	assert.Len(t, turn.ToolResults, 1)
 }
 
 func TestParseLine_PermissionMode(t *testing.T) {
@@ -229,6 +234,7 @@ func TestParseLine_SubagentResult(t *testing.T) {
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
 	assert.Equal(t, "Agent", turn.Events[0].Permission.Tool)
 	assert.Empty(t, turn.Events[0].Permission.Command)
+	assert.Equal(t, "tu3", turn.Events[0].Permission.ToolUseId)
 }
 
 func TestResolvePersistedOutput(t *testing.T) {

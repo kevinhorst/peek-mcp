@@ -7,6 +7,7 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func splitLines(data []byte) [][]byte {
@@ -178,9 +179,8 @@ func TestClaude_FullConversation(t *testing.T) {
 		}
 	}
 
-	// user, assistant (text), assistant (meta-only tool_use), user = 4 non-nil turns
-	// tool_result is nil (content is array, unmarshal to string fails)
-	assert.Len(t, turns, 4)
+	// user, assistant (text), assistant (tool_use), tool_result signal, user = 5 non-nil turns
+	require.Len(t, turns, 5)
 
 	assert.Equal(t, session.RoleUser, turns[0].Role)
 	assert.Equal(t, "Explain this code", turns[0].Text)
@@ -191,9 +191,15 @@ func TestClaude_FullConversation(t *testing.T) {
 
 	assert.Equal(t, session.RoleAssistant, turns[2].Role)
 	assert.Equal(t, "", turns[2].Text, "tool_use-only is meta-only")
+	require.Len(t, turns[2].ToolCalls, 1)
+	assert.Equal(t, "Read", turns[2].ToolCalls[0].Name)
 
-	assert.Equal(t, session.RoleUser, turns[3].Role)
-	assert.Equal(t, "Now fix the bug", turns[3].Text)
+	assert.Equal(t, session.Role(""), turns[3].Role)
+	require.Len(t, turns[3].ToolResults, 1)
+	assert.Equal(t, "toolu_1", turns[3].ToolResults[0].ToolUseId)
+
+	assert.Equal(t, session.RoleUser, turns[4].Role)
+	assert.Equal(t, "Now fix the bug", turns[4].Text)
 }
 
 func TestClaude_PlanModeAttachment(t *testing.T) {

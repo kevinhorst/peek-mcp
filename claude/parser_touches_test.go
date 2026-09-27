@@ -47,7 +47,9 @@ func TestParseLine_FileTouches(t *testing.T) {
 	p = NewParser()
 	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu5","name":"Bash","input":{"command":"ls"}}]}}`))
 	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu5","is_error":false,"content":"ok"}]}}`))
-	assert.Nil(t, turn)
+	require.NotNil(t, turn)
+	assert.Empty(t, turn.FileTouches)
+	assert.Len(t, turn.ToolResults, 1)
 
 	// sidechain-touch-collected
 	p = NewParser()
