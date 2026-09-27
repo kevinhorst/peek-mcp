@@ -334,6 +334,40 @@ func TestWalkAndWatch_ColdBackfillWorkflowSubagents(t *testing.T) {
 	assert.Equal(t, "sub1", resultEvents[0].Subagent.AgentId)
 }
 
+func TestWalkAndWatch_WorkflowSubagentToolCalls(t *testing.T) {
+	projectDir := t.TempDir()
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	w := claudeWatcher(projectDir, store)
+
+	transcript := filepath.Join(projectDir, "parent-sess.jsonl")
+	line := `{"type":"user","promptId":"p1","sessionId":"parent-sess","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"user","content":"hello"}}` + "\n"
+	require.NoError(t, os.WriteFile(transcript, []byte(line), 0o644))
+
+	metaPath := writeWorkflowSubagentMeta(t, projectDir, "parent-sess", "wf_1", "sub1",
+		`{"agentType":"railroad-refuter","spawnDepth":1}`)
+	callLine := `{"type":"assistant","agentId":"sub1","sessionId":"parent-sess","requestId":"req_1","timestamp":"2026-04-05T15:01:00.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-wf","name":"Bash","input":{"command":"go test ./..."}}]}}` + "\n"
+	resultLine := `{"type":"user","agentId":"sub1","sessionId":"parent-sess","timestamp":"2026-04-05T15:01:05.000Z","isSidechain":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-wf","is_error":true,"content":"exit status 1"}]}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(metaPath), agentFilePrefix+"sub1"+jsonlSuffix), []byte(callLine+resultLine), 0o644))
+
+	fsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer fsWatcher.Close()
+
+	w.walkAndWatch(fsWatcher, projectDir)
+
+	sess, ok := store.GetById("parent-sess")
+	require.True(t, ok)
+	turns, ok := sess.SubagentTurnsWithToolCalls("sub1", 10)
+	require.True(t, ok)
+	var calls []*session.ToolCall
+	for _, turn := range turns {
+		calls = append(calls, turn.ToolCalls...)
+	}
+	require.Len(t, calls, 1)
+	assert.Equal(t, "tu-wf", calls[0].Id)
+	assert.True(t, calls[0].IsError)
+}
+
 func TestWalkAndWatch_NewDirBackfill(t *testing.T) {
 	root := t.TempDir()
 	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
