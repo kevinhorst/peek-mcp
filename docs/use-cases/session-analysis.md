@@ -37,6 +37,6 @@ Nothing beyond the [Quick start](../../README.md#quick-start). A larger `--depth
 
 ## What to expect
 
-- **Tool calls are filtered out** — turns are the human/assistant exchange, not the tool-call noise, so analysis stays on intent and outcome.
+- **Tool calls are filtered out by default** — turns are the human/assistant exchange, so analysis stays on intent and outcome; set `tools: true` when the analysis needs the calls themselves.
 - **Sub-agent sessions are hidden** — you analyze real sessions, not the sidechains they spawn.
 - **`--depth` bounds history** — analysis reaches only as far back as the ring buffer held; raise it for deeper retrospectives.

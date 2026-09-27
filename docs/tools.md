@@ -13,7 +13,7 @@ Full parameter reference for every tool peek-mcp exposes. For task-oriented walk
 
 ## `session_get`
 
-Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memory) for a session in one call. Sections are selected with flat boolean flags. Turns are returned as the last N human/assistant turn pairs; tool calls and tool results are filtered out. Assistant thinking is captured but omitted unless `thinking` is set; `subagent` scopes the whole response to one subagent's transcript.
+Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memory) for a session in one call. Sections are selected with flat boolean flags. Turns are returned as the last N human/assistant turn pairs; tool calls are omitted unless `tools` is set. Assistant thinking is captured but omitted unless `thinking` is set; `subagent` scopes the whole response to one subagent's transcript.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -29,10 +29,13 @@ Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memo
 | `remember` | boolean | no | Include the project's auto-memory (`MEMORY.md` + fact files). Claude sessions only (default `false`) |
 | `subagent` | string | no | Subagent id: scope the response to that agent's transcript and actor-tagged events (plan/diff/memory sections are omitted). Valid ids are listed in every response's `subagents` field |
 | `thinking` | boolean | no | Include assistant thinking text on turns (default `false`) |
+| `tools` | boolean | no | Include each turn's tool calls as `tool_calls` (default `false`). Turns with tool calls but no text are returned too and count toward `n`. Claude sessions only; Codex turns carry an empty list |
 | `request_id` | string | no | Pagination request ID from a previous response |
 | `json` | boolean | no | Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default `false`: paginated JSON text block) |
 
-The first page also carries `total_usage`, the running token total (including the in-flight turn), and `subagents` — every spawned subagent's `agent_id`, `agent_type`, and `description`, always present so a follow-up call can scope to one of them.
+The first page also carries `total_usage`, the running token total (including the in-flight turn), `subagents` — every spawned subagent's `agent_id`, `agent_type`, and `description`, always present so a follow-up call can scope to one of them — and `turns_total`, the number of turns in the addressed scope (the session, or the `subagent`) including the in-flight turn and turns the ring no longer holds. Without `tools` it counts the turns `turns` can return, with `tools` it also counts tool-only turns. A scope returned fewer turns than `turns_total` was cut by `n` or by the ring.
+
+With `tools`, every turn carries `tool_calls`, in call order and empty when the turn made none. Each entry has `id` (the tool-use id), `name`, `input` (the tool's raw input object, verbatim from the transcript), `is_error` (from the matching tool result; `false` while the call is still running) and `timestamp` (when the call was emitted). Scoped with `subagent`, the same holds for Agent-tool subagents and workflow agents. The session keeps at most `--depth` turns and each subagent at least 200 ([reference](reference.md)); raise `--depth` to keep long runs complete.
 
 ## `session_events`
 
@@ -76,7 +79,7 @@ On Windows the session roots resolve to `%USERPROFILE%\.claude` and `%USERPROFIL
 | Client metadata | CLI version | originator, CLI version, source, fork lineage |
 | Model | per assistant message | per turn context |
 | Token usage | summed per message | cumulative snapshots, kept-last; accurate totals (incl. in-flight turn) |
-| Tool calls | filtered out | filtered out |
+| Tool calls | per turn via `tools`, root and every subagent | not available |
 | Thinking | captured, returned via `thinking` | not available |
 | Sub-agent sessions | folded into the parent; per-agent transcript via `subagent` | folded into the parent; per-agent transcript via `subagent` |
 | Session time | wall/idle/active from transcript timestamps | wall/idle/active from transcript timestamps |
