@@ -31,6 +31,8 @@ type Entry struct {
 	Type              string          `json:"type"`
 	CustomTitle       string          `json:"customTitle"`
 	Version           string          `json:"version"`
+	Content           string          `json:"content"`   // queue-operation payload
+	Operation         string          `json:"operation"` // queue-operation: enqueue, dequeue, remove
 }
 
 func (e *Entry) Validate() error {

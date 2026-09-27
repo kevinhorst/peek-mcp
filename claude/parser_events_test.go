@@ -170,6 +170,46 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	assert.Len(t, turn.ToolResults, 1)
 }
 
+func TestParseLine_TaskCompleted(t *testing.T) {
+	notification := `<task-notification>\n<task-id>a97dc3464fb16fa00</task-id>\n<tool-use-id>toolu_01VZ</tool-use-id>\n<output-file>/tmp/x.output</output-file>\n<status>completed</status>\n<summary>Agent \"Extract inputs\" finished</summary>\n<result>done</result>\n</task-notification>`
+
+	// enqueued-agent-notification-yields-event
+	p := NewParser()
+	turn := p.ParseLine([]byte(`{"type":"queue-operation","operation":"enqueue","timestamp":"2026-09-27T16:14:59.300Z","sessionId":"s","content":"` + notification + `"}`))
+	require.NotNil(t, turn)
+	assert.NoError(t, turn.Validate())
+	assert.Equal(t, session.Role(""), turn.Role)
+	require.Len(t, turn.Events, 1)
+	event := turn.Events[0]
+	assert.Equal(t, session.EventKindTaskCompleted, event.Kind)
+	assert.Empty(t, event.Actor)
+	assert.False(t, event.Timestamp.IsZero())
+	require.NotNil(t, event.Task)
+	assert.Equal(t, "a97dc3464fb16fa00", event.Task.TaskId)
+	assert.Equal(t, "toolu_01VZ", event.Task.ToolUseId)
+	assert.Equal(t, "completed", event.Task.Status)
+	assert.Equal(t, `Agent "Extract inputs" finished`, event.Task.Summary)
+
+	// failed-status-carried
+	failed := strings.Replace(notification, "<status>completed</status>", "<status>failed</status>", 1)
+	turn = p.ParseLine([]byte(`{"type":"queue-operation","operation":"enqueue","timestamp":"2026-09-27T16:14:59.300Z","sessionId":"s","content":"` + failed + `"}`))
+	require.NotNil(t, turn)
+	assert.Equal(t, "failed", turn.Events[0].Task.Status)
+
+	// remove-operation-ignored
+	turn = p.ParseLine([]byte(`{"type":"queue-operation","operation":"remove","timestamp":"2026-09-27T16:15:29.911Z","sessionId":"s","content":"` + notification + `"}`))
+	assert.Nil(t, turn)
+
+	// enqueued-prompt-ignored
+	turn = p.ParseLine([]byte(`{"type":"queue-operation","operation":"enqueue","timestamp":"2026-09-27T16:15:29.911Z","sessionId":"s","content":"fix the bug too"}`))
+	assert.Nil(t, turn)
+
+	// delivered-notification-turn-carries-no-event
+	turn = p.ParseLine([]byte(`{"type":"user","promptId":"p1","origin":{"kind":"task-notification"},"timestamp":"2026-09-27T16:14:59.345Z","sessionId":"s","isSidechain":false,"message":{"role":"user","content":"` + notification + `"}}`))
+	require.NotNil(t, turn)
+	assert.Empty(t, turn.Events, "the enqueue line is the single source; delivery must not double-count")
+}
+
 func TestParseLine_PermissionMode(t *testing.T) {
 	// first-non-default-mode-emits
 	p := NewParser()

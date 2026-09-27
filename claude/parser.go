@@ -39,6 +39,17 @@ const (
 	commandArgsOpenTag  = "<command-args>"
 	commandArgsCloseTag = "</command-args>"
 
+	queueOperationEnqueue   = "enqueue"
+	taskNotificationOpenTag = "<task-notification>"
+	taskIdOpenTag           = "<task-id>"
+	taskIdCloseTag          = "</task-id>"
+	taskStatusOpenTag       = "<status>"
+	taskStatusCloseTag      = "</status>"
+	taskSummaryOpenTag      = "<summary>"
+	taskSummaryCloseTag     = "</summary>"
+	taskToolUseIdOpenTag    = "<tool-use-id>"
+	taskToolUseIdCloseTag   = "</tool-use-id>"
+
 	maxApprovedPlanBytes   = 64 * 1024
 	maxPendingTools        = 64
 	maxPersistedReadBytes  = 256 * 1024
@@ -78,8 +89,10 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 	}
 
 	switch entry.Type {
-	case EntryTypeUser, EntryTypeQueueOperation:
+	case EntryTypeUser:
 		return p.handleUser(entry)
+	case EntryTypeQueueOperation:
+		return p.handleQueueOperation(entry)
 	case EntryTypeAssistant:
 		return p.handleAssistant(entry)
 	case EntryTypeAttachment:
@@ -382,6 +395,19 @@ func (p *Parser) handleCustomTitle(entry *Entry) *session.Turn {
 		},
 		TitleSource: session.TitleSourceCustom,
 	}
+}
+
+// handleQueueOperation reads a background task's completion from its enqueue
+// line: the only record written on both delivery paths (idle turn, busy
+// queued_command attachment).
+func (p *Parser) handleQueueOperation(entry *Entry) *session.Turn {
+	isEnqueue := entry.Operation == queueOperationEnqueue
+	if !isEnqueue || !strings.HasPrefix(entry.Content, taskNotificationOpenTag) {
+		return nil
+	}
+
+	events := []*session.Event{taskCompletedEvent(entry)}
+	return eventTurn(entry, events, nil, nil)
 }
 
 type pendingToolUse struct {
@@ -729,6 +755,20 @@ func subagentResultEvent(block *ContentBlock, entry *Entry, isDenied bool, text 
 		Actor:     entry.AgentId,
 		Kind:      session.EventKindSubagentResult,
 		Subagent:  payload,
+		Timestamp: entry.Timestamp,
+	}
+}
+
+func taskCompletedEvent(entry *Entry) *session.Event {
+	payload := &session.TaskPayload{
+		Status:    textBetween(taskStatusCloseTag, taskStatusOpenTag, entry.Content),
+		Summary:   textBetween(taskSummaryCloseTag, taskSummaryOpenTag, entry.Content),
+		TaskId:    textBetween(taskIdCloseTag, taskIdOpenTag, entry.Content),
+		ToolUseId: textBetween(taskToolUseIdCloseTag, taskToolUseIdOpenTag, entry.Content),
+	}
+	return &session.Event{
+		Kind:      session.EventKindTaskCompleted,
+		Task:      payload,
 		Timestamp: entry.Timestamp,
 	}
 }
