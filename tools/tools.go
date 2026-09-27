@@ -141,7 +141,7 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 	server.AddTool(sessionList, counted(counter, "session_list", awaitReady(store, readyTimeout, sessionListHandler(store))))
 
 	sessionEvents := mcp.NewTool("session_events",
-		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials/grants, permission-mode changes, skill invocations, subagent spawns/results, user answers) plus derived counters, telemetry-based permission decisions (auto-allowed vs. prompted vs. rejected, with the prompted commands), token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_get for those."),
+		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials/grants, permission-mode changes, skill invocations, subagent spawns/results, background task completions, user answers) plus derived counters, telemetry-based permission decisions (auto-allowed vs. prompted vs. rejected, with the prompted commands), token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_get for those."),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("id",
 			mcp.Description("Session ID (omit for most recent session)"),

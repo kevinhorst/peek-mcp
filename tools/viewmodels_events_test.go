@@ -125,6 +125,13 @@ func TestSummarizeEvent(t *testing.T) {
 		event:     &session.Event{Kind: session.EventKindSubagentResult, Subagent: &session.SubagentPayload{Content: "first line\nsecond line"}},
 	})
 
+	// task-completed
+	tests = append(tests, &testCase{
+		_id:       "task-completed",
+		_expected: `a97dc3464fb16fa00 completed: Agent "Extract inputs" finished`,
+		event:     &session.Event{Kind: session.EventKindTaskCompleted, Task: &session.TaskPayload{Status: "completed", Summary: `Agent "Extract inputs" finished`, TaskId: "a97dc3464fb16fa00"}},
+	})
+
 	// user-answer
 	tests = append(tests, &testCase{
 		_id:       "user-answer",

@@ -354,10 +354,20 @@ func summarizeEvent(event *session.Event) string {
 		summary = skillSummary(event.Skill)
 	case session.EventKindSubagentResult, session.EventKindSubagentSpawned:
 		summary = subagentSummary(event.Subagent)
+	case session.EventKindTaskCompleted:
+		summary = taskSummary(event.Task)
 	case session.EventKindUserAnswer:
 		summary = userAnswerSummary(event.UserAnswer)
 	}
 	return truncateSummary(summary)
+}
+
+func taskSummary(payload *session.TaskPayload) string {
+	if payload == nil {
+		return ""
+	}
+
+	return payload.TaskId + " " + payload.Status + ": " + payload.Summary
 }
 
 func truncateSummary(summary string) string {
