@@ -113,6 +113,9 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 		mcp.WithBoolean("thinking",
 			mcp.Description("Include assistant thinking text on turns (default false)."),
 		),
+		mcp.WithBoolean("tools",
+			mcp.Description("Include each turn's tool calls as tool_calls [{id, name, input, is_error, timestamp}]; tool-only turns are returned too and count toward n (default false). Claude sessions only."),
+		),
 		mcp.WithString("request_id",
 			mcp.Description("Pagination request ID from a previous response. Pass this to get the next page."),
 		),
@@ -222,21 +225,33 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 		subagentId, _ := args["subagent"].(string)
 		withThinking := boolArgFromRequest(request, "thinking", false)
 
-		scopedTurns := sess.Turns(n)
+		withTools := boolArgFromRequest(request, "tools", false)
+
+		var scopedTurns []*turnView
+		var turnsTotal int
+		isKnownSubagent := true
+		isFound := s.WithSession(sess.Meta.SessionId, func(lockedSession *session.Session) {
+			turns, ok := scopeTurns(lockedSession, n, subagentId, withTools)
+			isKnownSubagent = ok
+			scopedTurns = newTurnViews(turns, withThinking, withTools)
+			turnsTotal = scopeTurnsTotal(lockedSession, subagentId, withTools)
+		})
+		if !isFound {
+			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", sess.Meta.SessionId)), nil
+		}
+
+		if !isKnownSubagent {
+			return mcp.NewToolResultError(fmt.Sprintf("unknown subagent id %q; valid ids: %v", subagentId, sess.SubagentIds())), nil
+		}
+
 		scopedEvents := sess.Events.All()
 		if subagentId != "" {
-			subagentTurns, ok := sess.SubagentTurns(subagentId, n)
-			if !ok {
-				return mcp.NewToolResultError(fmt.Sprintf("unknown subagent id %q; valid ids: %v", subagentId, sess.SubagentIds())), nil
-			}
-			scopedTurns = subagentTurns
 			scopedEvents = filterEventsByActor(scopedEvents, subagentId)
 			withPlan, withDiff, withUncommitted, withMemory = false, false, false, false
 		}
-		scopedTurns = turnsForOutput(scopedTurns, withThinking)
 
 		if boolArgFromRequest(request, "json", false) {
-			result := &sessionGetResult{TotalUsage: sess.CurrentUsage(), Subagents: newSubagentRefs(sess)}
+			result := &sessionGetResult{Subagents: newSubagentRefs(sess), TotalUsage: sess.CurrentUsage(), TurnsTotal: &turnsTotal}
 			if withTurns {
 				if len(scopedTurns) > 0 {
 					result.Turns = scopedTurns
@@ -301,6 +316,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 		}
 		firstPage.TotalUsage = sess.CurrentUsage()
 		firstPage.Subagents = newSubagentRefs(sess)
+		firstPage.TurnsTotal = &turnsTotal
 
 		resultPage := newSessionGetResultPage(firstPage)
 		if len(nextPages) == 0 {
@@ -523,18 +539,32 @@ func unsupportedSignals(agent session.Agent) []string {
 	return nil
 }
 
-func turnsForOutput(turns []*session.Turn, withThinking bool) []*session.Turn {
-	if withThinking {
-		return turns
+func scopeTurns(currentSession *session.Session, number int, subagentId string, withTools bool) ([]*session.Turn, bool) {
+	if subagentId != "" {
+		if withTools {
+			return currentSession.SubagentTurnsWithToolCalls(subagentId, number)
+		}
+		return currentSession.SubagentTurns(subagentId, number)
 	}
 
-	stripped := make([]*session.Turn, len(turns))
-	for i, turn := range turns {
-		copied := *turn
-		copied.Thinking = ""
-		stripped[i] = &copied
+	if withTools {
+		return currentSession.TurnsWithToolCalls(number), true
 	}
-	return stripped
+	return currentSession.Turns(number), true
+}
+
+func scopeTurnsTotal(currentSession *session.Session, subagentId string, withTools bool) int {
+	if subagentId != "" {
+		if withTools {
+			return currentSession.SubagentTotalTurnsWithToolCalls(subagentId)
+		}
+		return currentSession.SubagentTotalTurns(subagentId)
+	}
+
+	if withTools {
+		return currentSession.TotalTurnsWithToolCalls()
+	}
+	return currentSession.TotalTurns()
 }
 
 func filterEventsByActor(all []*session.Event, actor string) []*session.Event {

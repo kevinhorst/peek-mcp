@@ -15,6 +15,7 @@ type sessionGetResult struct {
 	Subagents       []subagentRef  `json:"subagents,omitempty"`
 	TotalUsage      *session.Usage `json:"total_usage,omitempty"`
 	Turns           any            `json:"turns,omitempty"`
+	TurnsTotal      *int           `json:"turns_total,omitempty"`
 	UncommittedDiff string         `json:"uncommitted_diff,omitempty"`
 }
 
@@ -60,4 +61,35 @@ type sessionListItem struct {
 	HasDiff     bool                `json:"has_diff"`
 	DiffTarget  string              `json:"diff_target,omitempty"`
 	Meta        session.Meta        `json:"meta"`
+}
+
+type turnView struct {
+	*session.Turn
+	ToolCalls []*session.ToolCall `json:"tool_calls,omitzero"`
+}
+
+func newTurnViews(turns []*session.Turn, withThinking, withTools bool) []*turnView {
+	views := make([]*turnView, len(turns))
+	for index, turn := range turns {
+		copied := *turn
+		copied.ToolCalls = nil
+		if !withThinking {
+			copied.Thinking = ""
+		}
+		views[index] = &turnView{ToolCalls: toolCallsForOutput(turn, withTools), Turn: &copied}
+	}
+	return views
+}
+
+func toolCallsForOutput(turn *session.Turn, withTools bool) []*session.ToolCall {
+	if !withTools {
+		return nil
+	}
+
+	calls := make([]*session.ToolCall, len(turn.ToolCalls))
+	for index, call := range turn.ToolCalls {
+		copied := *call
+		calls[index] = &copied
+	}
+	return calls
 }

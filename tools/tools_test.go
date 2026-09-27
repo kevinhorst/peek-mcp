@@ -266,10 +266,11 @@ func TestSessionGet_JsonTypedUnpaginated(t *testing.T) {
 	require.False(t, result.IsError)
 	payload, ok := result.StructuredContent.(*sessionGetResult)
 	require.True(t, ok)
-	turns, ok := payload.Turns.([]*session.Turn)
+	turns, ok := payload.Turns.([]*turnView)
 	require.True(t, ok)
 	assert.Equal(t, "What does this do?", turns[0].Text)
 	assert.Equal(t, s1.DiffOutput, payload.Diff)
+	assert.NotNil(t, payload.TurnsTotal)
 }
 
 func provideSubagentStore() *session.Store {
@@ -369,6 +370,152 @@ func TestSessionGet_Thinking(t *testing.T) {
 	turns, ok = payload["turns"].(string)
 	require.True(t, ok)
 	assert.Contains(t, turns, "main think")
+}
+
+func provideToolCallStore() *session.Store {
+	s := provideSubagentStore()
+	now := time.Now()
+	meta := &session.Meta{SessionId: "s1"}
+
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Role: session.RoleAssistant, RequestId: "r-read", Timestamp: now, Meta: meta,
+		ToolCalls: []*session.ToolCall{{Id: "tu-read", Input: json.RawMessage(`{"file_path":"/a.go"}`), Name: "Read", Timestamp: now}},
+	})
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Role: session.RoleAssistant, Text: "running", RequestId: "r-bash", Timestamp: now, Meta: meta,
+		ToolCalls: []*session.ToolCall{{Id: "tu-bash", Input: json.RawMessage(`{"command":"ls"}`), Name: "Bash", Timestamp: now}},
+	})
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Meta: meta, ToolResults: []*session.ToolResult{{IsError: true, ToolUseId: "tu-bash"}},
+	})
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "ag1", Role: session.RoleAssistant, RequestId: "r-sub-grep", Timestamp: now, Meta: meta,
+		ToolCalls: []*session.ToolCall{{Id: "tu-sub", Input: json.RawMessage(`{}`), Name: "Grep", Timestamp: now}},
+	})
+	return s
+}
+
+func turnsFromJson(t *testing.T, payload map[string]any) []map[string]any {
+	t.Helper()
+	turns := []map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(payload["turns"].(string)), &turns))
+	return turns
+}
+
+func TestSessionGet_Tools(t *testing.T) {
+	store := provideToolCallStore()
+	handler := sessionGetHandler(store, providePageStore())
+
+	// default-omits-tool-calls
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1"}))
+	assert.NoError(t, err)
+	payload := decodeResult(t, result)
+	assert.NotContains(t, payload["turns"].(string), `"tool_calls"`)
+
+	// default-hides-tool-only-turn
+	turns := turnsFromJson(t, payload)
+	require.Len(t, turns, 3)
+	assert.Equal(t, "main answer", turns[1]["text"])
+	assert.Equal(t, "running", turns[2]["text"])
+
+	// tools-true-carries-calls
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "tools": true}))
+	assert.NoError(t, err)
+	payload = decodeResult(t, result)
+	turns = turnsFromJson(t, payload)
+	require.Len(t, turns, 4)
+	bashCalls := turns[3]["tool_calls"].([]any)
+	require.Len(t, bashCalls, 1)
+	bashCall := bashCalls[0].(map[string]any)
+	assert.Equal(t, "tu-bash", bashCall["id"])
+	assert.Equal(t, "Bash", bashCall["name"])
+	assert.Equal(t, true, bashCall["is_error"])
+	assert.Equal(t, map[string]any{"command": "ls"}, bashCall["input"])
+	assert.NotEmpty(t, bashCall["timestamp"])
+
+	// tools-true-text-turn-empty-list
+	assert.Equal(t, []any{}, turns[0]["tool_calls"])
+
+	// tools-true-includes-tool-only-turn
+	readCalls := turns[2]["tool_calls"].([]any)
+	require.Len(t, readCalls, 1)
+	assert.Equal(t, "Read", readCalls[0].(map[string]any)["name"])
+	assert.Equal(t, false, readCalls[0].(map[string]any)["is_error"])
+
+	// subagent-scope-calls
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "subagent": "ag1", "tools": true}))
+	assert.NoError(t, err)
+	payload = decodeResult(t, result)
+	turns = turnsFromJson(t, payload)
+	require.Len(t, turns, 3)
+	subCalls := turns[2]["tool_calls"].([]any)
+	require.Len(t, subCalls, 1)
+	assert.Equal(t, "tu-sub", subCalls[0].(map[string]any)["id"])
+	assert.NotContains(t, payload["turns"].(string), "tu-bash")
+
+	// json-typed-view
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "tools": true, "json": true}))
+	assert.NoError(t, err)
+	typedPayload, ok := result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	views, ok := typedPayload.Turns.([]*turnView)
+	require.True(t, ok)
+	require.Len(t, views, 4)
+	assert.Equal(t, "tu-bash", views[3].ToolCalls[0].Id)
+	assert.Nil(t, views[3].Turn.ToolCalls, "the embedded turn never carries live calls")
+}
+
+func TestSessionGet_TurnsTotal(t *testing.T) {
+	store := provideToolCallStore()
+	handler := sessionGetHandler(store, providePageStore())
+	s1, _ := store.GetById("s1")
+	defaultTotal := s1.TotalTurns()
+
+	// json-root-default
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true}))
+	assert.NoError(t, err)
+	payload, ok := result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	require.NotNil(t, payload.TurnsTotal)
+	assert.Equal(t, defaultTotal, *payload.TurnsTotal)
+
+	// json-root-tools-counts-tool-only
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true, "tools": true}))
+	assert.NoError(t, err)
+	payload, ok = result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	require.NotNil(t, payload.TurnsTotal)
+	assert.Equal(t, defaultTotal+1, *payload.TurnsTotal)
+
+	// json-subagent-scope
+	subagentHandler := sessionGetHandler(provideSubagentStore(), providePageStore())
+	result, err = subagentHandler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true, "subagent": "ag1"}))
+	assert.NoError(t, err)
+	payload, ok = result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	require.NotNil(t, payload.TurnsTotal)
+	assert.Equal(t, 2, *payload.TurnsTotal)
+
+	// n-below-total
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true, "n": float64(1)}))
+	assert.NoError(t, err)
+	payload, ok = result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	assert.Len(t, payload.Turns.([]*turnView), 1)
+	assert.Equal(t, defaultTotal, *payload.TurnsTotal)
+
+	// paginated-first-page-carries-total
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1"}))
+	assert.NoError(t, err)
+	pagePayload := decodeResult(t, result)
+	assert.Equal(t, float64(defaultTotal), pagePayload["turns_total"])
+
+	// turns-false-still-present
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "turns": false}))
+	assert.NoError(t, err)
+	pagePayload = decodeResult(t, result)
+	assert.NotContains(t, pagePayload, "turns")
+	assert.Equal(t, float64(defaultTotal), pagePayload["turns_total"])
 }
 
 func TestSessionEvents_Subagent(t *testing.T) {
