@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/pkg/errors"
@@ -11,28 +12,63 @@ type FileTouch struct {
 	Write bool   `json:"write"`
 }
 
+type ToolCall struct {
+	Id        string          `json:"id"`
+	Input     json.RawMessage `json:"input"`
+	IsError   bool            `json:"is_error"`
+	Name      string          `json:"name"`
+	Timestamp time.Time       `json:"timestamp"`
+}
+
+type ToolResult struct {
+	IsError   bool
+	ToolUseId string
+}
+
 type Turn struct {
-	Role         Role         `json:"role"`
-	Text         string       `json:"text"`               // may be empty
-	Thinking     string       `json:"thinking,omitempty"` // assistant reasoning, may be empty
-	Timestamp    time.Time    `json:"timestamp"`
-	Meta         *Meta        `json:"meta"`
-	RequestId    string       `json:"request_id,omitempty"` // optional
-	Usage        *Usage       `json:"usage,omitempty"`      // optional
-	Events       []*Event     `json:"-"`                    // signal payload, not serialized
-	FileTouches  []*FileTouch `json:"-"`                    // touched-file signal, not serialized
-	FilePath     string       `json:"-"`                    // transcript path, set by the watcher
-	PlanFilePath string       `json:"-"`                    // plan signal only, not serialized
-	PlanContent  string       `json:"-"`                    // inline plan content from attachment
-	CustomTitle  string       `json:"-"`                    // title signal only, not serialized
-	PromptId     string       `json:"-"`                    // prompt submission id, not serialized
-	StopReason   string       `json:"-"`                    // assistant turn-end signal, not serialized
-	SubagentId   string       `json:"-"`                    // subagent signal: routes fold to per-agent stats
-	TitleSource  TitleSource  `json:"-"`
+	Role         Role          `json:"role"`
+	Text         string        `json:"text"`               // may be empty
+	Thinking     string        `json:"thinking,omitempty"` // assistant reasoning, may be empty
+	Timestamp    time.Time     `json:"timestamp"`
+	Meta         *Meta         `json:"meta"`
+	RequestId    string        `json:"request_id,omitempty"` // optional
+	Usage        *Usage        `json:"usage,omitempty"`      // optional
+	Events       []*Event      `json:"-"`                    // signal payload, not serialized
+	FileTouches  []*FileTouch  `json:"-"`                    // touched-file signal, not serialized
+	FilePath     string        `json:"-"`                    // transcript path, set by the watcher
+	PlanFilePath string        `json:"-"`                    // plan signal only, not serialized
+	PlanContent  string        `json:"-"`                    // inline plan content from attachment
+	CustomTitle  string        `json:"-"`                    // title signal only, not serialized
+	PromptId     string        `json:"-"`                    // prompt submission id, not serialized
+	StopReason   string        `json:"-"`                    // assistant turn-end signal, not serialized
+	SubagentId   string        `json:"-"`                    // subagent signal: routes fold to per-agent stats
+	TitleSource  TitleSource   `json:"-"`
+	ToolCalls    []*ToolCall   `json:"-"` // tool_use blocks, served by session_get tools
+	ToolResults  []*ToolResult `json:"-"` // tool_result signal, sets IsError on the matching call
+}
+
+func (t *Turn) toolCallById(toolUseId string) *ToolCall {
+	if t == nil {
+		return nil
+	}
+
+	for _, call := range t.ToolCalls {
+		if call.Id == toolUseId {
+			return call
+		}
+	}
+	return nil
 }
 
 func (t *Turn) IsEventSignal() bool {
-	return (len(t.Events) > 0 || len(t.FileTouches) > 0) && t.Role == "" && t.PlanFilePath == "" && t.Usage == nil
+	hasPayload := len(t.Events) > 0 || len(t.FileTouches) > 0 || len(t.ToolResults) > 0
+	isBare := t.Role == "" && t.PlanFilePath == "" && t.Usage == nil
+	return hasPayload && isBare
+}
+
+func (t *Turn) IsToolOnly() bool {
+	isTextless := t.Text == "" && t.Thinking == ""
+	return isTextless && len(t.ToolCalls) > 0
 }
 
 func (t *Turn) IsUsageSignal() bool {
@@ -78,7 +114,7 @@ func (t *Turn) Validate() error {
 		return nil
 	}
 
-	// event-signal turns only carry a session ID and events
+	// event-signal turns only carry a session ID plus events, file touches or tool results
 	if t.IsEventSignal() {
 		if t.Meta.SessionId == "" {
 			return errors.New("Turn.Validate: event signal turn requires session ID")

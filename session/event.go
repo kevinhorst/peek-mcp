@@ -82,6 +82,7 @@ type PermissionPayload struct {
 	Command       string `json:"command,omitempty"`
 	Justification string `json:"justification,omitempty"`
 	Tool          string `json:"tool"`
+	ToolUseId     string `json:"tool_use_id,omitempty"`
 }
 
 type PlanPayload struct {

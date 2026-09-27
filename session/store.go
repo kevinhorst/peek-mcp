@@ -116,6 +116,8 @@ func (s *Store) AddTurnBySessionId(id Id, agent Agent, turn *Turn) {
 		session.AddFileTouch(touch)
 	}
 
+	applyToolResults(session.TurnActive, session.TurnsFinished, turn.ToolResults)
+
 	// update only plan content
 	if turn.PlanFilePath != "" {
 		slog.Debug("Updating plan", "session", id)

@@ -158,7 +158,184 @@ func TestSession_AppendTurn(t *testing.T) {
 	empty := &Turn{Role: RoleAssistant, RequestId: "req-4", Timestamp: timestamp, Meta: meta}
 	appendTurn(empty, buffer, &Turn{Role: RoleUser, Text: "u2", Timestamp: timestamp, Meta: meta})
 	assert.Equal(t, 2, buffer.Len())
-	_ = active
+
+	// same-request-merges-tool-calls
+	callChunk := &Turn{Role: RoleAssistant, RequestId: "req-5", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu1"}}}
+	nextCallChunk := &Turn{Role: RoleAssistant, RequestId: "req-5", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu2"}}}
+	active = appendTurn(callChunk, buffer, nextCallChunk)
+	require.Len(t, active.ToolCalls, 2)
+	assert.Equal(t, "tu1", active.ToolCalls[0].Id)
+	assert.Equal(t, "tu2", active.ToolCalls[1].Id)
+	assert.Equal(t, 2, buffer.Len())
+
+	// tool-only-active-pushed
+	appendTurn(active, buffer, &Turn{Role: RoleUser, Text: "u3", Timestamp: timestamp, Meta: meta})
+	assert.Equal(t, 3, buffer.Len())
+	assert.Equal(t, 2, buffer.Pushed(), "tool-only turn is buffered but not counted")
+}
+
+func TestSession_TurnsWithToolCalls(t *testing.T) {
+	timestamp := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+	meta := &Meta{SessionId: Id("sess-123")}
+
+	// finished-tool-only-hidden-from-turns
+	s := provideCompleteSession()
+	s.AddTurn(&Turn{Role: RoleUser, Text: "go", RequestId: "r1", Timestamp: timestamp, Meta: meta})
+	s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r2", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu1"}}})
+	s.AddTurn(&Turn{Role: RoleAssistant, Text: "done", RequestId: "r3", Timestamp: timestamp, Meta: meta})
+	turns := s.Turns(AllTurns)
+	require.Len(t, turns, 2)
+	assert.Equal(t, "go", turns[0].Text)
+	assert.Equal(t, "done", turns[1].Text)
+
+	// active-tool-only-kept-in-turns
+	s = provideCompleteSession()
+	s.AddTurn(&Turn{Role: RoleUser, Text: "go", RequestId: "r1", Timestamp: timestamp, Meta: meta})
+	s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r2", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu1"}}})
+	turns = s.Turns(AllTurns)
+	require.Len(t, turns, 2)
+	assert.Equal(t, "r2", turns[1].RequestId, "in-progress tool-only turn stays, as in v1.2.8")
+
+	// with-tool-calls-returns-all
+	s = provideCompleteSession()
+	s.AddTurn(&Turn{Role: RoleUser, Text: "go", RequestId: "r1", Timestamp: timestamp, Meta: meta})
+	s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r2", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu1"}}})
+	s.AddTurn(&Turn{Role: RoleAssistant, Text: "done", RequestId: "r3", Timestamp: timestamp, Meta: meta})
+	turns = s.TurnsWithToolCalls(AllTurns)
+	require.Len(t, turns, 3)
+	assert.Equal(t, "tu1", turns[1].ToolCalls[0].Id)
+
+	// number-counts-tool-only-turns
+	turns = s.TurnsWithToolCalls(2)
+	require.Len(t, turns, 2)
+	assert.Equal(t, "r2", turns[0].RequestId)
+	assert.Equal(t, "r3", turns[1].RequestId)
+}
+
+func TestSession_TotalTurns_ToolOnlyNotCounted(t *testing.T) {
+	s := provideCompleteSession()
+	timestamp := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+	meta := &Meta{SessionId: Id("sess-123")}
+
+	s.AddTurn(&Turn{Role: RoleUser, Text: "go", RequestId: "r1", Timestamp: timestamp, Meta: meta})
+	s.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r2", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu1"}}})
+	s.AddTurn(&Turn{Role: RoleAssistant, Text: "done", RequestId: "r3", Timestamp: timestamp, Meta: meta})
+
+	assert.Equal(t, 2, s.TotalTurns())
+}
+
+func TestSession_TurnsTotal(t *testing.T) {
+	type testCase struct {
+		_id       string
+		_expected int
+		total     func() int
+	}
+
+	timestamp := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+	meta := &Meta{SessionId: Id("sess-123")}
+
+	mixed := provideCompleteSession()
+	mixed.AddTurn(&Turn{Role: RoleUser, Text: "go", RequestId: "r1", Timestamp: timestamp, Meta: meta})
+	mixed.AddTurn(&Turn{Role: RoleAssistant, RequestId: "r2", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu1"}}})
+	mixed.AddTurn(&Turn{Role: RoleAssistant, Text: "done", RequestId: "r3", Timestamp: timestamp, Meta: meta})
+	mixed.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleUser, Text: "prompt", Timestamp: timestamp, Meta: meta})
+	mixed.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleAssistant, RequestId: "s1", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu2"}}})
+	mixed.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleAssistant, Text: "answer", RequestId: "s2", Timestamp: timestamp, Meta: meta})
+
+	evicted := provideCompleteSession()
+	for index := range 221 {
+		requestId := fmt.Sprintf("s%d", index)
+		evicted.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleAssistant, RequestId: requestId, Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: requestId}}})
+	}
+	evictedTurns, _ := evicted.SubagentTurnsWithToolCalls("ag1", AllTurns)
+
+	tests := make([]*testCase, 0)
+
+	// root-default-conversational-plus-active
+	tests = append(tests, &testCase{
+		_id:       "root-default-conversational-plus-active",
+		_expected: 2,
+		total:     mixed.TotalTurns,
+	})
+
+	// root-tools-includes-tool-only
+	tests = append(tests, &testCase{
+		_id:       "root-tools-includes-tool-only",
+		_expected: 3,
+		total:     mixed.TotalTurnsWithToolCalls,
+	})
+
+	// subagent-default
+	tests = append(tests, &testCase{
+		_id:       "subagent-default",
+		_expected: 2,
+		total:     func() int { return mixed.SubagentTotalTurns("ag1") },
+	})
+
+	// subagent-tools-includes-tool-only
+	tests = append(tests, &testCase{
+		_id:       "subagent-tools-includes-tool-only",
+		_expected: 3,
+		total:     func() int { return mixed.SubagentTotalTurnsWithToolCalls("ag1") },
+	})
+
+	// unknown-subagent-zero
+	tests = append(tests, &testCase{
+		_id:       "unknown-subagent-zero",
+		_expected: 0,
+		total:     func() int { return mixed.SubagentTotalTurnsWithToolCalls("nope") },
+	})
+
+	// evicted-subagent-turns-still-counted
+	tests = append(tests, &testCase{
+		_id:       "evicted-subagent-turns-still-counted",
+		_expected: 221,
+		total:     func() int { return evicted.SubagentTotalTurnsWithToolCalls("ag1") },
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			assert.Equal(t, test._expected, test.total())
+		})
+	}
+
+	assert.Len(t, evictedTurns, 201, "ring floor 200 plus the active turn")
+}
+
+func TestSession_AddSubagentTurn_ToolCalls(t *testing.T) {
+	timestamp := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
+	meta := &Meta{SessionId: Id("sess-123")}
+
+	// calls-buffered-per-agent
+	s := provideCompleteSession()
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleAssistant, RequestId: "s1", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu1"}}})
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleAssistant, RequestId: "s2", Timestamp: timestamp, Meta: meta, ToolCalls: []*ToolCall{{Id: "tu2"}}})
+	turns, ok := s.SubagentTurnsWithToolCalls("ag1", 10)
+	require.True(t, ok)
+	require.Len(t, turns, 2)
+	assert.Equal(t, "tu1", turns[0].ToolCalls[0].Id)
+	assert.Equal(t, "tu2", turns[1].ToolCalls[0].Id)
+
+	// result-sets-is-error-on-active
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Meta: meta, ToolResults: []*ToolResult{{IsError: true, ToolUseId: "tu2"}}})
+	assert.True(t, s.Subagents["ag1"].TurnActive.ToolCalls[0].IsError)
+
+	// result-sets-is-error-on-finished
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Meta: meta, ToolResults: []*ToolResult{{IsError: true, ToolUseId: "tu1"}}})
+	assert.True(t, s.Subagents["ag1"].Turns.items[0].ToolCalls[0].IsError)
+
+	// unknown-result-ignored
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Meta: meta, ToolResults: []*ToolResult{{IsError: true, ToolUseId: "missing"}}})
+	turns, _ = s.SubagentTurnsWithToolCalls("ag1", 10)
+	assert.Len(t, turns, 2)
+
+	// ring-follows-depth-floor-200
+	assert.Equal(t, minSubagentTurnDepth, s.Subagents["ag1"].Turns.capacity)
+	deep := provideCompleteSession()
+	deep.TurnsFinished = NewTurnBuffer(500)
+	deep.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleUser, Text: "prompt", Timestamp: timestamp, Meta: meta})
+	assert.Equal(t, 500, deep.Subagents["ag1"].Turns.capacity)
 }
 
 func TestSession_AddSubagentTurn_Transcript(t *testing.T) {

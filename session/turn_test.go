@@ -189,10 +189,80 @@ func TestTurn_Validate(t *testing.T) {
 	}
 	tests = append(tests, test)
 
+	// pass-tool-result-signal
+	form = &Turn{
+		Meta:        &Meta{SessionId: "s1"},
+		ToolResults: []*ToolResult{{IsError: true, ToolUseId: "tu1"}},
+	}
+	test = &testCase{
+		_id:         "pass-tool-result-signal",
+		_shouldPass: true,
+		form:        form,
+	}
+	tests = append(tests, test)
+
+	// fail-tool-result-signal-without-session-id
+	form = &Turn{
+		Meta:        &Meta{},
+		ToolResults: []*ToolResult{{IsError: true, ToolUseId: "tu1"}},
+	}
+	test = &testCase{
+		_id:         "fail-tool-result-signal-without-session-id",
+		_shouldPass: false,
+		form:        form,
+	}
+	tests = append(tests, test)
+
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
 			err := test.form.Validate()
 			assert.Equalf(t, test._shouldPass, err == nil, "Err: %v", err)
+		})
+	}
+}
+
+func TestTurn_IsToolOnly(t *testing.T) {
+	type testCase struct {
+		_id       string
+		_expected bool
+		turn      *Turn
+	}
+
+	calls := []*ToolCall{{Id: "tu1", Name: "Read"}}
+	tests := make([]*testCase, 0)
+
+	// calls-no-text
+	tests = append(tests, &testCase{
+		_id:       "calls-no-text",
+		_expected: true,
+		turn:      &Turn{ToolCalls: calls},
+	})
+
+	// calls-with-text
+	tests = append(tests, &testCase{
+		_id:       "calls-with-text",
+		_expected: false,
+		turn:      &Turn{Text: "reading", ToolCalls: calls},
+	})
+
+	// calls-with-thinking
+	tests = append(tests, &testCase{
+		_id:       "calls-with-thinking",
+		_expected: false,
+		turn:      &Turn{Thinking: "plan", ToolCalls: calls},
+	})
+
+	// no-calls
+	tests = append(tests, &testCase{
+		_id:       "no-calls",
+		_expected: false,
+		turn:      &Turn{},
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			assert.Equal(t, test._expected, test.turn.IsToolOnly())
 		})
 	}
 }

@@ -13,6 +13,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAddTurnBySessionId_ToolResults(t *testing.T) {
+	now := time.Now()
+
+	// main-chain-signal-sets-is-error
+	t.Run("main-chain-signal-sets-is-error", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{Role: RoleUser, Text: "go", Timestamp: now, Meta: &Meta{SessionId: "s1"}})
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{Role: RoleAssistant, RequestId: "r1", Timestamp: now, Meta: &Meta{SessionId: "s1"}, ToolCalls: []*ToolCall{{Id: "tu1"}}})
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{Meta: &Meta{SessionId: "s1"}, ToolResults: []*ToolResult{{IsError: true, ToolUseId: "tu1"}}})
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		turns := sess.TurnsWithToolCalls(10)
+		require.Len(t, turns, 2)
+		assert.True(t, turns[1].ToolCalls[0].IsError)
+	})
+
+	// signal-turn-not-buffered
+	t.Run("signal-turn-not-buffered", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{Role: RoleUser, Text: "go", Timestamp: now, Meta: &Meta{SessionId: "s1"}})
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{Meta: &Meta{SessionId: "s1"}, ToolResults: []*ToolResult{{ToolUseId: "tu1"}}})
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		assert.Len(t, sess.TurnsWithToolCalls(10), 1)
+		assert.Equal(t, 1, sess.TotalTurns())
+	})
+
+	// subagent-signal-sets-is-error
+	t.Run("subagent-signal-sets-is-error", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{Role: RoleUser, Text: "go", Timestamp: now, Meta: &Meta{SessionId: "s1"}})
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{SubagentId: "ag1", Role: RoleAssistant, RequestId: "s1", Timestamp: now, Meta: &Meta{SessionId: "s1"}, ToolCalls: []*ToolCall{{Id: "tu-sub"}}})
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{SubagentId: "ag1", Role: RoleUser, Timestamp: now, Meta: &Meta{SessionId: "s1"}, ToolResults: []*ToolResult{{IsError: true, ToolUseId: "tu-sub"}}})
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		turns, ok := sess.SubagentTurnsWithToolCalls("ag1", 10)
+		require.True(t, ok)
+		require.Len(t, turns, 2, "the sidechain result line is the active user turn")
+		assert.True(t, turns[0].ToolCalls[0].IsError)
+	})
+}
+
 func TestAddTurnBySessionId_Events(t *testing.T) {
 	now := time.Now()
 

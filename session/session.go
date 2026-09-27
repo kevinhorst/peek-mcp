@@ -33,7 +33,7 @@ const maxTouchedFiles = 2000
 
 const maxSubagentStats = 1000
 
-const subagentTurnDepth = 200
+const minSubagentTurnDepth = 200
 
 const AllTurns = math.MaxInt
 
@@ -223,9 +223,12 @@ func (s *Session) AddSubagentTurn(turn *Turn) {
 		if len(s.Subagents) >= maxSubagentStats {
 			return
 		}
-		stat = &SubagentStat{Turns: NewTurnBuffer(subagentTurnDepth)}
+		depth := max(s.TurnsFinished.capacity, minSubagentTurnDepth)
+		stat = &SubagentStat{Turns: NewTurnBuffer(depth)}
 		s.Subagents[turn.SubagentId] = stat
 	}
+
+	applyToolResults(stat.TurnActive, stat.Turns, turn.ToolResults)
 
 	if turn.Role != "" {
 		stat.TurnActive = appendTurn(stat.TurnActive, stat.Turns, turn)
@@ -331,14 +334,27 @@ func appendTurn(active *Turn, buffer *TurnBuffer, next *Turn) *Turn {
 		merged := *next
 		merged.Text = active.Text + next.Text
 		merged.Thinking = active.Thinking + next.Thinking
+		merged.ToolCalls = slices.Concat(active.ToolCalls, next.ToolCalls)
 		return &merged
 	}
 
-	if active.Text != "" || active.Thinking != "" {
+	hasContent := active.Text != "" || active.Thinking != "" || len(active.ToolCalls) > 0
+	if hasContent {
 		buffer.Push(active)
 	}
 
 	return next
+}
+
+func applyToolResults(active *Turn, finished *TurnBuffer, results []*ToolResult) {
+	for _, result := range results {
+		call := findToolCall(active, finished, result.ToolUseId)
+		if call == nil {
+			continue
+		}
+
+		call.IsError = result.IsError
+	}
 }
 
 func (s *Session) CurrentUsage() *Usage {
@@ -358,18 +374,42 @@ func (s *Session) HasNewTitle(title string, source TitleSource) bool {
 	return s.Title != title
 }
 
-// TotalTurns is the total turn count of the session, counted at parse time —
-// unlike the ring-capped TurnsFinished buffer it never loses old turns.
+// TotalTurns is the total conversational turn count of the session, counted at
+// parse time — unlike the ring-capped TurnsFinished buffer it never loses old turns.
 func (s *Session) TotalTurns() int {
-	total := s.TurnsFinished.Pushed()
-	if s.TurnActive != nil {
-		total++
-	}
-	return total
+	return scopeTotal(s.TurnActive, s.TurnsFinished.Pushed())
+}
+
+func (s *Session) TotalTurnsWithToolCalls() int {
+	return scopeTotal(s.TurnActive, s.TurnsFinished.PushedWithToolCalls())
 }
 
 func (s *Session) Turns(number int) []*Turn {
-	return lastTurns(s.TurnActive, s.TurnsFinished, number)
+	return lastTurns(s.TurnActive, conversationalTurns(s.TurnsFinished.items), number)
+}
+
+func (s *Session) TurnsWithToolCalls(number int) []*Turn {
+	return lastTurns(s.TurnActive, s.TurnsFinished.items, number)
+}
+
+// SubagentTotalTurns is 0 for an unknown agent id; callers resolve the id
+// through SubagentTurns first.
+func (s *Session) SubagentTotalTurns(agentId string) int {
+	stat, ok := s.Subagents[agentId]
+	if !ok {
+		return 0
+	}
+
+	return scopeTotal(stat.TurnActive, stat.Turns.Pushed())
+}
+
+func (s *Session) SubagentTotalTurnsWithToolCalls(agentId string) int {
+	stat, ok := s.Subagents[agentId]
+	if !ok {
+		return 0
+	}
+
+	return scopeTotal(stat.TurnActive, stat.Turns.PushedWithToolCalls())
 }
 
 func (s *Session) SubagentTurns(agentId string, number int) ([]*Turn, bool) {
@@ -378,20 +418,58 @@ func (s *Session) SubagentTurns(agentId string, number int) ([]*Turn, bool) {
 		return nil, false
 	}
 
-	return lastTurns(stat.TurnActive, stat.Turns, number), true
+	return lastTurns(stat.TurnActive, conversationalTurns(stat.Turns.items), number), true
 }
 
-func lastTurns(active *Turn, finished *TurnBuffer, number int) []*Turn {
+func (s *Session) SubagentTurnsWithToolCalls(agentId string, number int) ([]*Turn, bool) {
+	stat, ok := s.Subagents[agentId]
+	if !ok {
+		return nil, false
+	}
+
+	return lastTurns(stat.TurnActive, stat.Turns.items, number), true
+}
+
+// lastTurns appends the in-progress turn last, so number never cuts it.
+func lastTurns(active *Turn, finished []*Turn, number int) []*Turn {
+	turns := slices.Clone(finished)
+	if active != nil {
+		turns = append(turns, active)
+	}
+	if number < len(turns) {
+		turns = turns[len(turns)-number:]
+	}
+	return turns
+}
+
+// conversationalTurns hides finished tool-only turns; the active turn is
+// never passed in, so default output keeps today's in-progress turn.
+func conversationalTurns(finished []*Turn) []*Turn {
+	return slices.DeleteFunc(slices.Clone(finished), (*Turn).IsToolOnly)
+}
+
+// findToolCall scans newest first: a result almost always answers the
+// active or the previous turn.
+func findToolCall(active *Turn, finished *TurnBuffer, toolUseId string) *ToolCall {
+	if call := active.toolCallById(toolUseId); call != nil {
+		return call
+	}
+
+	for index := len(finished.items) - 1; index >= 0; index-- {
+		if call := finished.items[index].toolCallById(toolUseId); call != nil {
+			return call
+		}
+	}
+	return nil
+}
+
+// scopeTotal counts what a read of the whole scope returns: every finished
+// push, ring-evicted ones included, plus the in-progress turn.
+func scopeTotal(active *Turn, pushed int) int {
 	if active == nil {
-		return finished.Last(number)
+		return pushed
 	}
-
-	buffer := &TurnBuffer{
-		capacity: finished.capacity,
-		items:    append(slices.Clone(finished.items), active),
-	}
-
-	return buffer.Last(number)
+	return pushed + 1
 }
 
 func (s *Session) SubagentIds() []string {

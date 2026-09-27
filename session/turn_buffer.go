@@ -4,9 +4,10 @@ import "errors"
 
 // TurnBuffer behaves like a circular buffer if full
 type TurnBuffer struct {
-	capacity int
-	items    []*Turn
-	pushed   int
+	capacity       int
+	items          []*Turn
+	pushed         int
+	pushedToolOnly int
 }
 
 func NewTurnBuffer(capacity int) *TurnBuffer {
@@ -30,7 +31,11 @@ func (b *TurnBuffer) Validate() error {
 }
 
 func (b *TurnBuffer) Push(turn *Turn) {
-	b.pushed++
+	if turn.IsToolOnly() {
+		b.pushedToolOnly++
+	} else {
+		b.pushed++
+	}
 	if len(b.items) < b.capacity {
 		b.items = append(b.items, turn)
 		return
@@ -39,24 +44,18 @@ func (b *TurnBuffer) Push(turn *Turn) {
 	b.items = append(b.items[1:], turn)
 }
 
-func (b *TurnBuffer) Last(n int) []*Turn {
-	if len(b.items) == 0 {
-		return make([]*Turn, 0)
-	}
-
-	if n > len(b.items) {
-		n = len(b.items)
-	}
-
-	return b.items[len(b.items)-n:]
-}
-
 func (b *TurnBuffer) Len() int {
 	return len(b.items)
 }
 
-// Pushed is the total number of turns ever pushed, independent of the ring
-// capacity — the buffer only retains the last `capacity` of them.
+// Pushed is the total number of conversational turns ever pushed, independent
+// of the ring capacity; tool-only turns are retained but not counted here.
 func (b *TurnBuffer) Pushed() int {
 	return b.pushed
+}
+
+// PushedWithToolCalls is the total number of turns ever pushed, tool-only
+// turns included, independent of the ring capacity.
+func (b *TurnBuffer) PushedWithToolCalls() int {
+	return b.pushed + b.pushedToolOnly
 }
