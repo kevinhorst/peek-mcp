@@ -266,6 +266,7 @@ func (p *Parser) handleFunctionCallOutput(item *ResponseItem, ts time.Time) *ses
 		Command:       pending.cmd,
 		Justification: pending.justification,
 		Tool:          execCommandTool,
+		ToolUseId:     item.CallId,
 	}
 	event := &session.Event{
 		Actor:      p.subagentActor,

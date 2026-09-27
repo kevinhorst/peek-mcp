@@ -32,6 +32,7 @@ func TestParseLine_PermissionEvents(t *testing.T) {
 	assert.Equal(t, "exec_command", turn.Events[0].Permission.Tool)
 	assert.Equal(t, "rm -rf /tmp/x", turn.Events[0].Permission.Command)
 	assert.Equal(t, "cleanup", turn.Events[0].Permission.Justification)
+	assert.Equal(t, "c1", turn.Events[0].Permission.ToolUseId)
 
 	// escalated-granted-event
 	p = seededParser(t)
@@ -43,6 +44,7 @@ func TestParseLine_PermissionEvents(t *testing.T) {
 	assert.Equal(t, "exec_command", turn.Events[0].Permission.Tool)
 	assert.Equal(t, "rm -rf /tmp/x", turn.Events[0].Permission.Command)
 	assert.Equal(t, "cleanup", turn.Events[0].Permission.Justification)
+	assert.Equal(t, "c1", turn.Events[0].Permission.ToolUseId)
 
 	// non-escalated-failure-no-event
 	p = seededParser(t)
