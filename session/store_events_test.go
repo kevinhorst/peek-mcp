@@ -94,6 +94,25 @@ func TestAddTurnBySessionId_Events(t *testing.T) {
 		assert.Empty(t, sess.Turns(10))
 	})
 
+	// task-completed-buffered-before-spawn-is-known
+	t.Run("task-completed-buffered-before-spawn-is-known", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.AddTurnBySessionId("s1", AgentClaude, &Turn{Role: RoleUser, Text: "go", Timestamp: now, Meta: &Meta{SessionId: "s1"}})
+		turn := &Turn{
+			Events: []*Event{{Kind: EventKindTaskCompleted, Task: &TaskPayload{Status: "completed", TaskId: "ag1", ToolUseId: "tu1"}, Timestamp: now}},
+			Meta:   &Meta{SessionId: "s1"},
+		}
+		s.AddTurnBySessionId("s1", AgentClaude, turn)
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		all := sess.Events.All()
+		require.Len(t, all, 1)
+		assert.Equal(t, "ag1", all[0].Task.TaskId)
+		assert.Equal(t, 1, sess.TotalTurns())
+		assert.Equal(t, Counters{}, sess.Counters)
+	})
+
 	// subagent-events-drop-unknown-parent
 	t.Run("subagent-events-drop-unknown-parent", func(t *testing.T) {
 		s := NewStore(10, 25, events.NewBroker())

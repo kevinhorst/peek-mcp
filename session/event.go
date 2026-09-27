@@ -22,6 +22,7 @@ const (
 	EventKindSkillInvoked          EventKind = "skill_invoked"
 	EventKindSubagentResult        EventKind = "subagent_result"
 	EventKindSubagentSpawned       EventKind = "subagent_spawned"
+	EventKindTaskCompleted         EventKind = "task_completed"
 	EventKindUserAnswer            EventKind = "user_answer"
 )
 
@@ -51,6 +52,7 @@ type Event struct {
 	Plan           *PlanPayload           `json:"plan,omitempty"`
 	Skill          *SkillPayload          `json:"skill,omitempty"`
 	Subagent       *SubagentPayload       `json:"subagent,omitempty"`
+	Task           *TaskPayload           `json:"task,omitempty"`
 	Timestamp      time.Time              `json:"timestamp"`
 	UserAnswer     *UserAnswerPayload     `json:"user_answer,omitempty"`
 }
@@ -104,6 +106,15 @@ type SubagentPayload struct {
 	IsError     bool   `json:"is_error,omitempty"`
 	SpawnDepth  int    `json:"spawn_depth,omitempty"`
 	ToolUseId   string `json:"tool_use_id,omitempty"`
+}
+
+// TaskPayload is a background task's terminal notification; TaskId is the agent
+// id for a background Agent-tool subagent.
+type TaskPayload struct {
+	Status    string `json:"status"`
+	Summary   string `json:"summary,omitempty"`
+	TaskId    string `json:"task_id"`
+	ToolUseId string `json:"tool_use_id,omitempty"`
 }
 
 type UserAnswerPayload struct {

@@ -113,7 +113,7 @@ func (s *Session) AddEvent(event *Event) {
 	case EventKindSubagentSpawned:
 		s.Counters.SubagentsSpawned++
 	case EventKindPlanApproved, EventKindPlanModeEnter, EventKindPlanModeReenter,
-		EventKindPlanRevised, EventKindSubagentResult, EventKindUserAnswer:
+		EventKindPlanRevised, EventKindSubagentResult, EventKindTaskCompleted, EventKindUserAnswer:
 	}
 }
 
