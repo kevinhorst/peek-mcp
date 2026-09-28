@@ -523,7 +523,7 @@ func (s *Store) getOrCreate(id Id, agent Agent) *Session {
 
 	session := &Session{
 		Agent:         agent,
-		Events:        NewEventBuffer(EventBufferCapacity),
+		Events:        NewEventBuffer(EventBufferCapacity, EventBufferDenialBudget),
 		Meta:          Meta{SessionId: id},
 		TurnsFinished: NewTurnBuffer(s.depth),
 	}

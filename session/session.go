@@ -25,15 +25,15 @@ const (
 	TitleSourceIndex   TitleSource = "index"
 )
 
-const EventBufferCapacity = 500
+const EventBufferCapacity = 3000
+
+const EventBufferDenialBudget = 2000
 
 const idleThreshold = 5 * time.Minute
 
 const maxTouchedFiles = 2000
 
-const maxDenials = 5000
-
-const maxSubagentStats = 1000
+const maxSubagentStats = 300
 
 const minSubagentTurnDepth = 200
 
@@ -58,7 +58,6 @@ type Session struct {
 
 	Agent           Agent                       `json:"agent"`
 	Counters        Counters                    `json:"-"`
-	Denials         []*Event                    `json:"-"` // every permission_denied event, survives the event ring
 	DiffBase        string                      `json:"-"`
 	DiffCapturedAt  time.Time                   `json:"-"`
 	DiffOutput      string                      `json:"-"`
@@ -85,21 +84,27 @@ type Session struct {
 	UncommittedDiff string `json:"-"`
 }
 
-// addDenial counts by kind and keeps the event, so the denial list and the
-// telemetry join stay complete after the event ring has dropped it.
-func (s *Session) addDenial(event *Event) {
+// countDenial counts a denial as a cancellation or a denial by its kind.
+func (s *Session) countDenial(event *Event) {
 	payload := event.Permission
 	isCancellation := payload != nil && (payload.Kind == DenialKindCancelled || payload.Kind == DenialKindInterrupted)
 	if isCancellation {
 		s.Counters.PermissionCancellations++
-	} else {
-		s.Counters.PermissionDenials++
-	}
-
-	if payload == nil || len(s.Denials) >= maxDenials {
 		return
 	}
-	s.Denials = append(s.Denials, event)
+	s.Counters.PermissionDenials++
+}
+
+// Denials returns the buffered permission_denied events that carry a
+// payload, in arrival order.
+func (s *Session) Denials() []*Event {
+	var denials []*Event
+	for _, event := range s.Events.All() {
+		if event.Kind == EventKindPermissionDenied && event.Permission != nil {
+			denials = append(denials, event)
+		}
+	}
+	return denials
 }
 
 func (s *Session) isAlterationPhase() bool {
@@ -116,7 +121,7 @@ func (s *Session) AddEvent(event *Event) {
 	case EventKindModelChanged:
 		s.Counters.ModelChanges++
 	case EventKindPermissionDenied:
-		s.addDenial(event)
+		s.countDenial(event)
 	case EventKindPermissionGranted:
 		s.Counters.PermissionGrants++
 	case EventKindPermissionModeChanged:

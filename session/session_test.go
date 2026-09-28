@@ -13,7 +13,7 @@ func provideCompleteSession() *Session {
 	return &Session{
 		Meta:          Meta{SessionId: Id("sess-123")},
 		Agent:         AgentClaude,
-		Events:        NewEventBuffer(EventBufferCapacity),
+		Events:        NewEventBuffer(EventBufferCapacity, EventBufferDenialBudget),
 		LastActive:    time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC),
 		TurnsFinished: NewTurnBuffer(20),
 	}
@@ -239,32 +239,47 @@ func TestSession_AddDenial(t *testing.T) {
 		session: nilPayload,
 	})
 
-	// listed-beyond-event-ring
-	beyondRing := provideCompleteSession()
-	for index := range EventBufferCapacity + 1 {
-		beyondRing.AddEvent(denialEvent(DenialKindPermissionRule, fmt.Sprintf("tu%d", index)))
+	// listed-up-to-budget
+	upToBudget := provideCompleteSession()
+	for index := range EventBufferDenialBudget {
+		upToBudget.AddEvent(denialEvent(DenialKindPermissionRule, fmt.Sprintf("tu%d", index)))
 	}
 	tests = append(tests, &testCase{
-		_id:                    "listed-beyond-event-ring",
+		_id:                    "listed-up-to-budget",
 		_expectedCancellations: 0,
-		_expectedDenials:       EventBufferCapacity + 1,
-		_expectedListed:        EventBufferCapacity + 1,
+		_expectedDenials:       EventBufferDenialBudget,
+		_expectedListed:        EventBufferDenialBudget,
 
-		session: beyondRing,
+		session: upToBudget,
 	})
 
-	// list-capped-at-5000
+	// list-capped-at-budget
 	capped := provideCompleteSession()
-	for index := range maxDenials + 1 {
+	for index := range EventBufferDenialBudget + 1 {
 		capped.AddEvent(denialEvent(DenialKindPermissionRule, fmt.Sprintf("tu%d", index)))
 	}
 	tests = append(tests, &testCase{
-		_id:                    "list-capped-at-5000",
+		_id:                    "list-capped-at-budget",
 		_expectedCancellations: 0,
-		_expectedDenials:       maxDenials + 1,
-		_expectedListed:        maxDenials,
+		_expectedDenials:       EventBufferDenialBudget + 1,
+		_expectedListed:        EventBufferDenialBudget,
 
 		session: capped,
+	})
+
+	// others-keep-denials
+	othersFirst := provideCompleteSession()
+	for range EventBufferCapacity - EventBufferDenialBudget {
+		othersFirst.AddEvent(&Event{Kind: EventKindPlanApproved})
+	}
+	othersFirst.AddEvent(denialEvent(DenialKindPermissionRule, "tu1"))
+	tests = append(tests, &testCase{
+		_id:                    "others-keep-denials",
+		_expectedCancellations: 0,
+		_expectedDenials:       1,
+		_expectedListed:        1,
+
+		session: othersFirst,
 	})
 
 	// Run tests
@@ -272,7 +287,7 @@ func TestSession_AddDenial(t *testing.T) {
 		t.Run(test._id, func(t *testing.T) {
 			assert.Equal(t, test._expectedDenials, test.session.Counters.PermissionDenials)
 			assert.Equal(t, test._expectedCancellations, test.session.Counters.PermissionCancellations)
-			assert.Len(t, test.session.Denials, test._expectedListed)
+			assert.Len(t, test.session.Denials(), test._expectedListed)
 		})
 	}
 }
