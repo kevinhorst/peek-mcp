@@ -54,6 +54,8 @@ Returns the typed event stream of a session (plan lifecycle, permission denials/
 
 `permission_denied` comes from the transcript's per-result `toolDenialKind` and carries `permission.kind` (`permission-rule`, `user-rejected`, `automode-blocked`, `cancelled`, `interrupted`), the tool, the command and `tool_use_id`. A rejected ExitPlanMode call is `plan_rejected`, never a denial. Claude Code does not tag file-path deny rules on Read/Edit/Write, so those are not counted; transcripts from CLI versions before 2.1.202 carry no kind and report no denials.
 
+The event list keeps a session's first 2000 `permission_denied` events and its first 1000 events of all other kinds; the `counters` stay exact beyond that, so a counter higher than the listed events means the budget ran out.
+
 A background Agent-tool subagent's `subagent_result` is its launch acknowledgement (content starts `Async agent launched`), not its completion. Its completion is a `task_completed` event with `task` `{task_id, tool_use_id, status, summary}`, where `task_id` is the agent id and `status` is terminal (`completed`, `failed`, `killed`, `stopped`, …). Background shell commands and workflow runs emit `task_completed` too, with their own task ids. Workflow agents report their completion as `subagent_result`.
 
 ## `session_list`
