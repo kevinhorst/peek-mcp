@@ -170,7 +170,7 @@ func decisionLogs(decision, source, toolUseId string) []byte {
 func sessionWithDenials(kinds ...string) *session.Session {
 	current := &session.Session{
 		Agent:  session.AgentClaude,
-		Events: session.NewEventBuffer(session.EventBufferCapacity),
+		Events: session.NewEventBuffer(session.EventBufferCapacity, session.EventBufferDenialBudget),
 		Meta:   session.Meta{SessionId: "s1"},
 	}
 	for index, kind := range kinds {
@@ -182,7 +182,11 @@ func sessionWithDenials(kinds ...string) *session.Session {
 
 func TestNewPermissionsView(t *testing.T) {
 	claudeSession := func() *session.Session {
-		return &session.Session{Agent: session.AgentClaude, Meta: session.Meta{SessionId: "s1"}}
+		return &session.Session{
+			Agent:  session.AgentClaude,
+			Events: session.NewEventBuffer(session.EventBufferCapacity, session.EventBufferDenialBudget),
+			Meta:   session.Meta{SessionId: "s1"},
+		}
 	}
 
 	// live-store-served
@@ -267,11 +271,11 @@ func TestNewPermissionsView(t *testing.T) {
 		assert.Equal(t, 1, current.Counters.PermissionCancellations)
 	})
 
-	// ring-overflow-still-attributed
-	t.Run("ring-overflow-still-attributed", func(t *testing.T) {
+	// budget-overflow-still-attributed
+	t.Run("budget-overflow-still-attributed", func(t *testing.T) {
 		store := telemetry.NewStore()
 		require.NoError(t, store.IngestLogs(decisionLogs("reject", "hook", "tu1")))
-		kinds := make([]string, session.EventBufferCapacity+1)
+		kinds := make([]string, session.EventBufferDenialBudget+1)
 		for index := range kinds {
 			kinds[index] = session.DenialKindPermissionRule
 		}
@@ -280,9 +284,9 @@ func TestNewPermissionsView(t *testing.T) {
 		view := newPermissionsView(current, store, nil)
 
 		require.NotNil(t, view)
-		assert.Equal(t, session.EventBufferCapacity+1, view.Denied)
-		assert.Equal(t, 1, view.DeniedBySource.Hook, "tu1 left the event ring but stays in the denial list")
-		assert.Equal(t, session.EventBufferCapacity, view.Unattributed)
+		assert.Equal(t, session.EventBufferDenialBudget+1, view.Denied)
+		assert.Equal(t, 1, view.DeniedBySource.Hook, "tu1 is among the first denials the budget keeps")
+		assert.Equal(t, session.EventBufferDenialBudget-1, view.Unattributed)
 	})
 
 	// id-less-denial-unattributed

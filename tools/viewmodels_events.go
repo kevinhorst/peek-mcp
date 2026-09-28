@@ -127,8 +127,9 @@ func newPermissionsView(currentSession *session.Session, telemetryStore *telemet
 
 	view := permissionsViewFromStats(stats, detail)
 	view.Denied = currentSession.Counters.PermissionDenials
-	view.DeniedByKind = deniedByKind(currentSession.Denials)
-	view.DeniedBySource, view.Unattributed, view.TelemetryOnly = reconcileDenials(currentSession.Denials, stats)
+	denials := currentSession.Denials()
+	view.DeniedByKind = deniedByKind(denials)
+	view.DeniedBySource, view.Unattributed, view.TelemetryOnly = reconcileDenials(denials, stats)
 	return view
 }
 
