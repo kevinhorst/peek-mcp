@@ -31,6 +31,8 @@ const (
 	sourceUserPermanent = "user_permanent"
 	sourceUserReject    = "user_reject"
 	sourceUserAbort     = "user_abort"
+
+	decisionReject = "reject"
 )
 
 type exportMetricsRequest struct {

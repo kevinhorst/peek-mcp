@@ -72,6 +72,54 @@ func TestStore_Persist(t *testing.T) {
 		assert.False(t, ok)
 	})
 
+	// restart-continues-persisted-totals
+	t.Run("restart-continues-persisted-totals", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		before := NewStore()
+		before.StateDir = dir
+		before.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceHook, Tool: "Bash", ToolUseId: "tu1"})
+
+		after := NewStore()
+		after.StateDir = dir
+		after.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceHook, Tool: "Bash", ToolUseId: "tu2"})
+
+		stats, ok := after.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 2, stats.Permissions.HookDenied)
+		assert.Len(t, stats.Permissions.Requests, 2)
+		persisted, ok := ReadPersisted(dir, "s1")
+		require.True(t, ok)
+		assert.Equal(t, 2, persisted.Permissions.HookDenied)
+	})
+
+	// eviction-reload-continues
+	t.Run("eviction-reload-continues", func(t *testing.T) {
+		s := NewStore()
+		s.StateDir = state.NewDir(t.TempDir())
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceConfig, Tool: "Bash"})
+		delete(s.sessions, "s1")
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceConfig, Tool: "Bash"})
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 2, stats.Permissions.ConfigDenied)
+	})
+
+	// legacy-file-keeps-old-counters
+	t.Run("legacy-file-keeps-old-counters", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		require.NoError(t, dir.WriteTelemetry("claude", "s1", `{"permissions":{"auto_allowed":3,"hook_decided":5},"updated_at":"2026-09-27T09:00:00Z"}`))
+		s := NewStore()
+		s.StateDir = dir
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceHook, Tool: "Bash"})
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 3, stats.Permissions.AutoAllowed)
+		assert.Equal(t, 0, stats.Permissions.HookAllowed)
+		assert.Equal(t, 1, stats.Permissions.HookDenied)
+	})
+
 	// read-persisted-invalid-json
 	t.Run("read-persisted-invalid-json", func(t *testing.T) {
 		dir := state.NewDir(t.TempDir())
@@ -94,6 +142,78 @@ func TestStore_FoldDecision(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, maxPermissionRequests+10, stats.Permissions.Rejected)
 		assert.Len(t, stats.Permissions.Requests, maxPermissionRequests)
+	})
+
+	// config-reject-denied-not-allowed
+	t.Run("config-reject-denied-not-allowed", func(t *testing.T) {
+		s := NewStore()
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceConfig, Tool: "Bash", ToolUseId: "tu1"})
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 0, stats.Permissions.AutoAllowed)
+		assert.Equal(t, 1, stats.Permissions.ConfigDenied)
+		require.Len(t, stats.Permissions.Requests, 1)
+		assert.Equal(t, "tu1", stats.Permissions.Requests[0].ToolUseId)
+	})
+
+	// hook-split-by-decision
+	t.Run("hook-split-by-decision", func(t *testing.T) {
+		s := NewStore()
+		s.foldDecision("s1", PermissionDecision{Decision: "accept", Source: sourceHook, Tool: "Bash"})
+		s.foldDecision("s1", PermissionDecision{Decision: "accept", Source: sourceHook, Tool: "Bash"})
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceHook, Tool: "Bash"})
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 2, stats.Permissions.HookAllowed)
+		assert.Equal(t, 1, stats.Permissions.HookDenied)
+	})
+
+	// rejects-split-by-source
+	t.Run("rejects-split-by-source", func(t *testing.T) {
+		s := NewStore()
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceConfig, Tool: "Bash"})
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceHook, Tool: "Bash"})
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceUserReject, Tool: "Edit"})
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceUserAbort, Tool: "Edit"})
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: "future_source", Tool: "Edit"})
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 1, stats.Permissions.ConfigDenied)
+		assert.Equal(t, 1, stats.Permissions.HookDenied)
+		assert.Equal(t, 1, stats.Permissions.Rejected)
+		assert.Equal(t, 1, stats.Permissions.Aborted)
+		assert.Len(t, stats.Permissions.Requests, 5, "an unknown source is counted nowhere but still listed")
+	})
+
+	// accepts-counted-not-listed
+	t.Run("accepts-counted-not-listed", func(t *testing.T) {
+		s := NewStore()
+		s.foldDecision("s1", PermissionDecision{Decision: "accept", Source: sourceConfig, Tool: "Bash"})
+		s.foldDecision("s1", PermissionDecision{Decision: "accept", Source: sourceHook, Tool: "Bash"})
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 1, stats.Permissions.AutoAllowed)
+		assert.Equal(t, 1, stats.Permissions.HookAllowed)
+		assert.Empty(t, stats.Permissions.Requests)
+	})
+
+	// denial-listed-after-200-accepts
+	t.Run("denial-listed-after-200-accepts", func(t *testing.T) {
+		s := NewStore()
+		for range 200 {
+			s.foldDecision("s1", PermissionDecision{Decision: "accept", Source: sourceHook, Tool: "Bash"})
+		}
+		s.foldDecision("s1", PermissionDecision{Decision: "reject", Source: sourceHook, Tool: "Bash", ToolUseId: "tu-late"})
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 200, stats.Permissions.HookAllowed)
+		require.Len(t, stats.Permissions.Requests, 1)
+		assert.Equal(t, "tu-late", stats.Permissions.Requests[0].ToolUseId)
 	})
 
 	// persist-round-trip

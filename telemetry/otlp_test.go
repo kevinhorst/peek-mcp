@@ -158,6 +158,30 @@ func TestStore_IngestLogs(t *testing.T) {
 		assert.Equal(t, "reject", stats.Permissions.Requests[0].Decision)
 	})
 
+	// config-reject-denied-and-listed
+	t.Run("config-reject-denied-and-listed", func(t *testing.T) {
+		s := NewStore()
+		require.NoError(t, s.IngestLogs(logsPayload(decisionRecord("s1", "reject", "config", "Bash", "tu3"))))
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 0, stats.Permissions.AutoAllowed)
+		assert.Equal(t, 1, stats.Permissions.ConfigDenied)
+		require.Len(t, stats.Permissions.Requests, 1)
+		assert.Equal(t, "tu3", stats.Permissions.Requests[0].ToolUseId)
+	})
+
+	// hook-accept-counted-not-listed
+	t.Run("hook-accept-counted-not-listed", func(t *testing.T) {
+		s := NewStore()
+		require.NoError(t, s.IngestLogs(logsPayload(decisionRecord("s1", "accept", "hook", "Bash", "tu4"))))
+
+		stats, ok := s.Get("s1")
+		require.True(t, ok)
+		assert.Equal(t, 1, stats.Permissions.HookAllowed)
+		assert.Empty(t, stats.Permissions.Requests)
+	})
+
 	// tool-result-enriches-command
 	t.Run("tool-result-enriches-command", func(t *testing.T) {
 		s := NewStore()

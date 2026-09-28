@@ -10,7 +10,7 @@ import (
 
 const (
 	maxSessions           = 1000
-	maxPermissionRequests = 200
+	maxPermissionRequests = 1000
 	maxPendingCommands    = 256
 	agentClaude           = "claude"
 )
@@ -25,18 +25,49 @@ type PermissionDecision struct {
 }
 
 type PermissionStats struct {
-	AutoAllowed    int                  `json:"auto_allowed,omitempty"`
-	HookDecided    int                  `json:"hook_decided,omitempty"`
-	PromptedOnce   int                  `json:"prompted_once,omitempty"`
-	PromptedAlways int                  `json:"prompted_always,omitempty"`
-	Rejected       int                  `json:"rejected,omitempty"`
 	Aborted        int                  `json:"aborted,omitempty"`
+	AutoAllowed    int                  `json:"auto_allowed,omitempty"`
+	ConfigDenied   int                  `json:"config_denied,omitempty"`
+	HookAllowed    int                  `json:"hook_allowed,omitempty"`
+	HookDenied     int                  `json:"hook_denied,omitempty"`
+	PromptedAlways int                  `json:"prompted_always,omitempty"`
+	PromptedOnce   int                  `json:"prompted_once,omitempty"`
+	Rejected       int                  `json:"rejected,omitempty"`
 	Requests       []PermissionDecision `json:"requests,omitempty"`
 }
 
+// count splits config and hook decisions by their verdict, so a config-level
+// denial is never read as an allow.
+func (p *PermissionStats) count(decision *PermissionDecision) {
+	isReject := decision.Decision == decisionReject
+	switch decision.Source {
+	case sourceConfig:
+		if isReject {
+			p.ConfigDenied++
+			return
+		}
+		p.AutoAllowed++
+	case sourceHook:
+		if isReject {
+			p.HookDenied++
+			return
+		}
+		p.HookAllowed++
+	case sourceUserTemporary:
+		p.PromptedOnce++
+	case sourceUserPermanent:
+		p.PromptedAlways++
+	case sourceUserReject:
+		p.Rejected++
+	case sourceUserAbort:
+		p.Aborted++
+	}
+}
+
 func (p *PermissionStats) IsZero() bool {
-	return p.AutoAllowed == 0 && p.HookDecided == 0 && p.PromptedOnce == 0 &&
-		p.PromptedAlways == 0 && p.Rejected == 0 && p.Aborted == 0 && len(p.Requests) == 0
+	hasNoAllows := p.AutoAllowed == 0 && p.HookAllowed == 0 && p.PromptedOnce == 0 && p.PromptedAlways == 0
+	hasNoDenials := p.ConfigDenied == 0 && p.HookDenied == 0 && p.Rejected == 0 && p.Aborted == 0
+	return hasNoAllows && hasNoDenials && len(p.Requests) == 0
 }
 
 type SessionStats struct {
@@ -93,7 +124,7 @@ func (s *Store) statsFor(sessionId string) *SessionStats {
 		if len(s.sessions) >= maxSessions {
 			s.evictOldest()
 		}
-		stats = &SessionStats{}
+		stats = s.restoredStats(sessionId)
 		s.sessions[sessionId] = stats
 	}
 	stats.UpdatedAt = s.now()
@@ -120,23 +151,10 @@ func (s *Store) foldDecision(sessionId string, decision PermissionDecision) {
 	defer s.mu.Unlock()
 
 	stats := s.statsFor(sessionId)
+	stats.Permissions.count(&decision)
 
-	switch decision.Source {
-	case sourceConfig:
-		stats.Permissions.AutoAllowed++
-	case sourceHook:
-		stats.Permissions.HookDecided++
-	case sourceUserTemporary:
-		stats.Permissions.PromptedOnce++
-	case sourceUserPermanent:
-		stats.Permissions.PromptedAlways++
-	case sourceUserReject:
-		stats.Permissions.Rejected++
-	case sourceUserAbort:
-		stats.Permissions.Aborted++
-	}
-
-	if decision.Source != sourceConfig && len(stats.Permissions.Requests) < maxPermissionRequests {
+	hasRoom := len(stats.Permissions.Requests) < maxPermissionRequests
+	if isListedDecision(&decision) && hasRoom {
 		stats.Permissions.Requests = append(stats.Permissions.Requests, decision)
 		if decision.ToolUseId != "" {
 			if len(s.pendingCommands) >= maxPendingCommands {
@@ -192,6 +210,16 @@ func (s *Store) persist(sessionId string, stats *SessionStats) {
 	_ = s.StateDir.WriteTelemetry(agentClaude, sessionId, string(data))
 }
 
+// restoredStats continues a session peek holds no memory of (restart,
+// eviction) from its persisted file instead of overwriting it with zero.
+func (s *Store) restoredStats(sessionId string) *SessionStats {
+	persisted, ok := ReadPersisted(s.StateDir, sessionId)
+	if !ok {
+		return &SessionStats{}
+	}
+	return &persisted
+}
+
 func ReadPersisted(dir *state.Dir, sessionId string) (SessionStats, bool) {
 	if dir == nil {
 		return SessionStats{}, false
@@ -226,4 +254,13 @@ func foldValue(current, incoming float64, isDelta bool) float64 {
 		return current + incoming
 	}
 	return max(current, incoming)
+}
+
+// isListedDecision keeps the list to what an operator acts on: every denial
+// and every prompted decision; config and hook allows are counted only.
+func isListedDecision(decision *PermissionDecision) bool {
+	if decision.Decision == decisionReject {
+		return true
+	}
+	return decision.Source == sourceUserTemporary || decision.Source == sourceUserPermanent
 }
