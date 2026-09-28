@@ -31,7 +31,7 @@ const idleThreshold = 5 * time.Minute
 
 const maxTouchedFiles = 2000
 
-const maxDeniedToolUses = 5000
+const maxDenials = 5000
 
 const maxSubagentStats = 1000
 
@@ -58,7 +58,7 @@ type Session struct {
 
 	Agent           Agent                       `json:"agent"`
 	Counters        Counters                    `json:"-"`
-	DeniedToolUses  map[string]string           `json:"-"` // tool_use_id → denial kind, survives the event ring
+	Denials         []*Event                    `json:"-"` // every permission_denied event, survives the event ring
 	DiffBase        string                      `json:"-"`
 	DiffCapturedAt  time.Time                   `json:"-"`
 	DiffOutput      string                      `json:"-"`
@@ -85,9 +85,10 @@ type Session struct {
 	UncommittedDiff string `json:"-"`
 }
 
-// addDenial counts by kind and indexes the tool use, so the telemetry join
-// stays exact after the event ring has dropped the event.
-func (s *Session) addDenial(payload *PermissionPayload) {
+// addDenial counts by kind and keeps the event, so the denial list and the
+// telemetry join stay complete after the event ring has dropped it.
+func (s *Session) addDenial(event *Event) {
+	payload := event.Permission
 	isCancellation := payload != nil && (payload.Kind == DenialKindCancelled || payload.Kind == DenialKindInterrupted)
 	if isCancellation {
 		s.Counters.PermissionCancellations++
@@ -95,16 +96,10 @@ func (s *Session) addDenial(payload *PermissionPayload) {
 		s.Counters.PermissionDenials++
 	}
 
-	if payload == nil || payload.ToolUseId == "" {
+	if payload == nil || len(s.Denials) >= maxDenials {
 		return
 	}
-	if s.DeniedToolUses == nil {
-		s.DeniedToolUses = make(map[string]string)
-	}
-	if len(s.DeniedToolUses) >= maxDeniedToolUses {
-		return
-	}
-	s.DeniedToolUses[payload.ToolUseId] = payload.Kind
+	s.Denials = append(s.Denials, event)
 }
 
 func (s *Session) isAlterationPhase() bool {
@@ -121,7 +116,7 @@ func (s *Session) AddEvent(event *Event) {
 	case EventKindModelChanged:
 		s.Counters.ModelChanges++
 	case EventKindPermissionDenied:
-		s.addDenial(event.Permission)
+		s.addDenial(event)
 	case EventKindPermissionGranted:
 		s.Counters.PermissionGrants++
 	case EventKindPermissionModeChanged:

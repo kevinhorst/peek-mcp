@@ -179,7 +179,7 @@ func TestSession_AddDenial(t *testing.T) {
 		_id                    string
 		_expectedCancellations int
 		_expectedDenials       int
-		_expectedIndexed       int
+		_expectedListed        int
 
 		session *Session
 	}
@@ -198,7 +198,7 @@ func TestSession_AddDenial(t *testing.T) {
 		_id:                    "permission-rule-counted",
 		_expectedCancellations: 0,
 		_expectedDenials:       1,
-		_expectedIndexed:       1,
+		_expectedListed:        1,
 
 		session: counted,
 	})
@@ -210,7 +210,7 @@ func TestSession_AddDenial(t *testing.T) {
 		_id:                    "cancelled-split",
 		_expectedCancellations: 1,
 		_expectedDenials:       0,
-		_expectedIndexed:       1,
+		_expectedListed:        1,
 
 		session: cancelled,
 	})
@@ -222,7 +222,7 @@ func TestSession_AddDenial(t *testing.T) {
 		_id:                    "interrupted-split",
 		_expectedCancellations: 1,
 		_expectedDenials:       0,
-		_expectedIndexed:       1,
+		_expectedListed:        1,
 
 		session: interrupted,
 	})
@@ -234,21 +234,35 @@ func TestSession_AddDenial(t *testing.T) {
 		_id:                    "nil-payload-counted-as-denial",
 		_expectedCancellations: 0,
 		_expectedDenials:       1,
-		_expectedIndexed:       0,
+		_expectedListed:        0,
 
 		session: nilPayload,
 	})
 
-	// index-capped-at-5000
+	// listed-beyond-event-ring
+	beyondRing := provideCompleteSession()
+	for index := range EventBufferCapacity + 1 {
+		beyondRing.AddEvent(denialEvent(DenialKindPermissionRule, fmt.Sprintf("tu%d", index)))
+	}
+	tests = append(tests, &testCase{
+		_id:                    "listed-beyond-event-ring",
+		_expectedCancellations: 0,
+		_expectedDenials:       EventBufferCapacity + 1,
+		_expectedListed:        EventBufferCapacity + 1,
+
+		session: beyondRing,
+	})
+
+	// list-capped-at-5000
 	capped := provideCompleteSession()
-	for index := range maxDeniedToolUses + 1 {
+	for index := range maxDenials + 1 {
 		capped.AddEvent(denialEvent(DenialKindPermissionRule, fmt.Sprintf("tu%d", index)))
 	}
 	tests = append(tests, &testCase{
-		_id:                    "index-capped-at-5000",
+		_id:                    "list-capped-at-5000",
 		_expectedCancellations: 0,
-		_expectedDenials:       maxDeniedToolUses + 1,
-		_expectedIndexed:       maxDeniedToolUses,
+		_expectedDenials:       maxDenials + 1,
+		_expectedListed:        maxDenials,
 
 		session: capped,
 	})
@@ -258,7 +272,7 @@ func TestSession_AddDenial(t *testing.T) {
 		t.Run(test._id, func(t *testing.T) {
 			assert.Equal(t, test._expectedDenials, test.session.Counters.PermissionDenials)
 			assert.Equal(t, test._expectedCancellations, test.session.Counters.PermissionCancellations)
-			assert.Len(t, test.session.DeniedToolUses, test._expectedIndexed)
+			assert.Len(t, test.session.Denials, test._expectedListed)
 		})
 	}
 }
