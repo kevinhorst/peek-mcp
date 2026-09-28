@@ -31,8 +31,9 @@ type Entry struct {
 	Type              string          `json:"type"`
 	CustomTitle       string          `json:"customTitle"`
 	Version           string          `json:"version"`
-	Content           string          `json:"content"`   // queue-operation payload
-	Operation         string          `json:"operation"` // queue-operation: enqueue, dequeue, remove
+	Content           string          `json:"content"`        // queue-operation payload
+	Operation         string          `json:"operation"`      // queue-operation: enqueue, dequeue, remove
+	ToolDenialKind    string          `json:"toolDenialKind"` // set on the entry holding a denied tool_result
 }
 
 func (e *Entry) Validate() error {

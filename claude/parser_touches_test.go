@@ -38,7 +38,7 @@ func TestParseLine_FileTouches(t *testing.T) {
 	// error-result-no-touch
 	p = NewParser()
 	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu4","name":"Write","input":{"file_path":"/repo/c.go"}}]}}`))
-	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu4","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"user-rejected","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu4","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
 	require.NotNil(t, turn)
 	assert.Empty(t, turn.FileTouches)
 	require.Len(t, turn.Events, 1)

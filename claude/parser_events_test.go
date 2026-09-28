@@ -115,10 +115,11 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	// denied-edit-tool
 	p := NewParser()
 	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Edit","input":{}}]}}`))
-	turn := p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	turn := p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"user-rejected","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
 	require.NotNil(t, turn)
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
+	assert.Equal(t, session.DenialKindUserRejected, turn.Events[0].Permission.Kind)
 	assert.Equal(t, "Edit", turn.Events[0].Permission.Tool)
 	assert.Empty(t, turn.Events[0].Permission.Command)
 	assert.Equal(t, "tu1", turn.Events[0].Permission.ToolUseId)
@@ -126,7 +127,7 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	// bash-denied-command-captured
 	p = NewParser()
 	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-bash","name":"Bash","input":{"command":"rm -rf /tmp/x"}}]}}`))
-	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-bash","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"user-rejected","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-bash","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
 	require.NotNil(t, turn)
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
@@ -137,7 +138,7 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	// file-tool-denied-path-captured
 	p = NewParser()
 	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-edit","name":"Edit","input":{"file_path":"/etc/hosts","old_string":"a","new_string":"b"}}]}}`))
-	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-edit","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"user-rejected","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-edit","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
 	require.NotNil(t, turn)
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, "/etc/hosts", turn.Events[0].Permission.Command)
@@ -155,19 +156,63 @@ func TestParseLine_PermissionAndAnswers(t *testing.T) {
 	// ask-user-question-denied
 	p = NewParser()
 	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu3","name":"AskUserQuestion","input":{"questions":[{"question":"Q"}]}}]}}`))
-	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu3","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"permission-rule","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu3","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
 	require.NotNil(t, turn)
 	require.Len(t, turn.Events, 1)
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
 	assert.Equal(t, "AskUserQuestion", turn.Events[0].Permission.Tool)
 	assert.Equal(t, "tu3", turn.Events[0].Permission.ToolUseId)
 
-	// unknown-tool-result-ignored
+	// untagged-error-result-no-denial
 	p = NewParser()
-	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"never-seen","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-old","name":"Bash","input":{"command":"rm x"}}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-old","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
 	require.NotNil(t, turn)
-	assert.Empty(t, turn.Events)
+	assert.Empty(t, turn.Events, "without toolDenialKind the text alone is no denial")
 	assert.Len(t, turn.ToolResults, 1)
+
+	// hook-denial-by-kind
+	p = NewParser()
+	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-hook","name":"Bash","input":{"command":"lsof -v"}}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"permission-rule","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-hook","is_error":true,"content":"PreToolUse:Bash hook error: tool-policy: denied Bash"}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.DenialKindPermissionRule, turn.Events[0].Permission.Kind)
+	assert.Equal(t, "Bash", turn.Events[0].Permission.Tool)
+	assert.Equal(t, "lsof -v", turn.Events[0].Permission.Command)
+
+	// unresolved-ask-by-kind
+	p = NewParser()
+	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-ask","name":"Bash","input":{"command":"mkdir -p /tmp/x"}}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"user-rejected","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-ask","is_error":true,"content":"mkdir in '/tmp/x' needs approval."}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.DenialKindUserRejected, turn.Events[0].Permission.Kind)
+	assert.Equal(t, "mkdir -p /tmp/x", turn.Events[0].Permission.Command)
+
+	// cancelled-kind-carried
+	p = NewParser()
+	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-cancel","name":"Bash","input":{"command":"ls"}}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"cancelled","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-cancel","is_error":true,"content":"The user doesn't want to take this action right now."}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.DenialKindCancelled, turn.Events[0].Permission.Kind)
+
+	// denial-without-pending
+	p = NewParser()
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"permission-rule","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"never-seen","is_error":true,"content":"PreToolUse:Read hook error: denied"}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Empty(t, turn.Events[0].Permission.Tool)
+	assert.Equal(t, "never-seen", turn.Events[0].Permission.ToolUseId)
+
+	// plan-rejection-not-denial
+	p = NewParser()
+	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-plan","name":"ExitPlanMode","input":{}}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"permission-rule","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-plan","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, session.EventKindPlanRejected, turn.Events[0].Kind)
 }
 
 func TestParseLine_TaskCompleted(t *testing.T) {
@@ -268,13 +313,23 @@ func TestParseLine_SubagentResult(t *testing.T) {
 	// agent-denied-is-permission-event
 	p = NewParser()
 	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu3","name":"Agent","input":{}}]}}`))
-	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu3","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"permission-rule","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu3","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`))
 	require.NotNil(t, turn)
-	require.Len(t, turn.Events, 1)
+	require.Len(t, turn.Events, 1, "a denied Agent call yields the denial only, no subagent_result")
 	assert.Equal(t, session.EventKindPermissionDenied, turn.Events[0].Kind)
+	assert.Equal(t, session.DenialKindPermissionRule, turn.Events[0].Permission.Kind)
 	assert.Equal(t, "Agent", turn.Events[0].Permission.Tool)
 	assert.Empty(t, turn.Events[0].Permission.Command)
 	assert.Equal(t, "tu3", turn.Events[0].Permission.ToolUseId)
+
+	// sidechain-denial-carries-actor
+	p = NewParser()
+	p.ParseLine([]byte(`{"type":"assistant","sessionId":"s","agentId":"sub-ag","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-side","name":"Bash","input":{"command":"lsof -v"}}]}}`))
+	turn = p.ParseLine([]byte(`{"type":"user","sessionId":"s","agentId":"sub-ag","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":true,"toolDenialKind":"permission-rule","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-side","is_error":true,"content":"PreToolUse:Bash hook error: denied"}]}}`))
+	require.NotNil(t, turn)
+	require.Len(t, turn.Events, 1)
+	assert.Equal(t, "sub-ag", turn.Events[0].Actor)
+	assert.Equal(t, "Bash", turn.Events[0].Permission.Tool)
 }
 
 func TestResolvePersistedOutput(t *testing.T) {

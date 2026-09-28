@@ -30,7 +30,6 @@ const (
 	contentTypeToolUse    = "tool_use"
 
 	approvalPrefix        = "User has approved your plan"
-	denialPrefix          = "The user doesn't want to proceed with this tool use."
 	persistedOutputMarker = "<persisted-output>"
 	toolResultsDir        = "tool-results"
 
@@ -353,11 +352,16 @@ func (p *Parser) eventsFromUserContent(entry *Entry, message *Message) ([]*sessi
 		}
 
 		pending, ok := p.pendingTools[block.ToolUseId]
+		delete(p.pendingTools, block.ToolUseId)
+
+		isPlanVerdict := ok && pending.name == toolNameExitPlanMode
+		if entry.ToolDenialKind != "" && !isPlanVerdict {
+			events = append(events, deniedToolEvent(block, entry, pending))
+			continue
+		}
 		if !ok {
 			continue
 		}
-
-		delete(p.pendingTools, block.ToolUseId)
 
 		if touch := fileTouchFromResult(block, pending); touch != nil {
 			touches = append(touches, touch)
@@ -461,6 +465,15 @@ func contentBlocks(raw json.RawMessage) []ContentBlock {
 		return nil
 	}
 	return blocks
+}
+
+// deniedToolEvent turns a denied tool result into the ledger event; the tool
+// name and command come from the matching tool use when the parser saw it.
+func deniedToolEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse) *session.Event {
+	if pending == nil {
+		return permissionDeniedEvent(block, "", entry, entry.ToolDenialKind, "")
+	}
+	return permissionDeniedEvent(block, commandFromInput(pending), entry, entry.ToolDenialKind, pending.name)
 }
 
 func eventTurn(entry *Entry, events []*session.Event, results []*session.ToolResult, touches []*session.FileTouch) *session.Turn {
@@ -600,8 +613,8 @@ func (p *Parser) permissionModeEvent(entry *Entry) *session.Event {
 	}
 }
 
-func permissionDeniedEvent(block *ContentBlock, command string, entry *Entry, tool string) *session.Event {
-	payload := &session.PermissionPayload{Command: command, Tool: tool, ToolUseId: block.ToolUseId}
+func permissionDeniedEvent(block *ContentBlock, command string, entry *Entry, kind string, tool string) *session.Event {
+	payload := &session.PermissionPayload{Command: command, Kind: kind, Tool: tool, ToolUseId: block.ToolUseId}
 	return &session.Event{
 		Actor:      entry.AgentId,
 		Kind:       session.EventKindPermissionDenied,
@@ -736,11 +749,7 @@ func slashCommandEvent(entry *Entry, text string) *session.Event {
 	}
 }
 
-func subagentResultEvent(block *ContentBlock, entry *Entry, isDenied bool, text string) *session.Event {
-	if isDenied {
-		return permissionDeniedEvent(block, "", entry, toolNameAgent)
-	}
-
+func subagentResultEvent(block *ContentBlock, entry *Entry, text string) *session.Event {
 	content := resolvePersistedOutput(entry.SessionId, text, block.ToolUseId)
 	if len(content) > maxSubagentResultBytes {
 		content = content[:maxSubagentResultBytes] + "\n[peek: subagent result truncated at 32 KB]\n"
@@ -818,20 +827,15 @@ func toolResultEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse)
 		text = extractTextBlocks(block.Content)
 	}
 
-	isDenied := block.IsError && strings.HasPrefix(text, denialPrefix)
-
 	switch pending.name {
 	case toolNameExitPlanMode:
 		return planVerdictEvent(block, entry, text)
 	case toolNameAgent:
-		return subagentResultEvent(block, entry, isDenied, text)
+		return subagentResultEvent(block, entry, text)
 	case toolNameAskUserQuestion:
-		return userAnswerEvent(block, entry, isDenied, pending, text)
+		return userAnswerEvent(block, entry, pending, text)
 	default:
-		if !isDenied {
-			return nil
-		}
-		return permissionDeniedEvent(block, commandFromInput(pending), entry, pending.name)
+		return nil
 	}
 }
 
@@ -856,11 +860,7 @@ func toolResultsFromContent(message *Message) []*session.ToolResult {
 	return results
 }
 
-func userAnswerEvent(block *ContentBlock, entry *Entry, isDenied bool, pending *pendingToolUse, text string) *session.Event {
-	if isDenied {
-		return permissionDeniedEvent(block, "", entry, toolNameAskUserQuestion)
-	}
-
+func userAnswerEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse, text string) *session.Event {
 	var input askUserQuestionInput
 	if err := json.Unmarshal(pending.input, &input); err != nil {
 		slog.Debug("userAnswerEvent: Failed to unmarshal question input", "err", err)
