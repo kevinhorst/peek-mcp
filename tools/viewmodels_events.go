@@ -76,46 +76,163 @@ func newTouchedFileViews(touchedFiles map[string]*session.FileTouchCounts) []*to
 	return views
 }
 
-type permissionsView struct {
-	AutoAllowed    int                            `json:"auto_allowed"`
-	HookDecided    int                            `json:"hook_decided,omitempty"`
-	PromptedOnce   int                            `json:"prompted_once"`
-	PromptedAlways int                            `json:"prompted_always"`
-	Rejected       int                            `json:"rejected"`
-	Aborted        int                            `json:"aborted,omitempty"`
-	Requests       []telemetry.PermissionDecision `json:"requests,omitempty"`
-	Detail         string                         `json:"detail,omitempty"`
+const (
+	detailPersisted      = "persisted"
+	detailTranscriptOnly = "transcript-only"
+)
+
+type deniedByKindView struct {
+	AutomodeBlocked int `json:"automode_blocked"`
+	PermissionRule  int `json:"permission_rule"`
+	UserRejected    int `json:"user_rejected"`
 }
 
+type deniedBySourceView struct {
+	Aborted int `json:"aborted"`
+	Config  int `json:"config"`
+	Hook    int `json:"hook"`
+	Prompt  int `json:"prompt"`
+}
+
+type permissionsView struct {
+	Aborted        int                            `json:"aborted,omitempty"`
+	AutoAllowed    int                            `json:"auto_allowed"`
+	ConfigDenied   int                            `json:"config_denied"`
+	Denied         int                            `json:"denied"`
+	DeniedByKind   *deniedByKindView              `json:"denied_by_kind"`
+	DeniedBySource *deniedBySourceView            `json:"denied_by_source"`
+	Detail         string                         `json:"detail,omitempty"`
+	HookAllowed    int                            `json:"hook_allowed"`
+	HookDenied     int                            `json:"hook_denied"`
+	PromptedAlways int                            `json:"prompted_always"`
+	PromptedOnce   int                            `json:"prompted_once"`
+	Rejected       int                            `json:"rejected"`
+	Requests       []telemetry.PermissionDecision `json:"requests,omitempty"`
+	TelemetryOnly  int                            `json:"telemetry_only"`
+	Unattributed   int                            `json:"unattributed"`
+}
+
+// newPermissionsView reconciles the transcript's denial ledger with the
+// telemetry decisions: the ledger counts, telemetry attributes by tool use id.
 func newPermissionsView(currentSession *session.Session, telemetryStore *telemetry.Store, stateDir *state.Dir) *permissionsView {
 	if currentSession.Agent != session.AgentClaude {
 		return nil
 	}
 
+	stats, detail := permissionStatsFor(currentSession, telemetryStore, stateDir)
+	hasDenials := currentSession.Counters.PermissionDenials > 0
+	if stats == nil && !hasDenials {
+		return nil
+	}
+
+	view := permissionsViewFromStats(stats, detail)
+	view.Denied = currentSession.Counters.PermissionDenials
+	view.DeniedByKind = deniedByKind(currentSession.DeniedToolUses)
+	view.DeniedBySource, view.Unattributed, view.TelemetryOnly = reconcileDenials(currentSession.DeniedToolUses, stats)
+	return view
+}
+
+// permissionStatsFor returns the telemetry stats and their provenance: live,
+// persisted, or none (transcript-only).
+func permissionStatsFor(currentSession *session.Session, telemetryStore *telemetry.Store, stateDir *state.Dir) (*telemetry.PermissionStats, string) {
 	sessionId := string(currentSession.Meta.SessionId)
 	if telemetryStore != nil {
 		if stats, ok := telemetryStore.Get(sessionId); ok && !stats.Permissions.IsZero() {
-			return permissionsViewFromStats(&stats.Permissions, "")
+			return &stats.Permissions, ""
 		}
 	}
 
 	if stats, ok := telemetry.ReadPersisted(stateDir, sessionId); ok && !stats.Permissions.IsZero() {
-		return permissionsViewFromStats(&stats.Permissions, "persisted")
+		return &stats.Permissions, detailPersisted
 	}
-	return nil
+	return nil, detailTranscriptOnly
 }
 
 func permissionsViewFromStats(stats *telemetry.PermissionStats, detail string) *permissionsView {
-	return &permissionsView{
-		AutoAllowed:    stats.AutoAllowed,
-		HookDecided:    stats.HookDecided,
-		PromptedOnce:   stats.PromptedOnce,
-		PromptedAlways: stats.PromptedAlways,
-		Rejected:       stats.Rejected,
-		Aborted:        stats.Aborted,
-		Requests:       stats.Requests,
-		Detail:         detail,
+	view := &permissionsView{Detail: detail}
+	if stats == nil {
+		return view
 	}
+
+	view.Aborted = stats.Aborted
+	view.AutoAllowed = stats.AutoAllowed
+	view.ConfigDenied = stats.ConfigDenied
+	view.HookAllowed = stats.HookAllowed
+	view.HookDenied = stats.HookDenied
+	view.PromptedAlways = stats.PromptedAlways
+	view.PromptedOnce = stats.PromptedOnce
+	view.Rejected = stats.Rejected
+	view.Requests = stats.Requests
+	return view
+}
+
+func countSource(view *deniedBySourceView, source string) {
+	switch source {
+	case "config":
+		view.Config++
+	case "hook":
+		view.Hook++
+	case "user_reject":
+		view.Prompt++
+	case "user_abort":
+		view.Aborted++
+	}
+}
+
+func deniedByKind(denied map[string]string) *deniedByKindView {
+	view := &deniedByKindView{}
+	for _, kind := range denied {
+		switch kind {
+		case session.DenialKindAutomodeBlocked:
+			view.AutomodeBlocked++
+		case session.DenialKindPermissionRule:
+			view.PermissionRule++
+		case session.DenialKindUserRejected:
+			view.UserRejected++
+		}
+	}
+	return view
+}
+
+func isCancellationKind(kind string) bool {
+	return kind == session.DenialKindCancelled || kind == session.DenialKindInterrupted
+}
+
+func isCountedDenial(denied map[string]string, toolUseId string) bool {
+	kind, ok := denied[toolUseId]
+	return ok && !isCancellationKind(kind)
+}
+
+// reconcileDenials joins the transcript ledger to telemetry's listed rejects
+// by tool use id: attributed per source, unattributed (no decision event, the
+// unresolved asks), and telemetry-only (a reject with no transcript denial).
+func reconcileDenials(denied map[string]string, stats *telemetry.PermissionStats) (*deniedBySourceView, int, int) {
+	bySource := &deniedBySourceView{}
+	attributed := make(map[string]bool)
+	telemetryOnly := 0
+	if stats != nil {
+		for index := range stats.Requests {
+			request := &stats.Requests[index]
+			if request.Decision != "reject" {
+				continue
+			}
+			if !isCountedDenial(denied, request.ToolUseId) {
+				telemetryOnly++
+				continue
+			}
+			attributed[request.ToolUseId] = true
+			countSource(bySource, request.Source)
+		}
+	}
+
+	unattributed := 0
+	for toolUseId, kind := range denied {
+		if isCancellationKind(kind) || attributed[toolUseId] {
+			continue
+		}
+		unattributed++
+	}
+	return bySource, unattributed, telemetryOnly
 }
 
 func NewTelemetryTimeView(currentSession *session.Session, detector *telemetry.Detector, telemetryStore *telemetry.Store, stateDir *state.Dir) *TelemetryTimeView {
@@ -285,11 +402,14 @@ func permissionSummary(payload *session.PermissionPayload) string {
 		return ""
 	}
 
-	if payload.Command == "" {
-		return payload.Tool
+	summary := payload.Tool
+	if payload.Command != "" {
+		summary += ": " + payload.Command
 	}
-
-	return payload.Tool + ": " + payload.Command
+	if payload.Kind == "" {
+		return summary
+	}
+	return payload.Kind + " " + summary
 }
 
 func permissionModeSummary(payload *session.PermissionModePayload) string {

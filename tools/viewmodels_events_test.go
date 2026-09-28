@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -156,6 +157,29 @@ func TestSummarizeEvent(t *testing.T) {
 
 const promptedDecisionLogs = `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"timeUnixNano":"1787749325706000000","body":{"stringValue":"claude_code.tool_decision"},"attributes":[{"key":"session.id","value":{"stringValue":"s1"}},{"key":"decision","value":{"stringValue":"accept"}},{"key":"source","value":{"stringValue":"user_temporary"}},{"key":"tool_name","value":{"stringValue":"Bash"}},{"key":"tool_use_id","value":{"stringValue":"tu1"}}]}]}]}]}`
 
+func decisionLogs(decision, source, toolUseId string) []byte {
+	return []byte(`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"timeUnixNano":"1787749325706000000","body":{"stringValue":"claude_code.tool_decision"},"attributes":[` +
+		`{"key":"session.id","value":{"stringValue":"s1"}},` +
+		`{"key":"decision","value":{"stringValue":"` + decision + `"}},` +
+		`{"key":"source","value":{"stringValue":"` + source + `"}},` +
+		`{"key":"tool_name","value":{"stringValue":"Bash"}},` +
+		`{"key":"tool_use_id","value":{"stringValue":"` + toolUseId + `"}}]}]}]}]}`)
+}
+
+// sessionWithDenials records one denial per kind with tool use ids tu1, tu2, …
+func sessionWithDenials(kinds ...string) *session.Session {
+	current := &session.Session{
+		Agent:  session.AgentClaude,
+		Events: session.NewEventBuffer(session.EventBufferCapacity),
+		Meta:   session.Meta{SessionId: "s1"},
+	}
+	for index, kind := range kinds {
+		payload := &session.PermissionPayload{Kind: kind, Tool: "Bash", ToolUseId: "tu" + strconv.Itoa(index+1)}
+		current.AddEvent(&session.Event{Kind: session.EventKindPermissionDenied, Permission: payload})
+	}
+	return current
+}
+
 func TestNewPermissionsView(t *testing.T) {
 	claudeSession := func() *session.Session {
 		return &session.Session{Agent: session.AgentClaude, Meta: session.Meta{SessionId: "s1"}}
@@ -187,10 +211,82 @@ func TestNewPermissionsView(t *testing.T) {
 		require.NotNil(t, view)
 		assert.Equal(t, 1, view.PromptedOnce)
 		assert.Equal(t, "persisted", view.Detail)
+		assert.Equal(t, 0, view.Denied)
 	})
 
-	// no-data-nil
-	t.Run("no-data-nil", func(t *testing.T) {
+	// attributed-hook-denial
+	t.Run("attributed-hook-denial", func(t *testing.T) {
+		store := telemetry.NewStore()
+		require.NoError(t, store.IngestLogs(decisionLogs("reject", "hook", "tu1")))
+		current := sessionWithDenials(session.DenialKindPermissionRule)
+
+		view := newPermissionsView(current, store, nil)
+
+		require.NotNil(t, view)
+		assert.Equal(t, 1, view.Denied)
+		assert.Equal(t, 1, view.DeniedBySource.Hook)
+		assert.Equal(t, 1, view.DeniedByKind.PermissionRule)
+		assert.Equal(t, 0, view.Unattributed)
+		assert.Equal(t, 0, view.TelemetryOnly)
+		assert.Empty(t, view.Detail)
+	})
+
+	// unresolved-ask-unattributed
+	t.Run("unresolved-ask-unattributed", func(t *testing.T) {
+		current := sessionWithDenials(session.DenialKindUserRejected)
+
+		view := newPermissionsView(current, telemetry.NewStore(), nil)
+
+		require.NotNil(t, view)
+		assert.Equal(t, 1, view.Denied)
+		assert.Equal(t, 1, view.Unattributed)
+		assert.Equal(t, 1, view.DeniedByKind.UserRejected)
+		assert.Equal(t, detailTranscriptOnly, view.Detail)
+	})
+
+	// telemetry-only-reject
+	t.Run("telemetry-only-reject", func(t *testing.T) {
+		store := telemetry.NewStore()
+		require.NoError(t, store.IngestLogs(decisionLogs("reject", "config", "tu-other")))
+
+		view := newPermissionsView(claudeSession(), store, nil)
+
+		require.NotNil(t, view)
+		assert.Equal(t, 0, view.Denied)
+		assert.Equal(t, 1, view.TelemetryOnly)
+		assert.Equal(t, 1, view.ConfigDenied)
+	})
+
+	// cancellation-not-denied
+	t.Run("cancellation-not-denied", func(t *testing.T) {
+		current := sessionWithDenials(session.DenialKindCancelled)
+
+		view := newPermissionsView(current, telemetry.NewStore(), nil)
+
+		assert.Nil(t, view, "no denial and no telemetry: no block")
+		assert.Equal(t, 1, current.Counters.PermissionCancellations)
+	})
+
+	// ring-overflow-still-attributed
+	t.Run("ring-overflow-still-attributed", func(t *testing.T) {
+		store := telemetry.NewStore()
+		require.NoError(t, store.IngestLogs(decisionLogs("reject", "hook", "tu1")))
+		kinds := make([]string, session.EventBufferCapacity+1)
+		for index := range kinds {
+			kinds[index] = session.DenialKindPermissionRule
+		}
+		current := sessionWithDenials(kinds...)
+
+		view := newPermissionsView(current, store, nil)
+
+		require.NotNil(t, view)
+		assert.Equal(t, session.EventBufferCapacity+1, view.Denied)
+		assert.Equal(t, 1, view.DeniedBySource.Hook, "tu1 left the event ring but stays in the index")
+		assert.Equal(t, session.EventBufferCapacity, view.Unattributed)
+	})
+
+	// no-denials-no-telemetry-nil
+	t.Run("no-denials-no-telemetry-nil", func(t *testing.T) {
 		assert.Nil(t, newPermissionsView(claudeSession(), telemetry.NewStore(), nil))
 	})
 
