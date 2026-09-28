@@ -10,7 +10,7 @@ import (
 
 const (
 	maxSessions           = 1000
-	maxPermissionRequests = 1000
+	maxPermissionRequests = 2000
 	maxPendingCommands    = 256
 	agentClaude           = "claude"
 )
