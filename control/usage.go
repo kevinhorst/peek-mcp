@@ -589,8 +589,9 @@ type denialsData struct {
 
 func newDenialsData(sess *session.Session) *denialsData {
 	data := &denialsData{Id: sess.Meta.SessionId}
-	for index := len(sess.Denials) - 1; index >= 0; index-- {
-		event := sess.Denials[index]
+	denials := sess.Denials()
+	for index := len(denials) - 1; index >= 0; index-- {
+		event := denials[index]
 		data.Denials = append(data.Denials, denialRow{
 			Tool:      event.Permission.Tool,
 			Command:   event.Permission.Command,

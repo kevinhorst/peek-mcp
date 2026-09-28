@@ -449,10 +449,10 @@ func TestUsageDenialsDetail(t *testing.T) {
 		assert.Contains(t, body, "rm -rf /tmp/x")
 	})
 
-	// rows-beyond-event-ring
-	t.Run("rows-beyond-event-ring", func(t *testing.T) {
+	// rows-capped-at-denial-budget
+	t.Run("rows-capped-at-denial-budget", func(t *testing.T) {
 		store, broker := newTestStore()
-		denials := session.EventBufferCapacity + 1
+		denials := session.EventBufferDenialBudget + 1
 		require.True(t, store.WithSession("s1", func(sess *session.Session) {
 			for index := range denials {
 				sess.AddEvent(&session.Event{
@@ -468,11 +468,12 @@ func TestUsageDenialsDetail(t *testing.T) {
 		response := get(server, "/fragments/sessions/s1/usage?detail=denials")
 		require.Equal(t, http.StatusOK, response.Code)
 		body := response.Body.String()
-		assert.Equal(t, denials, strings.Count(body, "<th>Bash</th>"))
-		newest := strings.Index(body, "denied-500;")
+		assert.Equal(t, session.EventBufferDenialBudget, strings.Count(body, "<th>Bash</th>"))
+		newest := strings.Index(body, "denied-1999;")
 		oldest := strings.Index(body, "denied-0;")
-		require.NotEqual(t, -1, oldest, "the denial the event ring dropped is listed")
+		require.NotEqual(t, -1, oldest, "the first denial is kept")
 		assert.Less(t, newest, oldest, "newest first")
+		assert.NotContains(t, body, "denied-2000;", "denials beyond the budget are dropped")
 	})
 
 	// empty-state
