@@ -127,8 +127,8 @@ func newPermissionsView(currentSession *session.Session, telemetryStore *telemet
 
 	view := permissionsViewFromStats(stats, detail)
 	view.Denied = currentSession.Counters.PermissionDenials
-	view.DeniedByKind = deniedByKind(currentSession.DeniedToolUses)
-	view.DeniedBySource, view.Unattributed, view.TelemetryOnly = reconcileDenials(currentSession.DeniedToolUses, stats)
+	view.DeniedByKind = deniedByKind(currentSession.Denials)
+	view.DeniedBySource, view.Unattributed, view.TelemetryOnly = reconcileDenials(currentSession.Denials, stats)
 	return view
 }
 
@@ -179,10 +179,10 @@ func countSource(view *deniedBySourceView, source string) {
 	}
 }
 
-func deniedByKind(denied map[string]string) *deniedByKindView {
+func deniedByKind(denials []*session.Event) *deniedByKindView {
 	view := &deniedByKindView{}
-	for _, kind := range denied {
-		switch kind {
+	for _, denial := range denials {
+		switch denial.Permission.Kind {
 		case session.DenialKindAutomodeBlocked:
 			view.AutomodeBlocked++
 		case session.DenialKindPermissionRule:
@@ -198,15 +198,24 @@ func isCancellationKind(kind string) bool {
 	return kind == session.DenialKindCancelled || kind == session.DenialKindInterrupted
 }
 
-func isCountedDenial(denied map[string]string, toolUseId string) bool {
-	kind, ok := denied[toolUseId]
-	return ok && !isCancellationKind(kind)
+// countedDenialIds returns the tool use ids of the denials the counter holds,
+// cancellations and id-less denials excluded.
+func countedDenialIds(denials []*session.Event) map[string]bool {
+	counted := make(map[string]bool, len(denials))
+	for _, denial := range denials {
+		hasId := denial.Permission.ToolUseId != ""
+		if hasId && !isCancellationKind(denial.Permission.Kind) {
+			counted[denial.Permission.ToolUseId] = true
+		}
+	}
+	return counted
 }
 
 // reconcileDenials joins the transcript ledger to telemetry's listed rejects
 // by tool use id: attributed per source, unattributed (no decision event, the
 // unresolved asks), and telemetry-only (a reject with no transcript denial).
-func reconcileDenials(denied map[string]string, stats *telemetry.PermissionStats) (*deniedBySourceView, int, int) {
+func reconcileDenials(denials []*session.Event, stats *telemetry.PermissionStats) (*deniedBySourceView, int, int) {
+	counted := countedDenialIds(denials)
 	bySource := &deniedBySourceView{}
 	attributed := make(map[string]bool)
 	telemetryOnly := 0
@@ -216,7 +225,7 @@ func reconcileDenials(denied map[string]string, stats *telemetry.PermissionStats
 			if request.Decision != "reject" {
 				continue
 			}
-			if !isCountedDenial(denied, request.ToolUseId) {
+			if !counted[request.ToolUseId] {
 				telemetryOnly++
 				continue
 			}
@@ -226,8 +235,8 @@ func reconcileDenials(denied map[string]string, stats *telemetry.PermissionStats
 	}
 
 	unattributed := 0
-	for toolUseId, kind := range denied {
-		if isCancellationKind(kind) || attributed[toolUseId] {
+	for _, denial := range denials {
+		if isCancellationKind(denial.Permission.Kind) || attributed[denial.Permission.ToolUseId] {
 			continue
 		}
 		unattributed++

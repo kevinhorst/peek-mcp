@@ -281,8 +281,25 @@ func TestNewPermissionsView(t *testing.T) {
 
 		require.NotNil(t, view)
 		assert.Equal(t, session.EventBufferCapacity+1, view.Denied)
-		assert.Equal(t, 1, view.DeniedBySource.Hook, "tu1 left the event ring but stays in the index")
+		assert.Equal(t, 1, view.DeniedBySource.Hook, "tu1 left the event ring but stays in the denial list")
 		assert.Equal(t, session.EventBufferCapacity, view.Unattributed)
+	})
+
+	// id-less-denial-unattributed
+	t.Run("id-less-denial-unattributed", func(t *testing.T) {
+		store := telemetry.NewStore()
+		require.NoError(t, store.IngestLogs(decisionLogs("reject", "hook", "")))
+		current := sessionWithDenials()
+		payload := &session.PermissionPayload{Kind: session.DenialKindPermissionRule, Tool: "Bash"}
+		current.AddEvent(&session.Event{Kind: session.EventKindPermissionDenied, Permission: payload})
+
+		view := newPermissionsView(current, store, nil)
+
+		require.NotNil(t, view)
+		assert.Equal(t, 1, view.Denied)
+		assert.Equal(t, 0, view.DeniedBySource.Hook, "empty ids never join")
+		assert.Equal(t, 1, view.Unattributed)
+		assert.Equal(t, 1, view.TelemetryOnly)
 	})
 
 	// no-denials-no-telemetry-nil
