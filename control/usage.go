@@ -589,12 +589,8 @@ type denialsData struct {
 
 func newDenialsData(sess *session.Session) *denialsData {
 	data := &denialsData{Id: sess.Meta.SessionId}
-	all := sess.Events.All()
-	slices.Reverse(all)
-	for _, event := range all {
-		if event.Kind != session.EventKindPermissionDenied || event.Permission == nil {
-			continue
-		}
+	for index := len(sess.Denials) - 1; index >= 0; index-- {
+		event := sess.Denials[index]
 		data.Denials = append(data.Denials, denialRow{
 			Tool:      event.Permission.Tool,
 			Command:   event.Permission.Command,

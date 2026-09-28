@@ -2,6 +2,7 @@ package control
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -446,6 +447,32 @@ func TestUsageDenialsDetail(t *testing.T) {
 		body := response.Body.String()
 		assert.Contains(t, body, "<th>Bash</th>")
 		assert.Contains(t, body, "rm -rf /tmp/x")
+	})
+
+	// rows-beyond-event-ring
+	t.Run("rows-beyond-event-ring", func(t *testing.T) {
+		store, broker := newTestStore()
+		denials := session.EventBufferCapacity + 1
+		require.True(t, store.WithSession("s1", func(sess *session.Session) {
+			for index := range denials {
+				sess.AddEvent(&session.Event{
+					Kind:       session.EventKindPermissionDenied,
+					Permission: &session.PermissionPayload{Tool: "Bash", Command: "denied-" + strconv.Itoa(index) + ";"},
+					Timestamp:  time.Now(),
+				})
+			}
+		}))
+		server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+		require.NoError(t, err)
+
+		response := get(server, "/fragments/sessions/s1/usage?detail=denials")
+		require.Equal(t, http.StatusOK, response.Code)
+		body := response.Body.String()
+		assert.Equal(t, denials, strings.Count(body, "<th>Bash</th>"))
+		newest := strings.Index(body, "denied-500;")
+		oldest := strings.Index(body, "denied-0;")
+		require.NotEqual(t, -1, oldest, "the denial the event ring dropped is listed")
+		assert.Less(t, newest, oldest, "newest first")
 	})
 
 	// empty-state
