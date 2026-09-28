@@ -518,6 +518,90 @@ func TestSessionGet_TurnsTotal(t *testing.T) {
 	assert.Equal(t, float64(defaultTotal), pagePayload["turns_total"])
 }
 
+func provideSubagentUsageStore() *session.Store {
+	s := provideSubagentStore()
+	now := time.Now()
+
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		SubagentId: "ag1",
+		Role:       session.RoleAssistant,
+		Text:       "sub usage",
+		RequestId:  "r-sub-usage",
+		Timestamp:  now,
+		Usage:      &session.Usage{InputTokens: 7, OutputTokens: 11},
+		Meta:       &session.Meta{SessionId: "s1", Model: "claude-sonnet-5"},
+	})
+	s.AddTurnBySessionId("s2", session.AgentCodex, &session.Turn{
+		SubagentId: "cx1",
+		Role:       session.RoleAssistant,
+		Text:       "codex sub answer",
+		Timestamp:  now,
+		Meta:       &session.Meta{SessionId: "s2", Model: "gpt-5.5"},
+	})
+
+	s1, _ := s.GetById("s1")
+	s1.PlanRevisions = []*session.PlanRevision{
+		{Index: 0, Timestamp: now.Add(-time.Minute)},
+		{Index: 1, Timestamp: now},
+	}
+	return s
+}
+
+func TestSessionGet_WatchHeader(t *testing.T) {
+	store := provideSubagentUsageStore()
+	handler := sessionGetHandler(store, providePageStore())
+	s1, _ := store.GetById("s1")
+
+	// json-subagent-model-last-active-usage
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true, "turns": false, "events": false, "plan": false, "diff": false}))
+	assert.NoError(t, err)
+	payload, ok := result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	require.Len(t, payload.Subagents, 1)
+	assert.Equal(t, "claude-sonnet-5", payload.Subagents[0].Model)
+	assert.Equal(t, s1.Subagents["ag1"].LastActive, payload.Subagents[0].LastActive)
+	require.NotNil(t, payload.Subagents[0].Usage)
+	assert.Equal(t, 7, payload.Subagents[0].Usage.InputTokens)
+	assert.Equal(t, 11, payload.Subagents[0].Usage.OutputTokens)
+
+	// json-plan-revisions-and-last-active
+	require.NotNil(t, payload.PlanRevisions)
+	assert.Equal(t, 2, payload.PlanRevisions.Count)
+	assert.Len(t, payload.PlanRevisions.Timestamps, 2)
+	assert.Equal(t, s1.LastActive, payload.LastActive)
+
+	// paginated-first-page-carries-header
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "turns": false, "events": false, "plan": false, "diff": false}))
+	assert.NoError(t, err)
+	pagePayload := decodeResult(t, result)
+	subagents, ok := pagePayload["subagents"].([]any)
+	require.True(t, ok)
+	subagent := subagents[0].(map[string]any)
+	assert.Equal(t, "claude-sonnet-5", subagent["model"])
+	assert.Contains(t, subagent, "last_active")
+	assert.Equal(t, float64(11), subagent["usage"].(map[string]any)["output_tokens"])
+	assert.Equal(t, float64(2), pagePayload["plan_revisions"].(map[string]any)["count"])
+	assert.Contains(t, pagePayload, "last_active")
+
+	// subagent-scope-keeps-header
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true, "subagent": "ag1"}))
+	assert.NoError(t, err)
+	payload, ok = result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	assert.NotNil(t, payload.PlanRevisions)
+	assert.Len(t, payload.Subagents, 1)
+
+	// codex-subagent-omits-usage-and-no-revisions
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"id": "s2", "json": true, "turns": false, "events": false, "plan": false, "diff": false}))
+	assert.NoError(t, err)
+	payload, ok = result.StructuredContent.(*sessionGetResult)
+	require.True(t, ok)
+	require.Len(t, payload.Subagents, 1)
+	assert.Equal(t, "gpt-5.5", payload.Subagents[0].Model)
+	assert.Nil(t, payload.Subagents[0].Usage)
+	assert.Nil(t, payload.PlanRevisions)
+}
+
 func TestSessionEvents_Subagent(t *testing.T) {
 	store := provideSubagentStore()
 	s1, _ := store.GetById("s1")

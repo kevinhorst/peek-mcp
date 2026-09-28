@@ -228,13 +228,20 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 		withTools := boolArgFromRequest(request, "tools", false)
 
 		var scopedTurns []*turnView
-		var turnsTotal int
+		var header *sessionGetResult
 		isKnownSubagent := true
 		isFound := s.WithSession(sess.Meta.SessionId, func(lockedSession *session.Session) {
 			turns, ok := scopeTurns(lockedSession, n, subagentId, withTools)
 			isKnownSubagent = ok
 			scopedTurns = newTurnViews(turns, withThinking, withTools)
-			turnsTotal = scopeTurnsTotal(lockedSession, subagentId, withTools)
+			turnsTotal := scopeTurnsTotal(lockedSession, subagentId, withTools)
+			header = &sessionGetResult{
+				LastActive:    lockedSession.LastActive,
+				PlanRevisions: newPlanRevisionsView(lockedSession),
+				Subagents:     newSubagentRefs(lockedSession),
+				TotalUsage:    lockedSession.CurrentUsage(),
+				TurnsTotal:    &turnsTotal,
+			}
 		})
 		if !isFound {
 			return mcp.NewToolResultError(fmt.Sprintf("session %q not found", sess.Meta.SessionId)), nil
@@ -251,7 +258,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 		}
 
 		if boolArgFromRequest(request, "json", false) {
-			result := &sessionGetResult{Subagents: newSubagentRefs(sess), TotalUsage: sess.CurrentUsage(), TurnsTotal: &turnsTotal}
+			result := header
 			if withTurns {
 				if len(scopedTurns) > 0 {
 					result.Turns = scopedTurns
@@ -314,9 +321,11 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 		if withDiff {
 			firstPage.DiffTarget = sess.DiffTarget
 		}
-		firstPage.TotalUsage = sess.CurrentUsage()
-		firstPage.Subagents = newSubagentRefs(sess)
-		firstPage.TurnsTotal = &turnsTotal
+		firstPage.LastActive = header.LastActive
+		firstPage.PlanRevisions = header.PlanRevisions
+		firstPage.Subagents = header.Subagents
+		firstPage.TotalUsage = header.TotalUsage
+		firstPage.TurnsTotal = header.TurnsTotal
 
 		resultPage := newSessionGetResultPage(firstPage)
 		if len(nextPages) == 0 {

@@ -7,16 +7,18 @@ import (
 )
 
 type sessionGetResult struct {
-	Diff            string         `json:"diff,omitempty"`
-	DiffTarget      string         `json:"diff_target,omitempty"`
-	Events          any            `json:"events,omitempty"`
-	Memory          any            `json:"memory,omitempty"`
-	Plan            string         `json:"plan,omitempty"`
-	Subagents       []subagentRef  `json:"subagents,omitempty"`
-	TotalUsage      *session.Usage `json:"total_usage,omitempty"`
-	Turns           any            `json:"turns,omitempty"`
-	TurnsTotal      *int           `json:"turns_total,omitempty"`
-	UncommittedDiff string         `json:"uncommitted_diff,omitempty"`
+	Diff            string             `json:"diff,omitempty"`
+	DiffTarget      string             `json:"diff_target,omitempty"`
+	Events          any                `json:"events,omitempty"`
+	LastActive      time.Time          `json:"last_active,omitzero"`
+	Memory          any                `json:"memory,omitempty"`
+	Plan            string             `json:"plan,omitempty"`
+	PlanRevisions   *planRevisionsView `json:"plan_revisions,omitempty"`
+	Subagents       []subagentRef      `json:"subagents,omitempty"`
+	TotalUsage      *session.Usage     `json:"total_usage,omitempty"`
+	Turns           any                `json:"turns,omitempty"`
+	TurnsTotal      *int               `json:"turns_total,omitempty"`
+	UncommittedDiff string             `json:"uncommitted_diff,omitempty"`
 }
 
 type sessionGetResultPage struct {
@@ -37,16 +39,24 @@ func (p *sessionGetResultPage) WithRequestId(id string) {
 }
 
 type subagentRef struct {
-	AgentId     string `json:"agent_id"`
-	AgentType   string `json:"agent_type,omitempty"`
-	Description string `json:"description,omitempty"`
+	AgentId     string         `json:"agent_id"`
+	AgentType   string         `json:"agent_type,omitempty"`
+	Description string         `json:"description,omitempty"`
+	LastActive  time.Time      `json:"last_active,omitzero"`
+	Model       string         `json:"model,omitempty"`
+	Usage       *session.Usage `json:"usage,omitempty"`
 }
 
 func newSubagentRefs(sess *session.Session) []subagentRef {
 	refs := make([]subagentRef, 0, len(sess.Subagents))
 	for _, id := range sess.SubagentIds() {
 		stat := sess.Subagents[id]
-		refs = append(refs, subagentRef{AgentId: id, AgentType: stat.AgentType, Description: stat.Description})
+		ref := subagentRef{AgentId: id, AgentType: stat.AgentType, Description: stat.Description, LastActive: stat.LastActive, Model: stat.Model}
+		if sess.Agent == session.AgentClaude {
+			usage := stat.Usage
+			ref.Usage = &usage
+		}
+		refs = append(refs, ref)
 	}
 	return refs
 }
