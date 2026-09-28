@@ -27,20 +27,29 @@ const (
 )
 
 const (
+	DenialKindAutomodeBlocked = "automode-blocked"
+	DenialKindCancelled       = "cancelled"
+	DenialKindInterrupted     = "interrupted"
+	DenialKindPermissionRule  = "permission-rule"
+	DenialKindUserRejected    = "user-rejected"
+)
+
+const (
 	SkillSourceSlash = "slash"
 	SkillSourceTool  = "tool"
 )
 
 type Counters struct {
-	ModelChanges          int `json:"model_changes"`
-	PermissionDenials     int `json:"permission_denials"`
-	PermissionGrants      int `json:"permission_grants"`
-	PermissionModeChanges int `json:"permission_mode_changes"`
-	PlanAlterations       int `json:"plan_alterations"`
-	PlanRejections        int `json:"plan_rejections"`
-	SkillsInvoked         int `json:"skills_invoked"`
-	SubagentsSpawned      int `json:"subagents_spawned"`
-	Turns                 int `json:"turns"`
+	ModelChanges            int `json:"model_changes"`
+	PermissionCancellations int `json:"permission_cancellations"`
+	PermissionDenials       int `json:"permission_denials"`
+	PermissionGrants        int `json:"permission_grants"`
+	PermissionModeChanges   int `json:"permission_mode_changes"`
+	PlanAlterations         int `json:"plan_alterations"`
+	PlanRejections          int `json:"plan_rejections"`
+	SkillsInvoked           int `json:"skills_invoked"`
+	SubagentsSpawned        int `json:"subagents_spawned"`
+	Turns                   int `json:"turns"`
 }
 
 type Event struct {
@@ -83,6 +92,7 @@ type PermissionModePayload struct {
 type PermissionPayload struct {
 	Command       string `json:"command,omitempty"`
 	Justification string `json:"justification,omitempty"`
+	Kind          string `json:"kind,omitempty"` // transcript toolDenialKind; empty on Codex and granted events
 	Tool          string `json:"tool"`
 	ToolUseId     string `json:"tool_use_id,omitempty"`
 }

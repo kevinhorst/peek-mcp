@@ -174,6 +174,95 @@ func TestSession_AppendTurn(t *testing.T) {
 	assert.Equal(t, 2, buffer.Pushed(), "tool-only turn is buffered but not counted")
 }
 
+func TestSession_AddDenial(t *testing.T) {
+	type testCase struct {
+		_id                    string
+		_expectedCancellations int
+		_expectedDenials       int
+		_expectedIndexed       int
+
+		session *Session
+	}
+
+	denialEvent := func(kind, toolUseId string) *Event {
+		payload := &PermissionPayload{Kind: kind, Tool: "Bash", ToolUseId: toolUseId}
+		return &Event{Kind: EventKindPermissionDenied, Permission: payload}
+	}
+
+	tests := make([]*testCase, 0)
+
+	// permission-rule-counted
+	counted := provideCompleteSession()
+	counted.AddEvent(denialEvent(DenialKindPermissionRule, "tu1"))
+	tests = append(tests, &testCase{
+		_id:                    "permission-rule-counted",
+		_expectedCancellations: 0,
+		_expectedDenials:       1,
+		_expectedIndexed:       1,
+
+		session: counted,
+	})
+
+	// cancelled-split
+	cancelled := provideCompleteSession()
+	cancelled.AddEvent(denialEvent(DenialKindCancelled, "tu1"))
+	tests = append(tests, &testCase{
+		_id:                    "cancelled-split",
+		_expectedCancellations: 1,
+		_expectedDenials:       0,
+		_expectedIndexed:       1,
+
+		session: cancelled,
+	})
+
+	// interrupted-split
+	interrupted := provideCompleteSession()
+	interrupted.AddEvent(denialEvent(DenialKindInterrupted, "tu1"))
+	tests = append(tests, &testCase{
+		_id:                    "interrupted-split",
+		_expectedCancellations: 1,
+		_expectedDenials:       0,
+		_expectedIndexed:       1,
+
+		session: interrupted,
+	})
+
+	// nil-payload-counted-as-denial
+	nilPayload := provideCompleteSession()
+	nilPayload.AddEvent(&Event{Kind: EventKindPermissionDenied})
+	tests = append(tests, &testCase{
+		_id:                    "nil-payload-counted-as-denial",
+		_expectedCancellations: 0,
+		_expectedDenials:       1,
+		_expectedIndexed:       0,
+
+		session: nilPayload,
+	})
+
+	// index-capped-at-5000
+	capped := provideCompleteSession()
+	for index := range maxDeniedToolUses + 1 {
+		capped.AddEvent(denialEvent(DenialKindPermissionRule, fmt.Sprintf("tu%d", index)))
+	}
+	tests = append(tests, &testCase{
+		_id:                    "index-capped-at-5000",
+		_expectedCancellations: 0,
+		_expectedDenials:       maxDeniedToolUses + 1,
+		_expectedIndexed:       maxDeniedToolUses,
+
+		session: capped,
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			assert.Equal(t, test._expectedDenials, test.session.Counters.PermissionDenials)
+			assert.Equal(t, test._expectedCancellations, test.session.Counters.PermissionCancellations)
+			assert.Len(t, test.session.DeniedToolUses, test._expectedIndexed)
+		})
+	}
+}
+
 func TestSession_TurnsWithToolCalls(t *testing.T) {
 	timestamp := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
 	meta := &Meta{SessionId: Id("sess-123")}

@@ -31,6 +31,8 @@ const idleThreshold = 5 * time.Minute
 
 const maxTouchedFiles = 2000
 
+const maxDeniedToolUses = 5000
+
 const maxSubagentStats = 1000
 
 const minSubagentTurnDepth = 200
@@ -56,6 +58,7 @@ type Session struct {
 
 	Agent           Agent                       `json:"agent"`
 	Counters        Counters                    `json:"-"`
+	DeniedToolUses  map[string]string           `json:"-"` // tool_use_id → denial kind, survives the event ring
 	DiffBase        string                      `json:"-"`
 	DiffCapturedAt  time.Time                   `json:"-"`
 	DiffOutput      string                      `json:"-"`
@@ -82,6 +85,28 @@ type Session struct {
 	UncommittedDiff string `json:"-"`
 }
 
+// addDenial counts by kind and indexes the tool use, so the telemetry join
+// stays exact after the event ring has dropped the event.
+func (s *Session) addDenial(payload *PermissionPayload) {
+	isCancellation := payload != nil && (payload.Kind == DenialKindCancelled || payload.Kind == DenialKindInterrupted)
+	if isCancellation {
+		s.Counters.PermissionCancellations++
+	} else {
+		s.Counters.PermissionDenials++
+	}
+
+	if payload == nil || payload.ToolUseId == "" {
+		return
+	}
+	if s.DeniedToolUses == nil {
+		s.DeniedToolUses = make(map[string]string)
+	}
+	if len(s.DeniedToolUses) >= maxDeniedToolUses {
+		return
+	}
+	s.DeniedToolUses[payload.ToolUseId] = payload.Kind
+}
+
 func (s *Session) isAlterationPhase() bool {
 	if s.Agent == AgentCodex {
 		return len(s.PlanRevisions) >= 1
@@ -96,7 +121,7 @@ func (s *Session) AddEvent(event *Event) {
 	case EventKindModelChanged:
 		s.Counters.ModelChanges++
 	case EventKindPermissionDenied:
-		s.Counters.PermissionDenials++
+		s.addDenial(event.Permission)
 	case EventKindPermissionGranted:
 		s.Counters.PermissionGrants++
 	case EventKindPermissionModeChanged:
