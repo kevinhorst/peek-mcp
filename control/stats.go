@@ -73,7 +73,7 @@ func (s *Server) stats() statsResponse {
 func newInstanceView(record tools.InstanceRecord, selfPID int) instanceView {
 	view := instanceView{InstanceRecord: record}
 	view.Self = record.PID == selfPID
-	view.Running = processAlive(record.PID)
+	view.Running = ProcessAlive(record.PID)
 	end := record.UpdatedAt
 	if view.Running {
 		end = time.Now()

@@ -11,7 +11,7 @@ import (
 // STILL_ACTIVE exit code (not exported by x/sys v0.13.0).
 const stillActive = 259
 
-func processAlive(pid int) bool {
+func ProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}

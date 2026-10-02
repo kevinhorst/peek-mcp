@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-func processAlive(pid int) bool {
+func ProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}

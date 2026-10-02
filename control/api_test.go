@@ -300,6 +300,25 @@ func TestStatsInstances_RetentionAndOrder(t *testing.T) {
 	assert.Equal(t, 999999002, stats.Instances[1].PID)
 }
 
+func TestStats_InstanceState(t *testing.T) {
+	store, broker := newTestStore()
+	stateDir := state.NewDir(t.TempDir())
+	invocations := tools.NewInvocationCounter(tools.InstanceInfo{PID: os.Getpid(), StartedAt: time.Now()}, stateDir)
+	invocations.SetState(tools.StateWarm)
+
+	server, err := New(&Options{Store: store, Broker: broker, Version: "test", StartedAt: time.Now(), StateDir: stateDir})
+	require.NoError(t, err)
+
+	// state-listed-per-instance
+	response := get(server, "/api/stats")
+	require.Equal(t, http.StatusOK, response.Code)
+	stats := decode[statsResponse](t, response)
+	require.Len(t, stats.Instances, 1)
+	assert.Equal(t, tools.StateWarm, stats.Instances[0].State)
+	assert.True(t, stats.Instances[0].Running)
+	assert.Contains(t, response.Body.String(), `"state":"warm"`)
+}
+
 func TestStats_WithoutStateDir(t *testing.T) {
 	server, _ := newTestServer(t, "")
 
