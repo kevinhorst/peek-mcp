@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -195,9 +196,19 @@ func TestDirReadWrite(t *testing.T) {
 		waitGroup.Wait()
 		close(errChan)
 
+		failed := 0
 		for err := range errChan {
-			assert.NoError(t, err)
+			if err == nil {
+				continue
+			}
+
+			// Windows refuses a rename onto a target another writer is replacing at that moment.
+			var linkErr *os.LinkError
+			require.ErrorAs(t, err, &linkErr)
+			require.Equal(t, "windows", runtime.GOOS, "err = %v", err)
+			failed++
 		}
+		assert.Less(t, failed, len(contents))
 		latest, ok := dir.ReadPlanLatest("claude", "s1")
 		require.True(t, ok)
 		assert.Contains(t, contents, latest)
