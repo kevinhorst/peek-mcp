@@ -211,8 +211,7 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 		snapshotPath := filepath.Join(root, "claude", "s1", "diff.snapshot")
 		old := time.Now().Add(-time.Hour)
 		require.NoError(t, os.Chtimes(snapshotPath, old, old))
-		before, err := os.Stat(snapshotPath)
-		require.NoError(t, err)
+		before := statPinned(t, snapshotPath)
 
 		w.refresh(ctx, "s1", dir)
 		after, err := os.Stat(snapshotPath)

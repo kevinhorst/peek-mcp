@@ -37,6 +37,16 @@ func initRepo(t *testing.T, defaultBranch string) string {
 	return dir
 }
 
+// statPinned stats a file and resolves its identity at once: on Windows a FileInfo
+// looks its identity up by path on first use, which would be after the file was replaced.
+func statPinned(t *testing.T, path string) os.FileInfo {
+	t.Helper()
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(info, info))
+	return info
+}
+
 func TestInferDiffBase(t *testing.T) {
 	type testCase struct {
 		_expected string
@@ -289,8 +299,7 @@ func TestPollRepo(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(hookPath, []byte(output), hookFilePerm))
 		require.NoError(t, os.Chtimes(hookPath, stale, stale))
-		before, err := os.Stat(hookPath)
-		require.NoError(t, err)
+		before := statPinned(t, hookPath)
 
 		w.pollRepo(ctx, dir)
 		after, err := os.Stat(hookPath)
@@ -311,8 +320,7 @@ func TestPollRepo(t *testing.T) {
 		hookPath := filepath.Join(dir, ".git", hookFileName)
 		require.NoError(t, os.WriteFile(hookPath, []byte("outdated"), hookFilePerm))
 		require.NoError(t, os.Chtimes(hookPath, stale, stale))
-		before, err := os.Stat(hookPath)
-		require.NoError(t, err)
+		before := statPinned(t, hookPath)
 
 		w.pollRepo(ctx, dir)
 		after, err := os.Stat(hookPath)
