@@ -67,6 +67,8 @@ Lists all sessions. Returns session ID, agent, title, title source (`custom` \| 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `agent` | string | no | Agent: `claude` or `codex`. Lists all sessions when omitted |
+| `project` | string | no | Exact project label filter. Lists all sessions when omitted |
+| `window_days` | number | no | Widen this instance's watch window to this many days before listing; at least 1. The wider window stays until the instance exits, and the call waits while the added days load. A stdio instance starts with 3 days |
 
 ## Supported agents
 

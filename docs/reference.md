@@ -23,7 +23,8 @@ peek-mcp start --port 4242 --depth 200
 | `--poll-window` | `1h` | Only poll repos whose session was active within this window |
 | `--state-dir` | `~/.peek/state` | State directory for diff pins/snapshots and plan revisions (empty disables persistence) |
 | `--state-retention-days` | `90` | Days to keep per-session state before GC removes it (0 disables) |
-| `--watch-window-days` | `14` | How far back peek ingests transcripts and watches directories for live activity (0 = everything). macOS holds one fd per watched directory and file, so cold projects outside the window are neither read nor watched; a cold project turning active is picked up within 5 minutes |
+| `--watch-window-days` | `14` (http), `3` (stdio) | How far back peek ingests transcripts and watches directories for live activity (0 = everything). A stdio instance serves one session and defaults to 3 days unless the flag or `PEEK_WATCH_WINDOW_DAYS` is set. macOS holds one fd per watched directory and file, so cold projects outside the window are neither read nor watched; a cold project turning active is picked up within 5 minutes, and a directory that aged out of the window is unwatched at the same rescan. Directories named `tool-results` are never watched |
+| `--cache-keepalive-sec` | `0` (http), `3600` (stdio) | Seconds an instance stays loaded after its last tool call. At zero it goes cold: it closes its file watchers, writes its session store to `instances/<id>.store` in the state dir and frees the memory; the next tool call loads the store back and reads only what changed. `0` keeps the instance loaded from start, as before. Only tool calls count — the dashboard of a cold instance lists no sessions |
 | `--snapshot-retention-days` | `14` | Days to keep diff snapshots before GC removes them; session dirs and plans follow `--state-retention-days` (0 disables) |
 | `--diff-cache-sessions` | `25` | How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching) |
 | `--control-port` | `42442` | Control server start port (dashboard + JSON API + SSE); the default walks up to `42499` if taken, an explicitly set port (flag or `PEEK_CONTROL_PORT`) binds exactly or fails; `0` disables |
@@ -47,6 +48,7 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_STATE_DIR` | `--state-dir` |
 | `PEEK_STATE_RETENTION_DAYS` | `--state-retention-days` |
 | `PEEK_WATCH_WINDOW_DAYS` | `--watch-window-days` |
+| `PEEK_CACHE_KEEPALIVE_SEC` | `--cache-keepalive-sec` |
 | `PEEK_SNAPSHOT_RETENTION_DAYS` | `--snapshot-retention-days` |
 | `PEEK_DIFF_CACHE_SESSIONS` | `--diff-cache-sessions` |
 | `PEEK_CONTROL_PORT` | `--control-port` |
@@ -64,7 +66,7 @@ A global config file at `~/.peek/config.json` is shared by every peek instance a
 peek-mcp start --control-port 42442
 ```
 
-Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns (tabbed per subagent when a session spawned any, assistant thinking shown dimmed with an on/off toggle), plan, diffs, per-session usage (tokens, cost, session/idle time, skills, subagents, touched files) and events update as agents work; Claude sessions also show the project's auto-memory. A `/stats` page shows server uptime, config snapshot, state-directory size, and per-tool invocation counts. If the default start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. An explicitly set `--control-port` (or `PEEK_CONTROL_PORT`) never walks — it binds exactly that port or exits with an error, so a multi-instance setup (e.g. one peek per macOS user profile) keeps deterministic per-instance ports. The same data is scriptable as JSON:
+Serves a live dashboard on `http://127.0.0.1:42442/` in both transports — session list, turns (tabbed per subagent when a session spawned any, assistant thinking shown dimmed with an on/off toggle), plan, diffs, per-session usage (tokens, cost, session/idle time, skills, subagents, touched files) and events update as agents work; Claude sessions also show the project's auto-memory. A `/stats` page shows server uptime, config snapshot, state-directory size, and per-tool invocation counts. `/api/stats` lists every instance with its `state` (`cold`, `warming`, `warm`). If the default start port is taken (e.g. another harness already bound it), the server walks up to `42499` and binds the first free port, logging the chosen address; it fails only when the whole range is exhausted. An explicitly set `--control-port` (or `PEEK_CONTROL_PORT`) never walks — it binds exactly that port or exits with an error, so a multi-instance setup (e.g. one peek per macOS user profile) keeps deterministic per-instance ports. The same data is scriptable as JSON:
 
 ```bash
 curl -s http://127.0.0.1:42442/api/sessions | jq
@@ -105,6 +107,8 @@ peek detects whether this export is configured: at startup, on the `/stats` page
 ## Hot reload (live diff)
 
 To keep Claude Code grounded in your current work as you edit — a "hot reload" — peek-mcp keeps an up-to-date `git diff HEAD` for each active repo and writes it to `<gitDir>/peek-diff` (inside `.git/`, so it is never committed and resolves correctly inside linked worktrees). A `UserPromptSubmit` hook then injects that diff into context on every prompt. The hook needs only `git` and `cat` — no peek binary on `PATH`, no server call — so it works under both the HTTP and `.mcpb` deployments.
+
+The diff file is refreshed only by a loaded instance: an http instance, or a stdio instance within `--cache-keepalive-sec` of its last tool call. Several loaded instances share the work — one computes per interval, the others read the file. A setup with stdio instances only keeps hot reload by setting `PEEK_CACHE_KEEPALIVE_SEC=0`.
 
 Merge `hooks/settings.snippet.json` into your project `.claude/settings.json`:
 
