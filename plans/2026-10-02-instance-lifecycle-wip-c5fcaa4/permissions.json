@@ -1,0 +1,36 @@
+{
+  "checked": [
+    "gofmt -l cmd tools session state watcher claude codex control",
+    "go vet ./...",
+    "go build ./...",
+    "go test ./...",
+    "go test -race ./tools/... ./session/... ./watcher/... ./state/... ./cmd/...",
+    "make build-local",
+    "curl -s http://127.0.0.1:42499/api/stats",
+    "curl -s -D - -X POST http://127.0.0.1:4299/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"verify\",\"version\":\"1\"}}}'",
+    "curl -s -X POST http://127.0.0.1:4299/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H 'Mcp-Session-Id: SESSION' -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"session_list\",\"arguments\":{}}}'",
+    "curl -s -X POST http://127.0.0.1:4299/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H 'Mcp-Session-Id: SESSION' -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"session_list\",\"arguments\":{\"window_days\":14}}}'",
+    "curl -s -X POST http://127.0.0.1:4299/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -H 'Mcp-Session-Id: SESSION' -d '{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"session_list\",\"arguments\":{\"window_days\":0}}}'",
+    "ls dist/verify-state/instances",
+    "curl -s http://127.0.0.1:42442/api/stats",
+    "git add cmd/start.go",
+    "git commit -m \"cmd: Added flag cache-keepalive-sec\""
+  ],
+  "rules": [
+    {
+      "rule": "Bash(./dist/peek-mcp start *)",
+      "target": "./dist/peek-mcp start --transport=http --port=4299 --control-port=42499 --state-dir=dist/verify-state --cache-keepalive-sec=20 --watch-window-days=3",
+      "needed_for": "V6"
+    },
+    {
+      "rule": "Bash(lsof *)",
+      "target": "lsof -p 12345",
+      "needed_for": "V8, V11, V12, V18"
+    },
+    {
+      "rule": "Bash(kill *)",
+      "target": "kill 12345",
+      "needed_for": "V16"
+    }
+  ]
+}
