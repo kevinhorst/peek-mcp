@@ -28,6 +28,7 @@ type InstanceInfo struct {
 type InstanceRecord struct {
 	InstanceInfo
 	Clients   []string             `json:"clients,omitempty"`
+	State     LifecycleState       `json:"state,omitempty"`
 	Tools     map[string]ToolStats `json:"tools,omitempty"`
 	UpdatedAt time.Time            `json:"updated_at"`
 }
@@ -37,12 +38,18 @@ type InvocationCounter struct {
 	info     InstanceInfo
 	clients  []string
 	counts   map[string]ToolStats
+	state    LifecycleState
 	stateDir *state.Dir
 }
 
 func NewInvocationCounter(info InstanceInfo, stateDir *state.Dir) *InvocationCounter {
 	info.Id = fmt.Sprintf("%d-%d", info.StartedAt.Unix(), info.PID)
-	return &InvocationCounter{info: info, counts: make(map[string]ToolStats), stateDir: stateDir}
+	return &InvocationCounter{
+		counts:   make(map[string]ToolStats),
+		info:     info,
+		state:    StateCold,
+		stateDir: stateDir,
+	}
 }
 
 func (c *InvocationCounter) Inc(tool string, bytes int64) {
@@ -74,6 +81,18 @@ func (c *InvocationCounter) Snapshot() map[string]ToolStats {
 	return maps.Clone(c.counts)
 }
 
+func (c *InvocationCounter) Id() string {
+	return c.info.Id
+}
+
+func (c *InvocationCounter) SetState(state LifecycleState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.state = state
+	c.persist()
+}
+
 func (c *InvocationCounter) Persist() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -87,6 +106,7 @@ func (c *InvocationCounter) persist() {
 	record := InstanceRecord{
 		InstanceInfo: c.info,
 		Clients:      slices.Clone(c.clients),
+		State:        c.state,
 		Tools:        maps.Clone(c.counts),
 		UpdatedAt:    time.Now(),
 	}

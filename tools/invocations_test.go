@@ -62,4 +62,24 @@ func TestInvocationCounterPersist(t *testing.T) {
 	assert.Equal(t, []string{"claude-code 2.0"}, record.Clients)
 	assert.Equal(t, ToolStats{Count: 1, Bytes: 7}, record.Tools["session_list"])
 	assert.False(t, record.UpdatedAt.IsZero())
+
+	// state-in-record
+	t.Run("state-in-record", func(t *testing.T) {
+		stateDir := state.NewDir(t.TempDir())
+		stateCounter := NewInvocationCounter(info, stateDir)
+
+		stateCounter.Persist()
+		records := stateDir.ReadInstances(1)
+		require.Len(t, records, 1)
+		var coldRecord InstanceRecord
+		require.NoError(t, json.Unmarshal([]byte(records[0]), &coldRecord))
+		assert.Equal(t, StateCold, coldRecord.State)
+
+		stateCounter.SetState(StateWarm)
+		records = stateDir.ReadInstances(1)
+		require.Len(t, records, 1)
+		var warmRecord InstanceRecord
+		require.NoError(t, json.Unmarshal([]byte(records[0]), &warmRecord))
+		assert.Equal(t, StateWarm, warmRecord.State)
+	})
 }

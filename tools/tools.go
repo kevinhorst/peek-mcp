@@ -18,11 +18,13 @@ import (
 var (
 	errInitialLoadPending     = errors.New("initial session load still in progress; retry shortly")
 	errSessionSelectorMissing = errors.New("id or title parameter is required")
+	errWindowDaysInvalid      = errors.New("window_days must be at least 1")
 )
 
 const (
 	DefaultReturnedTurns = 20
 	readyTimeout         = 2 * time.Minute
+	windowDaysParam      = "window_days"
 )
 
 func withMaxResultSize() *mcp.Meta {
@@ -39,8 +41,16 @@ func counted(counter *InvocationCounter, name string, handler server.ToolHandler
 	}
 }
 
-func awaitReady(store *session.Store, timeout time.Duration, handler server.ToolHandlerFunc) server.ToolHandlerFunc {
+func awaitReady(
+	handler server.ToolHandlerFunc,
+	lifecycle *Lifecycle,
+	store *session.Store,
+	timeout time.Duration,
+) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		lifecycle.Acquire()
+		defer lifecycle.Release()
+
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 
@@ -55,6 +65,24 @@ func awaitReady(store *session.Store, timeout time.Duration, handler server.Tool
 	}
 }
 
+// widened applies the window_days argument before the call waits for the store.
+func widened(handler server.ToolHandlerFunc, lifecycle *Lifecycle) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if _, isSet := request.GetArguments()[windowDaysParam]; !isSet {
+			return handler(ctx, request)
+		}
+
+		// window_days
+		days := request.GetInt(windowDaysParam, 0)
+		if days < 1 {
+			return mcp.NewToolResultError(errWindowDaysInvalid.Error()), nil
+		}
+
+		lifecycle.Widen(time.Duration(days) * 24 * time.Hour)
+		return handler(ctx, request)
+	}
+}
+
 func resultBytes(result *mcp.CallToolResult) int64 {
 	if result == nil {
 		return 0
@@ -66,7 +94,14 @@ func resultBytes(result *mcp.CallToolResult) int64 {
 	return int64(len(data))
 }
 
-func Register(server *server.MCPServer, store *session.Store, counter *InvocationCounter, telemetryStore *telemetry.Store, detector *telemetry.Detector) {
+func Register(
+	counter *InvocationCounter,
+	detector *telemetry.Detector,
+	lifecycle *Lifecycle,
+	server *server.MCPServer,
+	store *session.Store,
+	telemetryStore *telemetry.Store,
+) {
 	pageStore := &PageStore[*sessionGetResult]{
 		PagesByRequestId: make(map[string]<-chan *sessionGetResult),
 	}
@@ -124,7 +159,8 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 		),
 	)
 	sessionGet.Meta = withMaxResultSize()
-	server.AddTool(sessionGet, counted(counter, "session_get", awaitReady(store, readyTimeout, sessionGetHandler(store, pageStore))))
+	getHandler := awaitReady(sessionGetHandler(store, pageStore), lifecycle, store, readyTimeout)
+	server.AddTool(sessionGet, counted(counter, "session_get", getHandler))
 
 	sessionList :=
 		mcp.NewTool("session_list",
@@ -136,9 +172,13 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 			mcp.WithString("project",
 				mcp.Description("Exact project label filter (e.g. \"cowork\"). Lists all sessions when omitted."),
 			),
+			mcp.WithNumber(windowDaysParam,
+				mcp.Description("Widen this instance's watch window to this many days before listing (stdio instances start with 3). The wider window stays until the instance exits, and the call waits while the added days load. Omit to list the current window."),
+			),
 		)
 	sessionList.Meta = withMaxResultSize()
-	server.AddTool(sessionList, counted(counter, "session_list", awaitReady(store, readyTimeout, sessionListHandler(store))))
+	listHandler := awaitReady(sessionListHandler(store), lifecycle, store, readyTimeout)
+	server.AddTool(sessionList, counted(counter, "session_list", widened(listHandler, lifecycle)))
 
 	sessionEvents := mcp.NewTool("session_events",
 		mcp.WithDescription("Returns the typed event stream of a session (plan lifecycle, permission denials/grants, permission-mode changes, skill invocations, subagent spawns/results, background task completions, user answers) plus derived counters, telemetry-based permission decisions (auto-allowed vs. prompted vs. rejected, with the prompted commands), token usage totals, session time (wall/idle/active seconds), touched files, plan revision history, and diff availability (live | snapshot | none). Turns are not included — use session_get for those."),
@@ -169,7 +209,8 @@ func Register(server *server.MCPServer, store *session.Store, counter *Invocatio
 		),
 	)
 	sessionEvents.Meta = withMaxResultSize()
-	server.AddTool(sessionEvents, counted(counter, "session_events", awaitReady(store, readyTimeout, sessionEventsHandler(detector, store, eventsPageStore, telemetryStore))))
+	eventsHandler := sessionEventsHandler(detector, store, eventsPageStore, telemetryStore)
+	server.AddTool(sessionEvents, counted(counter, "session_events", awaitReady(eventsHandler, lifecycle, store, readyTimeout)))
 }
 
 func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]) server.ToolHandlerFunc {

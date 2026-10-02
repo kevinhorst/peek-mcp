@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -666,12 +667,16 @@ func TestResultBytes(t *testing.T) {
 
 func TestAwaitReady(t *testing.T) {
 	type testCase struct {
+		_expectedCools  int
 		_expectedErr    error
 		_expectedResult *mcp.CallToolResult
+		_expectedWarms  int
 		_id             string
 
-		ctx   context.Context
-		store *session.Store
+		ctx       context.Context
+		lifecycle *Lifecycle
+		recorder  *lifecycleRecorder
+		store     *session.Store
 	}
 
 	delegated := mcp.NewToolResultText("delegated")
@@ -683,48 +688,302 @@ func TestAwaitReady(t *testing.T) {
 	// ready-store-delegates-to-handler
 	readyStore := provideToolStore()
 	readyStore.MarkReady()
+	lifecycle, recorder := provideLifecycle(0, windowThreeDays)
+	lifecycle.Start()
 	tests = append(tests, &testCase{
 		_id:             "ready-store-delegates-to-handler",
 		_expectedResult: delegated,
+		_expectedWarms:  1,
 
-		ctx:   context.Background(),
-		store: readyStore,
+		ctx:       context.Background(),
+		lifecycle: lifecycle,
+		recorder:  recorder,
+		store:     readyStore,
 	})
 
 	// pending-store-times-out-with-tool-error
+	lifecycle, recorder = provideLifecycle(0, windowThreeDays)
+	lifecycle.Start()
 	tests = append(tests, &testCase{
 		_id:             "pending-store-times-out-with-tool-error",
 		_expectedResult: mcp.NewToolResultError(errInitialLoadPending.Error()),
+		_expectedWarms:  1,
 
-		ctx:   context.Background(),
-		store: provideToolStore(),
+		ctx:       context.Background(),
+		lifecycle: lifecycle,
+		recorder:  recorder,
+		store:     provideToolStore(),
 	})
 
 	// cancelled-context-returns-context-error
 	cancelledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
+	lifecycle, recorder = provideLifecycle(0, windowThreeDays)
+	lifecycle.Start()
 	tests = append(tests, &testCase{
-		_id:          "cancelled-context-returns-context-error",
-		_expectedErr: context.Canceled,
+		_id:            "cancelled-context-returns-context-error",
+		_expectedErr:   context.Canceled,
+		_expectedWarms: 1,
 
-		ctx:   cancelledCtx,
-		store: provideToolStore(),
+		ctx:       cancelledCtx,
+		lifecycle: lifecycle,
+		recorder:  recorder,
+		store:     provideToolStore(),
+	})
+
+	// call-warms-cold-instance
+	coldStore := provideToolStore()
+	coldRecorder := &lifecycleRecorder{}
+	warmAndMarkReady := func(window time.Duration) {
+		coldRecorder.warm(window)
+		coldStore.MarkReady()
+	}
+	coldLifecycle := NewLifecycle(
+		coldRecorder.cool,
+		lifecycleKeepalive,
+		coldRecorder.onState,
+		warmAndMarkReady,
+		windowThreeDays,
+	)
+	tests = append(tests, &testCase{
+		_id:             "call-warms-cold-instance",
+		_expectedCools:  1,
+		_expectedResult: delegated,
+		_expectedWarms:  1,
+
+		ctx:       context.Background(),
+		lifecycle: coldLifecycle,
+		recorder:  coldRecorder,
+		store:     coldStore,
+	})
+
+	// release-after-handler
+	releasedStore := provideToolStore()
+	releasedStore.MarkReady()
+	lifecycle, recorder = provideLifecycle(lifecycleKeepalive, windowThreeDays)
+	tests = append(tests, &testCase{
+		_id:             "release-after-handler",
+		_expectedCools:  1,
+		_expectedResult: delegated,
+		_expectedWarms:  1,
+
+		ctx:       context.Background(),
+		lifecycle: lifecycle,
+		recorder:  recorder,
+		store:     releasedStore,
 	})
 
 	// Run tests
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
-			result, err := awaitReady(test.store, 10*time.Millisecond, handler)(test.ctx, requestWithArgs(nil))
+			result, err := awaitReady(handler, test.lifecycle, test.store, 10*time.Millisecond)(test.ctx, requestWithArgs(nil))
 
 			assert.ErrorIs(t, err, test._expectedErr)
 			assert.Equal(t, test._expectedResult, result)
+			assert.Equal(t, test._expectedWarms, test.recorder.count(lifecycleCallWarm))
+			isCooled := func() bool { return test.recorder.count(lifecycleCallCool) == test._expectedCools }
+			assert.Eventually(t, isCooled, lifecycleWait, lifecycleTick)
+		})
+	}
+}
+
+func TestWidened(t *testing.T) {
+	type testCase struct {
+		_expectedCools   int
+		_expectedResult  *mcp.CallToolResult
+		_expectedWindows []time.Duration
+		_id              string
+
+		lifecycle *Lifecycle
+		recorder  *lifecycleRecorder
+		request   mcp.CallToolRequest
+	}
+
+	delegated := mcp.NewToolResultText("delegated")
+	handler := func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return delegated, nil
+	}
+	rejected := mcp.NewToolResultError(errWindowDaysInvalid.Error())
+	tests := make([]*testCase, 0)
+
+	// absent-no-widen
+	lifecycle, recorder := provideLifecycle(0, windowThreeDays)
+	lifecycle.Start()
+	tests = append(tests, &testCase{
+		_id:              "absent-no-widen",
+		_expectedResult:  delegated,
+		_expectedWindows: []time.Duration{windowThreeDays},
+
+		lifecycle: lifecycle,
+		recorder:  recorder,
+		request:   requestWithArgs(map[string]any{"agent": "claude"}),
+	})
+
+	// valid-widens
+	lifecycle, recorder = provideLifecycle(0, windowThreeDays)
+	lifecycle.Start()
+	tests = append(tests, &testCase{
+		_id:              "valid-widens",
+		_expectedCools:   1,
+		_expectedResult:  delegated,
+		_expectedWindows: []time.Duration{windowThreeDays, windowFourteenDays},
+
+		lifecycle: lifecycle,
+		recorder:  recorder,
+		request:   requestWithArgs(map[string]any{windowDaysParam: float64(14)}),
+	})
+
+	// zero-rejected
+	lifecycle, recorder = provideLifecycle(0, windowThreeDays)
+	lifecycle.Start()
+	tests = append(tests, &testCase{
+		_id:              "zero-rejected",
+		_expectedResult:  rejected,
+		_expectedWindows: []time.Duration{windowThreeDays},
+
+		lifecycle: lifecycle,
+		recorder:  recorder,
+		request:   requestWithArgs(map[string]any{windowDaysParam: float64(0)}),
+	})
+
+	// negative-rejected
+	lifecycle, recorder = provideLifecycle(0, windowThreeDays)
+	lifecycle.Start()
+	tests = append(tests, &testCase{
+		_id:              "negative-rejected",
+		_expectedResult:  rejected,
+		_expectedWindows: []time.Duration{windowThreeDays},
+
+		lifecycle: lifecycle,
+		recorder:  recorder,
+		request:   requestWithArgs(map[string]any{windowDaysParam: float64(-3)}),
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			result, err := widened(handler, test.lifecycle)(context.Background(), test.request)
+
+			assert.NoError(t, err)
+			assert.Equal(t, test._expectedResult, result)
+			assert.Equal(t, test._expectedWindows, test.recorder.recordedWindows())
+			assert.Equal(t, test._expectedCools, test.recorder.count(lifecycleCallCool))
+		})
+	}
+}
+
+func provideSnapshotStore() *session.Store {
+	s := provideToolCallStore()
+	now := time.Now()
+	meta := &session.Meta{SessionId: "s1", Model: "claude-sonnet-5"}
+
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Events:    []*session.Event{{Kind: session.EventKindSkillInvoked, Skill: &session.SkillPayload{Skill: "jq"}, Timestamp: now}},
+		Meta:      meta,
+		RequestId: "r-skill",
+		Role:      session.RoleAssistant,
+		Text:      "skill answer",
+		Timestamp: now,
+		Usage:     &session.Usage{InputTokens: 3, OutputTokens: 5},
+	})
+	s.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+		Meta:       meta,
+		RequestId:  "r-sub-usage",
+		Role:       session.RoleAssistant,
+		SubagentId: "ag1",
+		Text:       "sub usage",
+		Timestamp:  now,
+		Usage:      &session.Usage{InputTokens: 7, OutputTokens: 11},
+	})
+
+	s1, _ := s.GetById("s1")
+	s1.PlanRevisions = []*session.PlanRevision{
+		{Index: 0, Timestamp: now.Add(-time.Minute)},
+		{Index: 1, Timestamp: now},
+	}
+	return s
+}
+
+func restoreToolStore(t *testing.T, original *session.Store) *session.Store {
+	t.Helper()
+
+	var encoded bytes.Buffer
+	require.NoError(t, original.WriteSnapshot(nil, &encoded))
+	snapshot, err := session.ReadStoreSnapshot(&encoded)
+	require.NoError(t, err)
+
+	restored := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude, session.AgentCodex)
+	restored.Restore(snapshot)
+	restored.MarkReady()
+	return restored
+}
+
+func TestSnapshot_ToolOutputEqual(t *testing.T) {
+	type testCase struct {
+		_id      string
+		original server.ToolHandlerFunc
+		request  mcp.CallToolRequest
+		restored server.ToolHandlerFunc
+	}
+
+	originalStore := provideSnapshotStore()
+	restoredStore := restoreToolStore(t, originalStore)
+	tests := make([]*testCase, 0)
+
+	// session-get-equal-after-restore
+	tests = append(tests, &testCase{
+		_id:      "session-get-equal-after-restore",
+		original: sessionGetHandler(originalStore, providePageStore()),
+		request:  requestWithArgs(map[string]any{"id": "s1", "json": true, "thinking": true, "tools": true}),
+		restored: sessionGetHandler(restoredStore, providePageStore()),
+	})
+
+	// session-events-equal-after-restore
+	originalEventsPages := &PageStore[*sessionEventsResult]{PagesByRequestId: make(map[string]<-chan *sessionEventsResult)}
+	restoredEventsPages := &PageStore[*sessionEventsResult]{PagesByRequestId: make(map[string]<-chan *sessionEventsResult)}
+	tests = append(tests, &testCase{
+		_id:      "session-events-equal-after-restore",
+		original: sessionEventsHandler(nil, originalStore, originalEventsPages, nil),
+		request:  requestWithArgs(map[string]any{"id": "s1", "json": true, "breakdown": true, "revisions": true}),
+		restored: sessionEventsHandler(nil, restoredStore, restoredEventsPages, nil),
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			originalResult, err := test.original(context.Background(), test.request)
+			require.NoError(t, err)
+			restoredResult, err := test.restored(context.Background(), test.request)
+			require.NoError(t, err)
+
+			originalJson, err := json.Marshal(originalResult)
+			require.NoError(t, err)
+			restoredJson, err := json.Marshal(restoredResult)
+			require.NoError(t, err)
+			assert.False(t, originalResult.IsError)
+			assert.JSONEq(t, string(originalJson), string(restoredJson))
 		})
 	}
 }
 
 func TestRegister_ReadOnlyHint(t *testing.T) {
 	srv := server.NewMCPServer("peek-mcp", "test")
-	Register(srv, provideToolStore(), NewInvocationCounter(InstanceInfo{}, nil), telemetry.NewStore(), telemetry.NewDetector(0, ""))
+	lifecycle := NewLifecycle(
+		func() {},
+		0,
+		func(LifecycleState) {},
+		func(time.Duration) {},
+		0,
+	)
+	lifecycle.Start()
+	Register(
+		NewInvocationCounter(InstanceInfo{}, nil),
+		telemetry.NewDetector(0, ""),
+		lifecycle,
+		srv,
+		provideToolStore(),
+		telemetry.NewStore(),
+	)
 
 	registered := srv.ListTools()
 	require.NotEmpty(t, registered)
