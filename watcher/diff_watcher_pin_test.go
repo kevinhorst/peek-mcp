@@ -137,8 +137,9 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 		require.True(t, ok)
 		assert.Contains(t, snapshotBefore, "+extra")
 
-		// revert the uncommitted change → clean working tree → empty diff
+		// revert the uncommitted change → clean working tree → empty diff; a new turn makes the snapshot stale
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("v1\n"), 0o644))
+		seedSession(t, store, "s1", dir)
 		w.refresh(ctx, "s1", dir)
 
 		sess, _ := store.GetById("s1")
@@ -160,5 +161,90 @@ func TestRefresh_PinAndSnapshot(t *testing.T) {
 		content, _, ok := stateDir.ReadDiffSnapshot("claude", "s1")
 		require.True(t, ok)
 		assert.Contains(t, content, "+uncommitted")
+	})
+
+	// fresh-snapshot-adopted
+	t.Run("fresh-snapshot-adopted", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		stateDir := state.NewDir(t.TempDir())
+		require.NoError(t, stateDir.WriteDiffSnapshot("claude", "marker", "s1"))
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, stateDir)
+
+		w.refresh(ctx, "s1", dir)
+		sess, _ := store.GetById("s1")
+		assert.Equal(t, "marker", sess.DiffOutput)
+		assert.Equal(t, session.DiffSourceLive, sess.DiffSource)
+		assert.True(t, sess.HasDiffSnapshot)
+	})
+
+	// stale-snapshot-recomputed
+	t.Run("stale-snapshot-recomputed", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		root := t.TempDir()
+		stateDir := state.NewDir(root)
+		require.NoError(t, stateDir.WriteDiffSnapshot("claude", "marker", "s1"))
+		old := time.Now().Add(-time.Hour)
+		require.NoError(t, os.Chtimes(filepath.Join(root, "claude", "s1", "diff.snapshot"), old, old))
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, stateDir)
+
+		w.refresh(ctx, "s1", dir)
+		sess, _ := store.GetById("s1")
+		assert.Contains(t, sess.DiffOutput, "+uncommitted")
+		content, _, ok := stateDir.ReadDiffSnapshot("claude", "s1")
+		require.True(t, ok)
+		assert.Equal(t, sess.DiffOutput, content)
+	})
+
+	// unchanged-snapshot-touched
+	t.Run("unchanged-snapshot-touched", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		root := t.TempDir()
+		stateDir := state.NewDir(root)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, stateDir)
+		w.refresh(ctx, "s1", dir)
+		snapshotPath := filepath.Join(root, "claude", "s1", "diff.snapshot")
+		old := time.Now().Add(-time.Hour)
+		require.NoError(t, os.Chtimes(snapshotPath, old, old))
+		before, err := os.Stat(snapshotPath)
+		require.NoError(t, err)
+
+		w.refresh(ctx, "s1", dir)
+		after, err := os.Stat(snapshotPath)
+		require.NoError(t, err)
+		assert.True(t, after.ModTime().After(old))
+		assert.True(t, os.SameFile(before, after), "timestamp advanced in place, no rewrite")
+		sess, _ := store.GetById("s1")
+		content, _, ok := stateDir.ReadDiffSnapshot("claude", "s1")
+		require.True(t, ok)
+		assert.Equal(t, sess.DiffOutput, content)
+	})
+
+	// base-read-from-disk
+	t.Run("base-read-from-disk", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		stateDir := state.NewDir(t.TempDir())
+		head, err := gitOutput(ctx, dir, "rev-parse", "HEAD")
+		require.NoError(t, err)
+		written := state.DiffBase{Sha: head, Target: "develop"}
+		require.NoError(t, stateDir.WriteDiffBase("claude", written, "s1"))
+		w := NewDiffWatcher(store, events.NewBroker(), time.Second, 0, stateDir)
+
+		w.refresh(ctx, "s1", dir)
+		sess, _ := store.GetById("s1")
+		assert.Equal(t, head, sess.DiffBase)
+		assert.Equal(t, "develop", sess.DiffTarget)
+		assert.Contains(t, sess.DiffOutput, "+uncommitted")
+		assert.NotContains(t, sess.DiffOutput, "feature.txt", "committed work is behind the written base")
+		persisted, ok := stateDir.ReadDiffBase("claude", "s1")
+		require.True(t, ok)
+		assert.Equal(t, written, persisted)
 	})
 }

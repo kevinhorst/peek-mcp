@@ -86,10 +86,11 @@ func recordModTime(newest map[string]time.Time, path string, entry fs.DirEntry, 
 }
 
 const (
-	agentFilePrefix  = "agent-"
-	metaJsonSuffix   = ".meta.json"
-	subagentsDirName = "subagents"
-	journalFileName  = "journal.jsonl"
+	agentFilePrefix    = "agent-"
+	metaJsonSuffix     = ".meta.json"
+	subagentsDirName   = "subagents"
+	journalFileName    = "journal.jsonl"
+	toolResultsDirName = "tool-results"
 )
 
 type subagentMeta struct {
@@ -103,6 +104,21 @@ type watchedFile struct {
 	offset int64
 	parser Parser
 }
+
+func (f *watchedFile) state() (session.FileState, error) {
+	state := session.FileState{Offset: f.offset}
+	if f.parser == nil {
+		return state, nil
+	}
+
+	parserState, err := f.parser.State()
+	if err != nil {
+		return state, err
+	}
+	state.Parser = parserState
+	return state, nil
+}
+
 type Watcher struct {
 	agent     session.Agent
 	agentDir  string
@@ -132,8 +148,44 @@ func New(agent session.Agent, agentDir string, horizon time.Duration, newParser 
 	}
 }
 
+// FileStates returns every tracked file's read position and parser state.
+func (w *Watcher) FileStates() (map[string]session.FileState, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	states := make(map[string]session.FileState, len(w.files))
+	for path, watched := range w.files {
+		state, err := watched.state()
+		if err != nil {
+			return nil, errors.Wrapf(err, "Watcher.FileStates: File %s", path)
+		}
+		states[path] = state
+	}
+	return states, nil
+}
+
 func (w *Watcher) Loaded() <-chan struct{} {
 	return w.loaded
+}
+
+// RestoreFiles loads the states of the files under this watcher's directory; call it between New and Run.
+func (w *Watcher) RestoreFiles(states map[string]session.FileState) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	prefix := w.agentDir + string(filepath.Separator)
+	for path, state := range states {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+
+		watched, err := w.watchedFromState(state)
+		if err != nil {
+			return errors.Wrapf(err, "Watcher.RestoreFiles: File %s", path)
+		}
+		w.files[path] = watched
+	}
+	return nil
 }
 
 func (w *Watcher) Run(ctx context.Context) error {
@@ -241,6 +293,9 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		recordModTime(newest, path, entry, info)
 
 		if entry.IsDir() {
+			if entry.Name() == toolResultsDirName {
+				return filepath.SkipDir
+			}
 			dirs = append(dirs, path)
 			return nil
 		}
@@ -271,8 +326,15 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		}
 	}
 
+	added := make(map[string]struct{})
+	for _, dir := range watcher.WatchList() {
+		added[dir] = struct{}{}
+	}
+
 	for _, dir := range dirs {
-		if dir != root && !cutoff.IsZero() && newest[dir].Before(cutoff) {
+		isExpired := dir != w.agentDir && !cutoff.IsZero() && newest[dir].Before(cutoff)
+		if isExpired {
+			w.unwatchExpired(watcher, added, dir)
 			continue
 		}
 		if err := watcher.Add(dir); err != nil {
@@ -297,6 +359,16 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 		if isSubagentMetaPath(path) {
 			w.readSubagentMeta(path)
 		}
+	}
+}
+
+func (w *Watcher) unwatchExpired(watcher *fsnotify.Watcher, added map[string]struct{}, dir string) {
+	if _, isAdded := added[dir]; !isAdded {
+		return
+	}
+
+	if err := watcher.Remove(dir); err != nil {
+		slog.Warn("Watcher.unwatchExpired: Failed to remove watch", "path", dir, "err", err)
 	}
 }
 
@@ -544,6 +616,19 @@ func (w *Watcher) stampProject(turn *session.Turn) {
 		return
 	}
 	turn.Meta.Project = legacyProjectFromCwd(turn.Meta.CWD)
+}
+
+func (w *Watcher) watchedFromState(state session.FileState) (*watchedFile, error) {
+	watched := &watchedFile{offset: state.Offset}
+	if len(state.Parser) == 0 {
+		return watched, nil
+	}
+
+	watched.parser = w.newParser()
+	if err := watched.parser.Restore(state.Parser); err != nil {
+		return nil, err
+	}
+	return watched, nil
 }
 
 var userHome, _ = os.UserHomeDir()

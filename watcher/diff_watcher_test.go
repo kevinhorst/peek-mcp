@@ -231,8 +231,8 @@ func TestDiffWatcher_RefreshDirty(t *testing.T) {
 	w.refreshDirty(context.Background())
 	assert.Empty(t, w.dirty)
 	require.Eventually(t, func() bool {
-		sess, ok := store.GetById("sess-1")
-		return ok && sess.DiffOutput != ""
+		content, _, ok := store.LoadDiff("sess-1")
+		return ok && content != ""
 	}, 5*time.Second, 10*time.Millisecond)
 
 	// mark-while-refresh-in-flight-skipped-not-requeued
@@ -240,6 +240,118 @@ func TestDiffWatcher_RefreshDirty(t *testing.T) {
 	w.markDirty("sess-1", dir)
 	w.refreshDirty(context.Background())
 	assert.Empty(t, w.dirty)
+}
+
+func TestPollRepo(t *testing.T) {
+	ctx := context.Background()
+	stale := time.Now().Add(-2 * time.Minute)
+
+	// fresh-hook-file-read-not-computed
+	t.Run("fresh-hook-file-read-not-computed", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Minute, 0, nil)
+		hookPath := filepath.Join(dir, ".git", hookFileName)
+		require.NoError(t, os.WriteFile(hookPath, []byte("marker"), hookFilePerm))
+
+		w.pollRepo(ctx, dir)
+		sess, _ := store.GetById("s1")
+		assert.Equal(t, "marker", sess.UncommittedDiff)
+	})
+
+	// stale-hook-file-recomputed
+	t.Run("stale-hook-file-recomputed", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Minute, 0, nil)
+		hookPath := filepath.Join(dir, ".git", hookFileName)
+		require.NoError(t, os.WriteFile(hookPath, []byte("marker"), hookFilePerm))
+		require.NoError(t, os.Chtimes(hookPath, stale, stale))
+
+		w.pollRepo(ctx, dir)
+		sess, _ := store.GetById("s1")
+		assert.Contains(t, sess.UncommittedDiff, "+uncommitted")
+		content, err := os.ReadFile(hookPath)
+		require.NoError(t, err)
+		assert.Equal(t, sess.UncommittedDiff, string(content))
+	})
+
+	// unchanged-result-advances-timestamp
+	t.Run("unchanged-result-advances-timestamp", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Minute, 0, nil)
+		hookPath := filepath.Join(dir, ".git", hookFileName)
+		output, err := gitDiff(ctx, dir, "HEAD")
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(hookPath, []byte(output), hookFilePerm))
+		require.NoError(t, os.Chtimes(hookPath, stale, stale))
+		before, err := os.Stat(hookPath)
+		require.NoError(t, err)
+
+		w.pollRepo(ctx, dir)
+		after, err := os.Stat(hookPath)
+		require.NoError(t, err)
+		assert.True(t, after.ModTime().After(stale))
+		assert.True(t, os.SameFile(before, after), "timestamp advanced in place, no rewrite")
+		content, err := os.ReadFile(hookPath)
+		require.NoError(t, err)
+		assert.Equal(t, output, string(content))
+	})
+
+	// changed-result-rewrites
+	t.Run("changed-result-rewrites", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Minute, 0, nil)
+		hookPath := filepath.Join(dir, ".git", hookFileName)
+		require.NoError(t, os.WriteFile(hookPath, []byte("outdated"), hookFilePerm))
+		require.NoError(t, os.Chtimes(hookPath, stale, stale))
+		before, err := os.Stat(hookPath)
+		require.NoError(t, err)
+
+		w.pollRepo(ctx, dir)
+		after, err := os.Stat(hookPath)
+		require.NoError(t, err)
+		assert.False(t, os.SameFile(before, after), "changed content is renamed into place")
+		output, err := gitDiff(ctx, dir, "HEAD")
+		require.NoError(t, err)
+		content, err := os.ReadFile(hookPath)
+		require.NoError(t, err)
+		assert.Equal(t, output, string(content))
+	})
+
+	// no-temp-left
+	t.Run("no-temp-left", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Minute, 0, nil)
+
+		w.pollRepo(ctx, dir)
+		assert.FileExists(t, filepath.Join(dir, ".git", hookFileName))
+		temps, err := filepath.Glob(filepath.Join(dir, ".git", ".*.tmp"))
+		require.NoError(t, err)
+		assert.Empty(t, temps)
+	})
+
+	// not-a-repo-skipped
+	t.Run("not-a-repo-skipped", func(t *testing.T) {
+		dir := t.TempDir()
+		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		w := NewDiffWatcher(store, events.NewBroker(), time.Minute, 0, nil)
+
+		w.pollRepo(ctx, dir)
+		sess, _ := store.GetById("s1")
+		assert.Empty(t, sess.UncommittedDiff)
+		assert.Empty(t, w.gitDirByCwd)
+		assert.NoFileExists(t, filepath.Join(dir, ".git", hookFileName))
+	})
 }
 
 func TestDiffWatcher_IsWithinWindow(t *testing.T) {

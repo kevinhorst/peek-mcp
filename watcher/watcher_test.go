@@ -1,7 +1,9 @@
 package watcher
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -144,6 +146,139 @@ func TestWalkAndWatch_WatchPruning(t *testing.T) {
 	defer allFsWatcher.Close()
 	allWatcher.walkAndWatch(allFsWatcher, dir)
 	assert.Contains(t, allFsWatcher.WatchList(), coldDir)
+}
+
+func TestWalkAndWatch_ToolResults(t *testing.T) {
+	dir := t.TempDir()
+	sessionDir := filepath.Join(dir, "project", "sess-1")
+	toolResultsDir := filepath.Join(sessionDir, "tool-results")
+	require.NoError(t, os.MkdirAll(toolResultsDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(toolResultsDir, "toolu_1.txt"), []byte("output"), 0o644))
+	subagentsDir := filepath.Join(sessionDir, "subagents")
+	require.NoError(t, os.MkdirAll(subagentsDir, 0o755))
+
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	newParser := func() Parser { return codex.NewParser() }
+	w := New(session.AgentCodex, dir, 0, newParser, store)
+	fsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer fsWatcher.Close()
+
+	// tool-results-not-watched
+	w.walkAndWatch(fsWatcher, dir)
+	watched := fsWatcher.WatchList()
+	assert.Contains(t, watched, sessionDir)
+	assert.NotContains(t, watched, toolResultsDir)
+
+	// tool-results-as-root-not-watched
+	w.walkAndWatch(fsWatcher, toolResultsDir)
+	assert.NotContains(t, fsWatcher.WatchList(), toolResultsDir)
+
+	// subagents-sibling-still-watched
+	assert.Contains(t, fsWatcher.WatchList(), subagentsDir)
+}
+
+func TestWalkAndWatch_Expiry(t *testing.T) {
+	var logBuffer bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuffer, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	dir := t.TempDir()
+	stale := time.Now().Add(-48 * time.Hour)
+
+	hotDir := filepath.Join(dir, "hot")
+	require.NoError(t, os.Mkdir(hotDir, 0o755))
+	appendLine(t, filepath.Join(hotDir, "rollout-hot.jsonl"), `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-hot","cwd":"/project"}}`)
+
+	agingDir := filepath.Join(dir, "aging")
+	require.NoError(t, os.Mkdir(agingDir, 0o755))
+	agingFile := filepath.Join(agingDir, "rollout-aging.jsonl")
+	appendLine(t, agingFile, `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-aging","cwd":"/project"}}`)
+	appendLine(t, agingFile, `{"timestamp":"2026-08-30T20:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]}}`)
+
+	neverDir := filepath.Join(dir, "never")
+	require.NoError(t, os.Mkdir(neverDir, 0o755))
+	neverFile := filepath.Join(neverDir, "rollout-never.jsonl")
+	appendLine(t, neverFile, `{"timestamp":"2026-07-11T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-never","cwd":"/project"}}`)
+	require.NoError(t, os.Chtimes(neverFile, stale, stale))
+	require.NoError(t, os.Chtimes(neverDir, stale, stale))
+
+	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	newParser := func() Parser { return codex.NewParser() }
+	w := New(session.AgentCodex, dir, 24*time.Hour, newParser, store)
+	fsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer fsWatcher.Close()
+
+	w.walkAndWatch(fsWatcher, dir)
+	require.Contains(t, fsWatcher.WatchList(), agingDir)
+	agingSession, ok := store.GetById("sess-aging")
+	require.True(t, ok)
+	require.Len(t, agingSession.Turns(10), 1)
+
+	// aged-dir-unwatched-on-rescan
+	require.NoError(t, os.Chtimes(agingFile, stale, stale))
+	require.NoError(t, os.Chtimes(agingDir, stale, stale))
+	w.walkAndWatch(fsWatcher, dir)
+	watched := fsWatcher.WatchList()
+	assert.NotContains(t, watched, agingDir)
+	assert.NotContains(t, watched, neverDir)
+	assert.Contains(t, watched, hotDir)
+
+	// unwatched-dir-not-readded-as-root
+	w.walkAndWatch(fsWatcher, agingDir)
+	w.walkAndWatch(fsWatcher, neverDir)
+	assert.NotContains(t, fsWatcher.WatchList(), agingDir)
+	assert.NotContains(t, fsWatcher.WatchList(), neverDir)
+	assert.NotContains(t, logBuffer.String(), "Failed to remove watch")
+
+	// fresh-dir-as-root-watched
+	freshDir := filepath.Join(dir, "fresh")
+	require.NoError(t, os.Mkdir(freshDir, 0o755))
+	appendLine(t, filepath.Join(freshDir, "rollout-fresh.jsonl"), `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-fresh","cwd":"/project"}}`)
+	w.walkAndWatch(fsWatcher, freshDir)
+	assert.Contains(t, fsWatcher.WatchList(), freshDir)
+
+	// reactivated-dir-resumes-at-offset
+	appendLine(t, agingFile, `{"timestamp":"2026-08-30T21:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"second"}]}}`)
+	require.NoError(t, os.Chtimes(agingFile, time.Now(), time.Now()))
+	w.walkAndWatch(fsWatcher, dir)
+	assert.Contains(t, fsWatcher.WatchList(), agingDir)
+	agingSession, ok = store.GetById("sess-aging")
+	require.True(t, ok)
+	turns := agingSession.Turns(10)
+	assert.Len(t, turns, 2)
+	assert.Equal(t, "second", turns[len(turns)-1].Text)
+
+	// agent-dir-always-watched
+	coldAgentDir := t.TempDir()
+	coldSubDir := filepath.Join(coldAgentDir, "cold")
+	require.NoError(t, os.Mkdir(coldSubDir, 0o755))
+	coldFile := filepath.Join(coldSubDir, "rollout-cold.jsonl")
+	appendLine(t, coldFile, `{"timestamp":"2026-07-11T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-cold","cwd":"/project"}}`)
+	require.NoError(t, os.Chtimes(coldFile, stale, stale))
+	require.NoError(t, os.Chtimes(coldSubDir, stale, stale))
+	require.NoError(t, os.Chtimes(coldAgentDir, stale, stale))
+	coldStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	coldWatcher := New(session.AgentCodex, coldAgentDir, 24*time.Hour, newParser, coldStore)
+	coldFsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer coldFsWatcher.Close()
+	coldWatcher.walkAndWatch(coldFsWatcher, coldAgentDir)
+	coldWatcher.walkAndWatch(coldFsWatcher, coldAgentDir)
+	assert.Contains(t, coldFsWatcher.WatchList(), coldAgentDir)
+	assert.NotContains(t, coldFsWatcher.WatchList(), coldSubDir)
+
+	// horizon-zero-never-expires
+	allStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	allWatcher := New(session.AgentCodex, dir, 0, newParser, allStore)
+	allFsWatcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer allFsWatcher.Close()
+	allWatcher.walkAndWatch(allFsWatcher, dir)
+	allWatcher.walkAndWatch(allFsWatcher, dir)
+	assert.Contains(t, allFsWatcher.WatchList(), neverDir)
 }
 
 func TestWalkAndWatch_AddFailure(t *testing.T) {
@@ -338,4 +473,124 @@ func TestReadNewLines_PerFileParserState(t *testing.T) {
 	for _, turn := range sessionB.Turns(10) {
 		assert.Empty(t, turn.Text)
 	}
+}
+
+func findDeniedEvent(t *testing.T, store *session.Store, sessionId session.Id) *session.Event {
+	t.Helper()
+	sess, ok := store.GetById(sessionId)
+	require.True(t, ok)
+
+	for _, event := range sess.Events.All() {
+		if event.Kind == session.EventKindPermissionDenied {
+			return event
+		}
+	}
+	require.FailNow(t, "No permission denied event", "session %s", sessionId)
+	return nil
+}
+
+func TestWatcher_FileStates(t *testing.T) {
+	toolUseLine := `{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-bash","name":"Bash","input":{"command":"rm -rf /tmp/x"}}]}}`
+	denialLine := `{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"user-rejected","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-bash","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`
+
+	// states-cover-transcript-meta-journal
+	t.Run("states-cover-transcript-meta-journal", func(t *testing.T) {
+		dir := t.TempDir()
+		w := claudeWatcher(dir, session.NewStore(10, 25, events.NewBroker(), session.AgentClaude))
+
+		transcriptPath := filepath.Join(dir, "s.jsonl")
+		appendLine(t, transcriptPath, toolUseLine)
+		require.NoError(t, w.readNewLines(transcriptPath))
+		metaPath := writeSubagentMeta(t, dir, "s", "sub1", `{"agentType":"explore"}`)
+		w.readSubagentMeta(metaPath)
+		journalPath := writeWorkflowJournal(t, dir, "s", "wf_1",
+			`{"type":"result","key":"k1","agentId":"sub1","result":1}`+"\n")
+		require.NoError(t, w.readJournal(journalPath))
+
+		states, err := w.FileStates()
+		require.NoError(t, err)
+		assert.Len(t, states, 3)
+		for _, path := range []string{transcriptPath, metaPath, journalPath} {
+			info, err := os.Stat(path)
+			require.NoError(t, err)
+			assert.Equal(t, info.Size(), states[path].Offset, path)
+		}
+		assert.NotEmpty(t, states[transcriptPath].Parser)
+		assert.Empty(t, states[metaPath].Parser)
+		assert.Empty(t, states[journalPath].Parser)
+	})
+
+	// restore-resumes-at-offset
+	t.Run("restore-resumes-at-offset", func(t *testing.T) {
+		dir := t.TempDir()
+		transcriptPath := filepath.Join(dir, "s.jsonl")
+		appendLine(t, transcriptPath, `{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"promptId":"p1","message":{"role":"user","content":[{"type":"text","text":"before snapshot"}]}}`)
+		original := claudeWatcher(dir, session.NewStore(10, 25, events.NewBroker(), session.AgentClaude))
+		require.NoError(t, original.readNewLines(transcriptPath))
+		states, err := original.FileStates()
+		require.NoError(t, err)
+
+		restoredStore := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		restored := claudeWatcher(dir, restoredStore)
+		require.NoError(t, restored.RestoreFiles(states))
+		appendLine(t, transcriptPath, `{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:01:00.000Z","isSidechain":false,"promptId":"p2","message":{"role":"user","content":[{"type":"text","text":"after snapshot"}]}}`)
+		require.NoError(t, restored.readNewLines(transcriptPath))
+
+		sess, ok := restoredStore.GetById("s")
+		require.True(t, ok)
+		turns := sess.Turns(10)
+		require.Len(t, turns, 1)
+		assert.Contains(t, turns[0].Text, "after snapshot")
+	})
+
+	// restore-keeps-parser-state
+	t.Run("restore-keeps-parser-state", func(t *testing.T) {
+		dir := t.TempDir()
+		transcriptPath := filepath.Join(dir, "s.jsonl")
+		appendLine(t, transcriptPath, toolUseLine)
+		uninterruptedStore := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		uninterrupted := claudeWatcher(dir, uninterruptedStore)
+		require.NoError(t, uninterrupted.readNewLines(transcriptPath))
+		states, err := uninterrupted.FileStates()
+		require.NoError(t, err)
+
+		restoredStore := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		restored := claudeWatcher(dir, restoredStore)
+		require.NoError(t, restored.RestoreFiles(states))
+		appendLine(t, transcriptPath, denialLine)
+		require.NoError(t, uninterrupted.readNewLines(transcriptPath))
+		require.NoError(t, restored.readNewLines(transcriptPath))
+
+		expected := findDeniedEvent(t, uninterruptedStore, "s")
+		actual := findDeniedEvent(t, restoredStore, "s")
+		assert.Equal(t, expected, actual)
+		assert.Equal(t, "Bash", actual.Permission.Tool)
+		assert.Equal(t, "rm -rf /tmp/x", actual.Permission.Command)
+	})
+
+	// foreign-paths-ignored
+	t.Run("foreign-paths-ignored", func(t *testing.T) {
+		dir := t.TempDir()
+		w := claudeWatcher(dir, session.NewStore(10, 25, events.NewBroker(), session.AgentClaude))
+		states := map[string]session.FileState{
+			filepath.Join(t.TempDir(), "other.jsonl"):    {Offset: 10},
+			filepath.Join(dir+"-sibling", "other.jsonl"): {Offset: 20},
+		}
+
+		require.NoError(t, w.RestoreFiles(states))
+		restored, err := w.FileStates()
+		require.NoError(t, err)
+		assert.Empty(t, restored)
+	})
+
+	// corrupt-parser-state-errors
+	t.Run("corrupt-parser-state-errors", func(t *testing.T) {
+		dir := t.TempDir()
+		w := claudeWatcher(dir, session.NewStore(10, 25, events.NewBroker(), session.AgentClaude))
+		states := map[string]session.FileState{
+			filepath.Join(dir, "s.jsonl"): {Offset: 10, Parser: []byte("garbage")},
+		}
+
+		assert.Error(t, w.RestoreFiles(states))
+	})
 }
