@@ -158,7 +158,7 @@ func setupClaudeCode(p *prompter, controlServer bool) error {
 		"command": binPath,
 		"args":    mcpArgs(controlServer),
 		"env": map[string]any{
-			"MAX_MCP_OUTPUT_TOKENS": "125000",
+			"MAX_MCP_OUTPUT_TOKENS": strconv.Itoa(recommendedMaxOutputTokens),
 		},
 	}
 	cfg["mcpServers"] = servers
@@ -253,8 +253,12 @@ func setupCodex(p *prompter, controlServer bool) error {
 	for _, a := range mcpArgs(controlServer) {
 		quoted = append(quoted, strconv.Quote(a))
 	}
-	block := fmt.Sprintf("tool_output_token_limit = 125000\n[mcp_servers.peek-mcp]\ncommand = %q\nargs = [%s]\n",
-		binPath, strings.Join(quoted, ", "))
+	block := fmt.Sprintf(
+		"tool_output_token_limit = %d\n[mcp_servers.peek-mcp]\ncommand = %q\nargs = [%s]\n",
+		recommendedMaxOutputTokens,
+		binPath,
+		strings.Join(quoted, ", "),
+	)
 
 	text := string(content)
 	if strings.Contains(text, "[mcp_servers.peek-mcp]") {

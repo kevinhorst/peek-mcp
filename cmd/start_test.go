@@ -12,6 +12,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,6 +97,74 @@ func TestChangedConfigKeys(t *testing.T) {
 	assert.False(t, changed[config.KeyLogLevel])
 }
 
+func newWatchWindowCommand() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Flags().Int("watch-window-days", 14, "")
+	return cmd
+}
+
+func TestIntFlagForTransport(t *testing.T) {
+	type testCase struct {
+		_expectedValue int
+		_id            string
+
+		flags     *pflag.FlagSet
+		transport string
+	}
+
+	t.Setenv("PEEK_WATCH_WINDOW_DAYS", "5")
+	tests := make([]*testCase, 0)
+
+	// stdio-unset-uses-stdio-value
+	tests = append(tests, &testCase{
+		_id:            "stdio-unset-uses-stdio-value",
+		_expectedValue: stdioWatchWindowDays,
+
+		flags:     newWatchWindowCommand().Flags(),
+		transport: "stdio",
+	})
+
+	// stdio-flag-wins
+	flagCmd := newWatchWindowCommand()
+	require.NoError(t, flagCmd.Flags().Set("watch-window-days", "7"))
+	tests = append(tests, &testCase{
+		_id:            "stdio-flag-wins",
+		_expectedValue: 7,
+
+		flags:     flagCmd.Flags(),
+		transport: "stdio",
+	})
+
+	// stdio-env-wins
+	envCmd := newWatchWindowCommand()
+	applyEnvFallbacks(envCmd)
+	tests = append(tests, &testCase{
+		_id:            "stdio-env-wins",
+		_expectedValue: 5,
+
+		flags:     envCmd.Flags(),
+		transport: "stdio",
+	})
+
+	// http-unset-uses-flag-default
+	tests = append(tests, &testCase{
+		_id:            "http-unset-uses-flag-default",
+		_expectedValue: 14,
+
+		flags:     newWatchWindowCommand().Flags(),
+		transport: "http",
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			value := intFlagForTransport(test.flags, "watch-window-days", stdioWatchWindowDays, test.transport)
+
+			assert.Equal(t, test._expectedValue, value)
+		})
+	}
+}
+
 func serveHealthz(t *testing.T, store *session.Store) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -130,8 +199,8 @@ func TestHealthzHandler(t *testing.T) {
 
 func TestAwaitInitialLoad(t *testing.T) {
 	type testCase struct {
-		_expectedReady bool
-		_id            string
+		_expectedLoaded bool
+		_id             string
 
 		ctx   context.Context
 		loads []<-chan struct{}
@@ -144,29 +213,29 @@ func TestAwaitInitialLoad(t *testing.T) {
 	cancel()
 	tests := make([]*testCase, 0)
 
-	// all-loaders-closed-marks-ready
+	// loaded-returns-true
 	tests = append(tests, &testCase{
-		_id:            "all-loaders-closed-marks-ready",
-		_expectedReady: true,
+		_id:             "loaded-returns-true",
+		_expectedLoaded: true,
 
 		ctx:   context.Background(),
 		loads: []<-chan struct{}{closedLoad, closedLoad},
 		store: session.NewStore(10, 25, events.NewBroker()),
 	})
 
-	// no-loaders-marks-ready
+	// no-loaders-returns-true
 	tests = append(tests, &testCase{
-		_id:            "no-loaders-marks-ready",
-		_expectedReady: true,
+		_id:             "no-loaders-returns-true",
+		_expectedLoaded: true,
 
 		ctx:   context.Background(),
 		store: session.NewStore(10, 25, events.NewBroker()),
 	})
 
-	// cancelled-context-leaves-not-ready
+	// cancelled-returns-false
 	tests = append(tests, &testCase{
-		_id:            "cancelled-context-leaves-not-ready",
-		_expectedReady: false,
+		_id:             "cancelled-returns-false",
+		_expectedLoaded: false,
 
 		ctx:   cancelledCtx,
 		loads: []<-chan struct{}{closedLoad, make(chan struct{})},
@@ -176,9 +245,10 @@ func TestAwaitInitialLoad(t *testing.T) {
 	// Run tests
 	for _, test := range tests {
 		t.Run(test._id, func(t *testing.T) {
-			awaitInitialLoad(test.ctx, test.store, test.loads, time.Now())
+			isLoaded := awaitInitialLoad(test.ctx, test.store, test.loads, time.Now())
 
-			assert.Equal(t, test._expectedReady, test.store.IsReady())
+			assert.Equal(t, test._expectedLoaded, isLoaded)
+			assert.Equal(t, test._expectedLoaded, test.store.IsReady())
 		})
 	}
 }

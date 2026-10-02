@@ -18,8 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kevinhorst/peek-mcp/claude"
-	"github.com/kevinhorst/peek-mcp/codex"
 	"github.com/kevinhorst/peek-mcp/config"
 	"github.com/kevinhorst/peek-mcp/control"
 	"github.com/kevinhorst/peek-mcp/events"
@@ -27,10 +25,10 @@ import (
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
-	"github.com/kevinhorst/peek-mcp/watcher"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // TODO: abort if neither claudeHome nor codexHome are set
@@ -68,8 +66,10 @@ var startCmd = &cobra.Command{
 		controlPort, _ := flags.GetInt("control-port")
 		controlToken, _ := flags.GetString("control-token")
 		backLink, _ := flags.GetString("back-link")
-		watchWindowDays, _ := flags.GetInt("watch-window-days")
+		watchWindowDays := intFlagForTransport(flags, "watch-window-days", stdioWatchWindowDays, transport)
 		watchWindow := time.Duration(watchWindowDays) * 24 * time.Hour
+		keepaliveSec := intFlagForTransport(flags, "cache-keepalive-sec", stdioCacheKeepaliveSec, transport)
+		keepalive := time.Duration(keepaliveSec) * time.Second
 
 		level := slog.LevelInfo
 		switch logLevel {
@@ -111,85 +111,6 @@ var startCmd = &cobra.Command{
 			telemetryStore.StateDir = stateDir
 		}
 
-		var loads []<-chan struct{}
-
-		if claudeHome != "" {
-			watchedDir := filepath.Join(claudeHome, claude.ProjectsDir)
-			newParser := func() watcher.Parser { return claude.NewParser() }
-			claudeWatcher := watcher.New(session.AgentClaude, watchedDir, watchWindow, newParser, store)
-			loads = append(loads, claudeWatcher.Loaded())
-			go func() {
-				err := claudeWatcher.Run(ctx)
-				if err != nil && !errors.Is(err, context.Canceled) {
-					slog.Error("claude watcher error", "err", err)
-					os.Exit(1)
-				}
-			}()
-
-			go func() {
-				plansDir := filepath.Join(claudeHome, "plans")
-				err := watcher.NewPlanWatcher(plansDir, store).Run(ctx)
-				if err != nil && !errors.Is(err, context.Canceled) {
-					slog.Error("plan watcher error", "err", err)
-					os.Exit(1)
-				}
-			}()
-		}
-
-		if coworkHome != "" {
-			for _, name := range coworkStoreNames {
-				storeDir := filepath.Join(coworkHome, name)
-				if info, err := os.Stat(storeDir); err != nil || !info.IsDir() {
-					continue
-				}
-				newParser := func() watcher.Parser { return claude.NewParser() }
-				coworkWatcher := watcher.New(session.AgentClaude, storeDir, watchWindow, newParser, store)
-				coworkWatcher.TranscriptPathOk = isCoworkTranscriptPath
-				coworkWatcher.Project = "cowork"
-				loads = append(loads, coworkWatcher.Loaded())
-				go func() {
-					if err := coworkWatcher.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-						slog.Error("cowork watcher error", "err", err)
-						os.Exit(1)
-					}
-				}()
-			}
-		}
-
-		if codexHome != "" {
-			watchedDir := filepath.Join(codexHome, codex.SessionDir)
-			newParser := func() watcher.Parser { return codex.NewParser() }
-			codexWatcher := watcher.New(session.AgentCodex, watchedDir, watchWindow, newParser, store)
-			loads = append(loads, codexWatcher.Loaded())
-			go func() {
-				err := codexWatcher.Run(ctx)
-				if err != nil && !errors.Is(err, context.Canceled) {
-					slog.Error("codex watcher error", "err", err)
-					os.Exit(1)
-				}
-			}()
-
-			indexWatcher := watcher.NewCodexIndexWatcher(codexHome, store)
-			loads = append(loads, indexWatcher.Loaded())
-			go func() {
-				err := indexWatcher.Run(ctx)
-				if err != nil && !errors.Is(err, context.Canceled) {
-					slog.Error("codex index watcher error", "err", err)
-					os.Exit(1)
-				}
-			}()
-		}
-
-		go awaitInitialLoad(ctx, store, loads, startedAt)
-
-		go func() {
-			err := watcher.NewDiffWatcher(store, broker, pollInterval, pollWindow, stateDir).Run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				slog.Error("diff watcher error", "err", err)
-				os.Exit(1)
-			}
-		}()
-
 		info := tools.InstanceInfo{
 			PID:       os.Getpid(),
 			PPID:      os.Getppid(),
@@ -200,6 +121,32 @@ var startCmd = &cobra.Command{
 		invocations := tools.NewInvocationCounter(info, stateDir)
 		invocations.Persist()
 		defer invocations.Persist()
+
+		deps := &warmDeps{
+			broker:       broker,
+			claudeHome:   claudeHome,
+			codexHome:    codexHome,
+			coworkHome:   coworkHome,
+			invocations:  invocations,
+			pollInterval: pollInterval,
+			pollWindow:   pollWindow,
+			stateDir:     stateDir,
+			store:        store,
+		}
+		var warm *warmSet
+		warmUp := func(window time.Duration) { warm = startWarmSet(ctx, deps, window) }
+		coolDown := func() { warm.stop(deps) }
+		lifecycle := tools.NewLifecycle(
+			coolDown,
+			keepalive,
+			invocations.SetState,
+			warmUp,
+			watchWindow,
+		)
+		lifecycle.Start()
+		if stateDir != nil {
+			defer stateDir.RemoveInstanceStore(invocations.Id())
+		}
 
 		hooks := &server.Hooks{}
 		hooks.AddAfterInitialize(func(ctx context.Context, id any, message *mcp.InitializeRequest, result *mcp.InitializeResult) {
@@ -292,7 +239,14 @@ var startCmd = &cobra.Command{
 			}()
 		}
 
-		tools.Register(srv, store, invocations, telemetryStore, detector)
+		tools.Register(
+			invocations,
+			detector,
+			lifecycle,
+			srv,
+			store,
+			telemetryStore,
+		)
 
 		switch transport {
 		case "stdio":
@@ -343,7 +297,8 @@ func init() {
 	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("state-dir", filepath.Join(defaultHome(".peek"), "state"), "State directory for diff pins/snapshots and plan revisions (empty disables persistence)")
 	flags.Int("state-retention-days", 90, "Days to keep per-session state before GC removes it (0 disables)")
-	flags.Int("watch-window-days", 14, "How far back peek ingests transcripts and watches directories for live activity (0 = everything; macOS holds one fd per watched file)")
+	flags.Int("watch-window-days", 14, "How far back peek ingests transcripts and watches directories for live activity (0 = everything; stdio defaults to 3; macOS holds one fd per watched file)")
+	flags.Int("cache-keepalive-sec", 0, "Seconds an instance stays loaded after its last tool call before it closes its watchers and frees its session store (0 = always loaded; stdio defaults to 3600)")
 	flags.Int("snapshot-retention-days", 14, "Days to keep diff snapshots before GC removes them; session dirs and plans follow state-retention-days (0 disables)")
 	flags.Int("diff-cache-sessions", 25, "How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching)")
 	flags.Int("control-port", controlPortBase, "Control server start port; walks up to +57 if taken (dashboard + JSON API + SSE); 0 disables")
@@ -355,13 +310,10 @@ func init() {
 }
 
 func runStateGc(ctx context.Context, stateDir *state.Dir, retentionDays, snapshotRetentionDays int) {
-	if retentionDays <= 0 && snapshotRetentionDays <= 0 {
-		return
-	}
-
 	retention := time.Duration(retentionDays) * 24 * time.Hour
 	snapshotRetention := time.Duration(snapshotRetentionDays) * 24 * time.Hour
 	stateDir.Gc(retention, snapshotRetention)
+	stateDir.PruneInstanceStores(control.ProcessAlive)
 
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
@@ -372,21 +324,23 @@ func runStateGc(ctx context.Context, stateDir *state.Dir, retentionDays, snapsho
 			return
 		case <-ticker.C:
 			stateDir.Gc(retention, snapshotRetention)
+			stateDir.PruneInstanceStores(control.ProcessAlive)
 		}
 	}
 }
 
-func awaitInitialLoad(ctx context.Context, store *session.Store, loads []<-chan struct{}, startedAt time.Time) {
+func awaitInitialLoad(ctx context.Context, store *session.Store, loads []<-chan struct{}, startedAt time.Time) bool {
 	for _, loaded := range loads {
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-loaded:
 		}
 	}
 
 	store.MarkReady()
 	slog.Info("awaitInitialLoad: Initial session load complete", "sessions", len(store.List()), "took", time.Since(startedAt).Round(time.Millisecond))
+	return true
 }
 
 func requestLogger(next http.Handler) http.Handler {
@@ -424,6 +378,7 @@ var envFallbacks = map[string]string{
 	"state-dir":               "PEEK_STATE_DIR",
 	"state-retention-days":    "PEEK_STATE_RETENTION_DAYS",
 	"watch-window-days":       "PEEK_WATCH_WINDOW_DAYS",
+	"cache-keepalive-sec":     "PEEK_CACHE_KEEPALIVE_SEC",
 	"snapshot-retention-days": "PEEK_SNAPSHOT_RETENTION_DAYS",
 	"diff-cache-sessions":     "PEEK_DIFF_CACHE_SESSIONS",
 	"control-port":            "PEEK_CONTROL_PORT",
@@ -457,7 +412,11 @@ func isCoworkTranscriptPath(path string) bool {
 	return strings.Contains(filepath.ToSlash(path), "/.claude/projects/")
 }
 
-const recommendedMaxOutputTokens = 125_000
+const (
+	recommendedMaxOutputTokens = 50_000
+	stdioCacheKeepaliveSec     = 3600
+	stdioWatchWindowDays       = 3
+)
 
 func warnMaxOutputTokens() {
 	val, ok := os.LookupEnv("MAX_MCP_OUTPUT_TOKENS")
@@ -514,6 +473,17 @@ func healthzHandler(claudeHome, codexHome string, controlPort int, store *sessio
 			"ready":       store.IsReady(),
 		})
 	}
+}
+
+// intFlagForTransport reads an int flag whose default differs for stdio:
+// left unset by flag and environment, it yields stdioValue there.
+func intFlagForTransport(flags *pflag.FlagSet, name string, stdioValue int, transport string) int {
+	value, _ := flags.GetInt(name)
+	isStdioDefault := transport == "stdio" && !flags.Changed(name)
+	if isStdioDefault {
+		return stdioValue
+	}
+	return value
 }
 
 func defaultHome(name string) string {
