@@ -1,7 +1,9 @@
 package state
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -22,12 +24,15 @@ const (
 	telemetryFile    = "telemetry.json"
 	instancesDir     = "instances"
 
-	draftDiffSuffix = ".draft.diff"
-	diffSuffix      = ".diff"
-	initialFile     = "000.md"
+	draftDiffSuffix     = ".draft.diff"
+	diffSuffix          = ".diff"
+	initialFile         = "000.md"
+	instanceStoreSuffix = ".store"
 
-	dirPerm  = 0o700
-	filePerm = 0o600
+	dirPerm = 0o700
+
+	tempSuffix = ".tmp"
+	tempMaxAge = time.Hour
 
 	MaxSnapshotBytes = 5 * 1024 * 1024
 )
@@ -45,6 +50,10 @@ type Dir struct {
 
 func NewDir(root string) *Dir {
 	return &Dir{root: root}
+}
+
+func (d *Dir) instanceStorePath(id string) string {
+	return filepath.Join(d.root, instancesDir, sanitize(id)+instanceStoreSuffix)
 }
 
 func (d *Dir) pruneAgentDir(path string, cutoff time.Time) {
@@ -79,27 +88,69 @@ func (d *Dir) pruneSnapshots(path string, cutoff time.Time) {
 	}
 }
 
+func (d *Dir) pruneTemps(cutoff time.Time) {
+	filepath.WalkDir(d.root, func(path string, entry fs.DirEntry, err error) error {
+		isTemp := err == nil && !entry.IsDir() && strings.HasSuffix(entry.Name(), tempSuffix)
+		if !isTemp {
+			return nil
+		}
+
+		info, err := entry.Info()
+		isStale := err == nil && info.ModTime().Before(cutoff)
+		if isStale {
+			os.Remove(path)
+		}
+		return nil
+	})
+}
+
 func (d *Dir) sessionDir(agent, sessionId string) string {
 	return filepath.Join(d.root, sanitize(agent), sanitize(sessionId))
 }
 
 func (d *Dir) writeFile(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
-		return errors.Wrap(err, "Dir.writeFile: Failed to create state directory")
+	return d.writeStream(path, func(writer io.Writer) error {
+		_, err := io.WriteString(writer, content)
+		return err
+	})
+}
+
+// writeStream writes through a unique dot-named temp file beside the target and renames it over the target.
+func (d *Dir) writeStream(path string, write func(writer io.Writer) error) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		return errors.Wrap(err, "Dir.writeStream: Failed to create state directory")
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), filePerm); err != nil {
-		return errors.Wrap(err, "Dir.writeFile: Failed to write temp file")
+	file, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*"+tempSuffix)
+	if err != nil {
+		return errors.Wrap(err, "Dir.writeStream: Failed to create temp file")
+	}
+
+	tmp := file.Name()
+	buffered := bufio.NewWriter(file)
+	err = write(buffered)
+	if err == nil {
+		err = buffered.Flush()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(tmp)
+		return errors.Wrap(err, "Dir.writeStream: Failed to write temp file")
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
-		return errors.Wrap(err, "Dir.writeFile: Failed to rename temp file")
+		os.Remove(tmp)
+		return errors.Wrap(err, "Dir.writeStream: Failed to rename temp file")
 	}
 	return nil
 }
 
 func (d *Dir) Gc(retention, snapshotRetention time.Duration) {
+	d.pruneTemps(time.Now().Add(-tempMaxAge))
+
 	agentDirs, err := os.ReadDir(d.root)
 	if err != nil {
 		return
@@ -270,6 +321,41 @@ func (d *Dir) ReadInstances(limit int) []string {
 	return contents
 }
 
+func (d *Dir) OpenInstanceStore(id string) (*os.File, error) {
+	return os.Open(d.instanceStorePath(id))
+}
+
+// PruneInstanceStores removes the store files of processes that are gone.
+func (d *Dir) PruneInstanceStores(isAlive func(pid int) bool) {
+	dir := filepath.Join(d.root, instancesDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		pid, isStore := instanceStorePid(entry.Name())
+		isOrphan := isStore && !isAlive(pid)
+		if isOrphan {
+			os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
+}
+
+func (d *Dir) RemoveInstanceStore(id string) {
+	os.Remove(d.instanceStorePath(id))
+}
+
+func (d *Dir) WriteInstanceStore(id string, write func(writer io.Writer) error) error {
+	return d.writeStream(d.instanceStorePath(id), write)
+}
+
+func (d *Dir) TouchDiffSnapshot(agent, sessionId string) error {
+	now := time.Now()
+	path := filepath.Join(d.sessionDir(agent, sessionId), diffSnapshotFile)
+	return errors.Wrap(os.Chtimes(path, now, now), "Dir.TouchDiffSnapshot: Failed to advance timestamp")
+}
+
 func (d *Dir) WriteDiffBase(agent string, base DiffBase, sessionId string) error {
 	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), diffBaseFile), base.Sha+" "+base.Target)
 }
@@ -306,6 +392,21 @@ func Truncate(content string) string {
 		return content[:MaxSnapshotBytes] + "\n[peek: snapshot truncated at 5 MB]\n"
 	}
 	return content
+}
+
+func instanceStorePid(name string) (int, bool) {
+	id, isStore := strings.CutSuffix(name, instanceStoreSuffix)
+	if !isStore {
+		return 0, false
+	}
+
+	_, pidText, hasPid := strings.Cut(id, "-")
+	if !hasPid {
+		return 0, false
+	}
+
+	pid, err := strconv.Atoi(pidText)
+	return pid, err == nil
 }
 
 func newestModTime(root string) time.Time {

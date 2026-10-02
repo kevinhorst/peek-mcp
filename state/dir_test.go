@@ -1,9 +1,11 @@
 package state
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +45,28 @@ func TestDirReadWrite(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "diff content", content)
 		assert.False(t, capturedAt.IsZero())
+	})
+
+	// touch-advances-snapshot-mtime
+	t.Run("touch-advances-snapshot-mtime", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteDiffSnapshot("claude", "diff content", "s1"))
+		old := time.Now().Add(-time.Hour)
+		require.NoError(t, os.Chtimes(filepath.Join(root, "claude", "s1", diffSnapshotFile), old, old))
+
+		require.NoError(t, dir.TouchDiffSnapshot("claude", "s1"))
+		content, capturedAt, ok := dir.ReadDiffSnapshot("claude", "s1")
+		require.True(t, ok)
+		assert.Equal(t, "diff content", content)
+		assert.True(t, capturedAt.After(old))
+	})
+
+	// touch-missing-snapshot-errors
+	t.Run("touch-missing-snapshot-errors", func(t *testing.T) {
+		dir := NewDir(t.TempDir())
+
+		assert.Error(t, dir.TouchDiffSnapshot("claude", "s1"))
 	})
 
 	// plan-versions-roundtrip-draft-vs-alteration
@@ -122,6 +146,66 @@ func TestDirReadWrite(t *testing.T) {
 		escaped := filepath.Join(filepath.Dir(root), "escape")
 		_, err := os.Stat(escaped)
 		assert.True(t, os.IsNotExist(err))
+	})
+
+	// write-leaves-no-temp
+	t.Run("write-leaves-no-temp", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		initial := &PlanVersion{Content: "# initial", Index: 0}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", initial))
+		require.NoError(t, dir.WritePlanLatest("claude", "# initial", "s1"))
+
+		entries, err := os.ReadDir(filepath.Join(root, "claude", "s1", planDir))
+		require.NoError(t, err)
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		assert.Equal(t, []string{initialFile, planLatestFile}, names)
+	})
+
+	// stray-temp-not-a-plan-version
+	t.Run("stray-temp-not-a-plan-version", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		initial := &PlanVersion{Content: "# initial", Index: 0}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", initial))
+		strayPath := filepath.Join(root, "claude", "s1", planDir, ".000.md.123.tmp")
+		require.NoError(t, os.WriteFile(strayPath, []byte("# torn"), 0o600))
+
+		versions := dir.ReadPlanVersions("claude", "s1")
+		require.Len(t, versions, 1)
+		assert.Equal(t, "# initial", versions[0].Content)
+	})
+
+	// concurrent-writers-one-target
+	t.Run("concurrent-writers-one-target", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		contents := []string{"# one", "# two", "# three", "# four", "# five", "# six", "# seven", "# eight"}
+
+		errChan := make(chan error, len(contents))
+		var waitGroup sync.WaitGroup
+		for _, content := range contents {
+			waitGroup.Go(func() {
+				errChan <- dir.WritePlanLatest("claude", content, "s1")
+			})
+		}
+		waitGroup.Wait()
+		close(errChan)
+
+		for err := range errChan {
+			assert.NoError(t, err)
+		}
+		latest, ok := dir.ReadPlanLatest("claude", "s1")
+		require.True(t, ok)
+		assert.Contains(t, contents, latest)
+
+		entries, err := os.ReadDir(filepath.Join(root, "claude", "s1", planDir))
+		require.NoError(t, err)
+		require.Len(t, entries, 1)
+		assert.Equal(t, planLatestFile, entries[0].Name())
 	})
 }
 
@@ -217,6 +301,34 @@ func TestGc(t *testing.T) {
 		dir.Gc(0, 0)
 		assert.FileExists(t, snapshotPath)
 	})
+
+	// stale-temp-removed
+	t.Run("stale-temp-removed", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WritePlanLatest("claude", "# plan", "s1"))
+		tempPath := filepath.Join(root, "claude", "s1", planDir, ".latest.md.123.tmp")
+		require.NoError(t, os.WriteFile(tempPath, []byte("# torn"), 0o600))
+
+		old := time.Now().Add(-2 * time.Hour)
+		require.NoError(t, os.Chtimes(tempPath, old, old))
+
+		dir.Gc(0, 0)
+		assert.NoFileExists(t, tempPath)
+		assert.FileExists(t, filepath.Join(root, "claude", "s1", planDir, planLatestFile))
+	})
+
+	// fresh-temp-kept
+	t.Run("fresh-temp-kept", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		tempPath := filepath.Join(root, "claude", "s1", planDir, ".latest.md.123.tmp")
+		require.NoError(t, os.MkdirAll(filepath.Dir(tempPath), 0o700))
+		require.NoError(t, os.WriteFile(tempPath, []byte("# in flight"), 0o600))
+
+		dir.Gc(0, 0)
+		assert.FileExists(t, tempPath)
+	})
 }
 
 func TestStatDiffSnapshot(t *testing.T) {
@@ -290,5 +402,68 @@ func TestPruneInstances(t *testing.T) {
 	t.Run("missing-dir-noop", func(t *testing.T) {
 		dir := NewDir(t.TempDir())
 		dir.PruneInstances(48 * time.Hour)
+	})
+}
+
+func TestInstanceStore(t *testing.T) {
+	writeStore := func(writer io.Writer) error {
+		_, err := io.WriteString(writer, "snapshot")
+		return err
+	}
+
+	// write-open-remove
+	t.Run("write-open-remove", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstanceStore("100-1", writeStore))
+
+		file, err := dir.OpenInstanceStore("100-1")
+		require.NoError(t, err)
+		content, err := io.ReadAll(file)
+		require.NoError(t, file.Close())
+		require.NoError(t, err)
+		assert.Equal(t, "snapshot", string(content))
+
+		dir.RemoveInstanceStore("100-1")
+		_, err = dir.OpenInstanceStore("100-1")
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	// prune-removes-dead-process-store
+	t.Run("prune-removes-dead-process-store", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstanceStore("100-1", writeStore))
+		require.NoError(t, dir.WriteInstanceStore("200-2", writeStore))
+
+		dir.PruneInstanceStores(func(pid int) bool { return pid != 1 })
+
+		assert.NoFileExists(t, filepath.Join(root, "instances", "100-1.store"))
+		assert.FileExists(t, filepath.Join(root, "instances", "200-2.store"))
+	})
+
+	// prune-keeps-live-process-store
+	t.Run("prune-keeps-live-process-store", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstanceStore("100-1", writeStore))
+
+		dir.PruneInstanceStores(func(pid int) bool { return pid == 1 })
+
+		assert.FileExists(t, filepath.Join(root, "instances", "100-1.store"))
+	})
+
+	// prune-ignores-records
+	t.Run("prune-ignores-records", func(t *testing.T) {
+		root := t.TempDir()
+		dir := NewDir(root)
+		require.NoError(t, dir.WriteInstance("100-1", `{"pid":1}`))
+		require.NoError(t, dir.WriteInstanceStore("100-1", writeStore))
+		assert.Equal(t, []string{`{"pid":1}`}, dir.ReadInstances(10))
+
+		dir.PruneInstanceStores(func(pid int) bool { return false })
+
+		assert.NoFileExists(t, filepath.Join(root, "instances", "100-1.store"))
+		assert.Equal(t, []string{`{"pid":1}`}, dir.ReadInstances(10))
 	})
 }
