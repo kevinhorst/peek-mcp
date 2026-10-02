@@ -29,7 +29,7 @@
         "--control-port=${user_config.control_port}"
       ],
       "env": {
-        "MAX_MCP_OUTPUT_TOKENS": "125000"
+        "MAX_MCP_OUTPUT_TOKENS": "50000"
       }
     }
   },
