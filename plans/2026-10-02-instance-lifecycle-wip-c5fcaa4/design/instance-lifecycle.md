@@ -965,9 +965,8 @@ phase: 3
   - gob encodes a session's exported fields directly
   - the two buffers encode themselves, as all their fields are unexported
   - the four unexported session fields travel beside the session, with pointer links written as keys
-- **Known gob limit** — a struct field pointing at an all-zero struct comes back nil
-  - affects a turn's usage and an event's payload when every field is zero
-  - readers of event payloads are swept for nil checks ([Contracts](#contracts))
+- **Gob and zero structs** — a struct field pointing at an all-zero struct round-trips as a pointer to a zero struct (corrected at implementation, see Changelog)
+  - readers of event payloads are still swept for nil checks ([Contracts](#contracts))
 - **New file**
 
 ```go
@@ -2281,3 +2280,8 @@ N/A — no change since creation
 | — | initial | plan created |
 | 2026-10-02 | code gate | shared result rules: the session diff row names the timestamp advance for an unchanged result |
 | 2026-10-02 | code gate feedback: 125,000 to 50,000 tokens | D19 added; recommended cap 50,000 in the start command, `setup` and the bundle manifest; stage set to code |
+| 2026-10-02 | local: pflag import | `go.mod` lists `github.com/spf13/pflag` as a direct requirement, as `cmd` now imports it |
+| 2026-10-02 | local: gob limit | the Store snapshot entry's "Known gob limit" does not hold: a pointer to an all-zero struct round-trips as a pointer to a zero struct; `zero-payload-event-restored` asserts it |
+| 2026-10-02 | local: nil usage targets | `requestUsageSnapshots` skips an unknown target and restore skips an unresolved one, as gob refuses nil slice elements |
+| 2026-10-02 | local: diff tests | `empty-live-keeps-snapshot` seeds a turn before its second refresh, as a snapshot newer than the latest turn is now adopted; `TestDiffWatcher_RefreshDirty` reads the diff through `LoadDiff` to remove a data race in the test |
+| 2026-10-02 | local: initial-load test | the existing no-loaders case is kept as `no-loaders-returns-true` beside the two planned cases |
