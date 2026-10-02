@@ -1,6 +1,6 @@
 # Instance resource lifecycle — Implementation Plan
 
-mode: `familiar`, target: `frontier`, stage: `design`, refuted: `no (plan-mode run)`
+mode: `familiar`, target: `frontier`, stage: `code`, refuted: `no (plan-mode run)`
 
 ## TLDR
 
@@ -29,6 +29,8 @@ mode: `familiar`, target: `frontier`, stage: `design`, refuted: `no (plan-mode r
     - freshness rule per result file — [D12](#decisions)
     - plan revision index from disk — [D13](#decisions)
     - unique temp files and their cleanup — [D14](#decisions), [D15](#decisions)
+  - **Output token cap**
+    - recommended and written tool-output cap of 50,000 tokens — [D19](#decisions)
 - **Out**
   - **Other repository**
     - `cmd/sessions/main.go` and the launch line in `settings/claude_code/claude.json` — [D18](#decisions)
@@ -94,6 +96,7 @@ mode: `familiar`, target: `frontier`, stage: `design`, refuted: `no (plan-mode r
 | D16 | The request leaves open the reader side of the hook file outside peek-mcp. | No reader change. The only reader is the prompt hook, which prints the file. Rename keeps it whole, and timestamp-only updates are invisible to it. | **Hook reader** — it reads a file peek now touches more often. | **Unchanged** — content and path stay as they are. | **None** — the hook snippet and its docs stay. | **Reliable** — the reader sees whole files only. | — | [F21](#baseline-verified-agent-only) |
 | D17 | The lifecycle is called by the tool handlers and wired by the start command. | A `Lifecycle` type in the tools package beside the invocation counter. The start command hands it two functions, warm-up and cool-down, which hold the watcher wiring that runs inline today. | **Home** — where the lifecycle type lives. | **Tools package** — beside the other instance-scoped helper. | **Start command** — its watcher block moves into two functions. | **Debuggable** — state machine and wiring are separate and testable without watchers. | **New package** — one type does not need one.<br>**Session package** — it would import the watchers that import it. | [F8](#baseline-verified-agent-only) |
 | D18 | Two entries of the request change files of another repository. | Not part of this plan: the explicit window flag in `sessions pending` and the launch line. This plan keeps the flag and the environment variable they rely on. | **Other repo** — out of this worktree's reach. | **Left out** — changed where those files live. | **Until then** — `sessions pending` sees 3 days. | **Reliable** — one plan, one repository. | — | [A5](#assumptions) |
+| D19 | The tool-output cap peek recommends and writes is 125,000 tokens, which lets one result fill a large share of a session's context. | `[USER]` The value becomes 50,000 tokens wherever peek states it: the startup warning's recommended minimum, the Claude Code server env that `setup` writes, the Codex output limit that `setup` writes, and the bundle manifest's env. `setup` reads the start command's constant instead of its own literals. | **Cap too high** — one result may take 125,000 tokens. | **Fifty thousand** — one constant, used by the warning and by `setup`. | **Large lists** — a `session_list` above about 200 KB, as with `window_days` 14 on this machine (305 to 320 KB today), exceeds the cap and is refused by the client; existing installs keep 125,000 until `setup` runs again or their launch line changes. | **Controllable** — one constant decides what peek recommends and writes. | **Warning only** — `setup` would keep writing the old value. | [D10](#decisions)<br>[D18](#decisions) |
 
 ### Lifecycle
 
@@ -136,6 +139,8 @@ N/A — fdesign decides every question
 | `cmd/start.go` | modified | [Stdio window](#stdio-window-modified)<br>[Start command wiring](#start-command-wiring-modified) |
 | `cmd/start_test.go` | modified | [Stdio window](#stdio-window-modified)<br>[Start command wiring](#start-command-wiring-modified) |
 | `docs/reference.md` | modified | [Stdio window](#stdio-window-modified)<br>[Docs](#docs-modified) |
+| `cmd/setup.go` | modified | [Output token cap](#output-token-cap-modified) |
+| `mcpb/manifest.json` | modified | [Output token cap](#output-token-cap-modified) |
 | `state/dir.go` | modified | [State temp files](#state-temp-files-modified)<br>[Shared diff results](#shared-diff-results-modified)<br>[Instance store file](#instance-store-file-modified) |
 | `state/dir_test.go` | modified | [State temp files](#state-temp-files-modified)<br>[Shared diff results](#shared-diff-results-modified)<br>[Instance store file](#instance-store-file-modified) |
 | `watcher/diff_watcher.go` | modified | [Hook file temp](#hook-file-temp-modified)<br>[Shared diff results](#shared-diff-results-modified) |
@@ -259,10 +264,12 @@ phase: 1
 ```diff
 -const recommendedMaxOutputTokens = 125_000
 +const (
-+	recommendedMaxOutputTokens = 125_000
++	recommendedMaxOutputTokens = 50_000
 +	stdioWatchWindowDays       = 3
 +)
 ```
+
+- **Token value** — the new value is [D19](#decisions); its other uses are in [Output token cap](#output-token-cap-modified)
 
 ```diff
  	Run: func(cmd *cobra.Command, args []string) {
@@ -298,6 +305,47 @@ func intFlagForTransport(flags *pflag.FlagSet, name string, stdioValue int, tran
 
 ```markdown
 | `--watch-window-days` | `14` (http), `3` (stdio) | How far back peek ingests transcripts and watches directories for live activity (0 = everything). A stdio instance serves one session and defaults to 3 days unless the flag or `PEEK_WATCH_WINDOW_DAYS` is set. macOS holds one fd per watched directory and file, so cold projects outside the window are neither read nor watched; a cold project turning active is picked up within 5 minutes, and a directory that aged out of the window is unwatched at the same rescan. Directories named `tool-results` are never watched |
+```
+
+### Output token cap (modified)
+
+location: `cmd/setup.go`, `mcpb/manifest.json`
+phase: 1
+
+- **Decision** — [D19](#decisions)
+- **Constant** — set in [Stdio window](#stdio-window-modified); both setup paths read it
+
+```diff
+ 		servers["peek-mcp"] = map[string]any{
+ 			"type":    "stdio",
+ 			"command": binPath,
+ 			"args":    mcpArgs(controlServer),
+ 			"env": map[string]any{
+-				"MAX_MCP_OUTPUT_TOKENS": "125000",
++				"MAX_MCP_OUTPUT_TOKENS": strconv.Itoa(recommendedMaxOutputTokens),
+ 			},
+ 		}
+```
+
+```diff
+ func setupCodex(p *prompter, controlServer bool) error {
+ 	// ...
+-	block := fmt.Sprintf("tool_output_token_limit = 125000\n[mcp_servers.peek-mcp]\ncommand = %q\nargs = [%s]\n",
+-		binPath, strings.Join(quoted, ", "))
++	block := fmt.Sprintf(
++		"tool_output_token_limit = %d\n[mcp_servers.peek-mcp]\ncommand = %q\nargs = [%s]\n",
++		recommendedMaxOutputTokens,
++		binPath,
++		strings.Join(quoted, ", "),
++	)
+```
+
+- **Bundle manifest** — env block, final content
+
+```json
+{
+  "MAX_MCP_OUTPUT_TOKENS": "50000"
+}
 ```
 
 ### State temp files (modified)
@@ -1911,7 +1959,7 @@ phase: 4
 
 ```diff
  const (
- 	recommendedMaxOutputTokens = 125_000
+ 	recommendedMaxOutputTokens = 50_000
 +	stdioCacheKeepaliveSec     = 3600
  	stdioWatchWindowDays       = 3
  )
@@ -2089,6 +2137,7 @@ The diff file is refreshed only by a loaded instance: an http instance, or a std
 | C8 state dir names | `state/dir.go` readers | temp names start with a dot; store files end in `.store`; record readers filter on `.json` |
 | C9 process liveness | `control.ProcessAlive` | grep `processAlive` to zero |
 | C10 ready signal | `Store.Ready`<br>`Store.IsReady`<br>`Store.MarkReady` | callers: `tools/tools.go`, `control/api.go`, `cmd/start.go` — unchanged call shape |
+| C12 tool-output cap | `cmd/start.go`<br>`cmd/setup.go`<br>`mcpb/manifest.json` | grep `125000` and `125_000` outside vendor and plans to zero |
 | C11 event payload readers | `tools`, `control`, `session` | grep `\.Plan\.`, `\.Skill\.`, `\.Subagent\.`, `\.Task\.`, `\.UserAnswer\.`, `\.Model\.`, `\.PermissionMode\.`, `\.Permission\.` on events: each read is behind a nil check |
 
 ## Tests
@@ -2123,6 +2172,7 @@ The diff file is refreshed only by a loaded instance: an http instance, or a std
   - descriptor counts: kqueue's per-child descriptors are invisible to the watch list, so they are measured live ([V8](#verification), [V12](#verification))
   - the transport defaults inside the command body: covered through the helper's test only
   - two real processes racing on one git dir: the unit tests stand in with files written by hand
+  - the token cap: a constant read by a warning and two config writers, checked by the sweep of C12
 
 ## Verification
 
@@ -2230,3 +2280,4 @@ N/A — no change since creation
 | :--- | :--- | :--- |
 | — | initial | plan created |
 | 2026-10-02 | code gate | shared result rules: the session diff row names the timestamp advance for an unchanged result |
+| 2026-10-02 | code gate feedback: 125,000 to 50,000 tokens | D19 added; recommended cap 50,000 in the start command, `setup` and the bundle manifest; stage set to code |
