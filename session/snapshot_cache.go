@@ -23,6 +23,15 @@ func newSnapshotCache(capacity int) *snapshotCache {
 	return cache
 }
 
+func (c *snapshotCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.content = make(map[Id]string)
+	c.entries = make(map[Id]*list.Element)
+	c.order.Init()
+}
+
 func (c *snapshotCache) get(id Id) (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

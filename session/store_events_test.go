@@ -469,6 +469,151 @@ func TestHydrateFromState(t *testing.T) {
 	})
 }
 
+func TestPlanRevisions_SharedDisk(t *testing.T) {
+	now := time.Now()
+	planTurn := func(content string, offset time.Duration) *Turn {
+		return &Turn{PlanContent: content, PlanFilePath: "/plans/p.md", Timestamp: now.Add(offset), Meta: &Meta{SessionId: "s1"}}
+	}
+	newSharedStore := func(dir *state.Dir) *Store {
+		s := NewStore(10, 25, events.NewBroker())
+		s.StateDir = dir
+		return s
+	}
+	planFileCount := func(root string) int {
+		entries, err := os.ReadDir(filepath.Join(root, "claude", "s1", "plan"))
+		require.NoError(t, err)
+		return len(entries)
+	}
+	revisionPayloads := func(revisions []*PlanRevision) []string {
+		payloads := make([]string, 0, len(revisions))
+		for _, revision := range revisions {
+			payloads = append(payloads, revision.Content+revision.Diff)
+		}
+		return payloads
+	}
+	versionPayloads := func(versions []*state.PlanVersion) []string {
+		payloads := make([]string, 0, len(versions))
+		for _, version := range versions {
+			payloads = append(payloads, version.Content)
+		}
+		return payloads
+	}
+
+	// second-store-adopts-recorded-revision
+	t.Run("second-store-adopts-recorded-revision", func(t *testing.T) {
+		root := t.TempDir()
+		dir := state.NewDir(root)
+		storeA := newSharedStore(dir)
+		storeB := newSharedStore(dir)
+		storeA.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", 0))
+		storeB.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", 0))
+		storeA.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", time.Minute))
+		filesBefore := planFileCount(root)
+		recordedAt := now.Add(-time.Hour).Truncate(time.Second)
+		planPath := filepath.Join(root, "claude", "s1", "plan")
+		entries, err := os.ReadDir(planPath)
+		require.NoError(t, err)
+		for _, entry := range entries {
+			require.NoError(t, os.Chtimes(filepath.Join(planPath, entry.Name()), recordedAt, recordedAt))
+		}
+
+		storeB.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", time.Minute))
+
+		assert.Equal(t, filesBefore, planFileCount(root), "an adopted revision writes nothing")
+		sess, ok := storeB.GetById("s1")
+		require.True(t, ok)
+		versions := dir.ReadPlanVersions("claude", "s1")
+		require.Len(t, sess.PlanRevisions, len(versions))
+		assert.Equal(t, versionPayloads(versions), revisionPayloads(sess.PlanRevisions))
+		assert.Equal(t, 1, sess.PlanRevisions[1].Index)
+		assert.True(t, versions[1].ModTime.Equal(recordedAt), "the recorded revision is not rewritten")
+		assert.True(t, sess.PlanRevisions[1].Timestamp.Equal(recordedAt), "the revision is adopted from disk")
+		assert.Equal(t, "# Plan v2\n", sess.PlanContent)
+	})
+
+	// missed-edit-appends-next-index
+	t.Run("missed-edit-appends-next-index", func(t *testing.T) {
+		root := t.TempDir()
+		dir := state.NewDir(root)
+		storeA := newSharedStore(dir)
+		storeB := newSharedStore(dir)
+		storeA.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", 0))
+		storeB.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", 0))
+		storeA.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", time.Minute))
+		storeA.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v3\n", 2*time.Minute))
+		recordedByA := versionPayloads(dir.ReadPlanVersions("claude", "s1"))
+
+		storeB.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v4\n", 3*time.Minute))
+
+		sess, ok := storeB.GetById("s1")
+		require.True(t, ok)
+		require.Len(t, sess.PlanRevisions, 4)
+		appended := sess.PlanRevisions[3]
+		assert.Equal(t, 3, appended.Index)
+		assert.Equal(t, unifiedDiff("# Plan v4\n", "# Plan v3\n"), appended.Diff)
+
+		versions := dir.ReadPlanVersions("claude", "s1")
+		require.Len(t, versions, 4)
+		assert.Equal(t, recordedByA, versionPayloads(versions)[:3], "revisions of the other store are not overwritten")
+		assert.Equal(t, appended.Diff, versions[3].Content)
+		latest, ok := dir.ReadPlanLatest("claude", "s1")
+		require.True(t, ok)
+		assert.Equal(t, "# Plan v4\n", latest)
+	})
+
+	// adopted-revision-emits-event
+	t.Run("adopted-revision-emits-event", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		storeA := newSharedStore(dir)
+		storeB := newSharedStore(dir)
+		storeA.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", 0))
+		storeB.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", 0))
+		storeA.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", time.Minute))
+
+		storeB.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", time.Minute))
+
+		sess, ok := storeB.GetById("s1")
+		require.True(t, ok)
+		all := sess.Events.All()
+		require.Len(t, all, 1)
+		assert.Equal(t, EventKindPlanRevised, all[0].Kind)
+		assert.Equal(t, 1, all[0].Plan.Revision)
+	})
+
+	// codex-session-not-synced
+	t.Run("codex-session-not-synced", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		s := newSharedStore(dir)
+		s.AddTurnBySessionId("s1", AgentCodex, planTurn("# Plan v1\n", 0))
+		initial := &state.PlanVersion{Content: "# Plan v1\n", Index: 0}
+		require.NoError(t, dir.WritePlanVersion("codex", "s1", initial))
+		foreign := &state.PlanVersion{Content: "@@ foreign @@", Index: 1}
+		require.NoError(t, dir.WritePlanVersion("codex", "s1", foreign))
+		require.NoError(t, dir.WritePlanLatest("codex", "# Plan v2\n", "s1"))
+
+		s.AddTurnBySessionId("s1", AgentCodex, planTurn("# Plan v2\n", time.Minute))
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		require.Len(t, sess.PlanRevisions, 2)
+		assert.Equal(t, unifiedDiff("# Plan v2\n", "# Plan v1\n"), sess.PlanRevisions[1].Diff)
+	})
+
+	// no-state-dir-index-from-memory
+	t.Run("no-state-dir-index-from-memory", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", 0))
+		s.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", time.Minute))
+		s.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v3\n", 2*time.Minute))
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		require.Len(t, sess.PlanRevisions, 3)
+		assert.Equal(t, 2, sess.PlanRevisions[2].Index)
+		assert.Equal(t, unifiedDiff("# Plan v3\n", "# Plan v2\n"), sess.PlanRevisions[2].Diff)
+	})
+}
+
 func TestLoadDiff(t *testing.T) {
 	// live-diff-from-memory
 	t.Run("live-diff-from-memory", func(t *testing.T) {

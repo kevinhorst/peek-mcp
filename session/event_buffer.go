@@ -1,6 +1,11 @@
 package session
 
-import "errors"
+import (
+	"bytes"
+	"encoding/gob"
+
+	"github.com/pkg/errors"
+)
 
 // EventBuffer holds a session's events in arrival order within two budgets:
 // permission denials and every other kind. A kind keeps its first events up
@@ -17,6 +22,33 @@ func NewEventBuffer(capacity, denialBudget int) *EventBuffer {
 		capacity:     capacity,
 		denialBudget: denialBudget,
 	}
+}
+
+func (b *EventBuffer) GobDecode(data []byte) error {
+	snapshot := &eventBufferSnapshot{}
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(snapshot); err != nil {
+		return errors.Wrap(err, "EventBuffer.GobDecode: Failed to decode")
+	}
+
+	b.capacity = snapshot.Capacity
+	b.denialBudget = snapshot.DenialBudget
+	b.denials = snapshot.Denials
+	b.items = snapshot.Items
+	return nil
+}
+
+func (b *EventBuffer) GobEncode() ([]byte, error) {
+	var buffer bytes.Buffer
+	snapshot := &eventBufferSnapshot{
+		Capacity:     b.capacity,
+		DenialBudget: b.denialBudget,
+		Denials:      b.denials,
+		Items:        b.items,
+	}
+	if err := gob.NewEncoder(&buffer).Encode(snapshot); err != nil {
+		return nil, errors.Wrap(err, "EventBuffer.GobEncode: Failed to encode")
+	}
+	return buffer.Bytes(), nil
 }
 
 func (b *EventBuffer) Validate() error {
@@ -61,4 +93,11 @@ func (b *EventBuffer) Push(event *Event) {
 		return
 	}
 	b.items = append(b.items, event)
+}
+
+type eventBufferSnapshot struct {
+	Capacity     int
+	DenialBudget int
+	Denials      int
+	Items        []*Event
 }

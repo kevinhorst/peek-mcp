@@ -1,7 +1,9 @@
 package session
 
 import (
+	"encoding/gob"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"os"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/state"
+	"github.com/pkg/errors"
 	"github.com/pmezard/go-difflib/difflib"
 )
 
@@ -198,10 +201,34 @@ func (s *Store) setPlanContent(content string, session *Session, timestamp time.
 		return
 	}
 
-	previous := session.PlanContent
-	session.PlanContent = content
-	s.recordPlanRevision(content, previous, session, timestamp)
+	if !s.syncPlanFromDisk(content, session) {
+		previous := session.PlanContent
+		session.PlanContent = content
+		s.recordPlanRevision(content, previous, session, timestamp)
+	}
 	s.publish(events.TypePlanUpdated, session.Meta.SessionId, session.Agent)
+}
+
+// syncPlanFromDisk adopts plan revisions another instance recorded and reports
+// whether the disk already holds the given content.
+func (s *Store) syncPlanFromDisk(content string, session *Session) bool {
+	isPersisted := s.StateDir != nil && session.Agent == AgentClaude
+	if !isPersisted {
+		return false
+	}
+
+	agent := string(session.Agent)
+	id := string(session.Meta.SessionId)
+	latest, ok := s.StateDir.ReadPlanLatest(agent, id)
+	if !ok {
+		return false
+	}
+
+	if latest != session.PlanContent {
+		s.adoptPlanVersions(agent, id, session)
+		session.PlanContent = latest
+	}
+	return latest == content
 }
 
 func (s *Store) recordPlanRevision(current, previous string, session *Session, timestamp time.Time) {
@@ -218,7 +245,7 @@ func (s *Store) recordPlanRevision(current, previous string, session *Session, t
 
 	revision := &PlanRevision{
 		Diff:         unifiedDiff(current, previous),
-		Index:        len(session.PlanRevisions),
+		Index:        nextPlanIndex(session.PlanRevisions),
 		IsAlteration: session.isAlterationPhase(),
 		Timestamp:    timestamp,
 	}
@@ -496,21 +523,67 @@ func (s *Store) WithSession(id Id, fn func(*Session)) bool {
 	return true
 }
 
-func (s *Store) MarkReady() {
-	close(s.ready)
-}
-
-func (s *Store) Ready() <-chan struct{} {
-	return s.ready
-}
-
 func (s *Store) IsReady() bool {
 	select {
-	case <-s.ready:
+	case <-s.Ready():
 		return true
 	default:
 		return false
 	}
+}
+
+func (s *Store) MarkReady() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	close(s.ready)
+}
+
+func (s *Store) Ready() <-chan struct{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.ready
+}
+
+// Reset drops every session and re-arms the ready signal for the next warm period.
+func (s *Store) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.plainTitleById = make(map[Id]string)
+	s.ready = make(chan struct{})
+	s.sessions = make(map[Id]*Session)
+	s.snapshots.clear()
+}
+
+func (s *Store) Restore(snapshot *StoreSnapshot) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, item := range snapshot.Sessions {
+		session := item.restore()
+		id := session.Meta.SessionId
+		s.sessions[id] = session
+		s.publish(events.TypeSessionCreated, id, session.Agent)
+	}
+	for id, title := range snapshot.PlainTitleById {
+		s.plainTitleById[id] = title
+	}
+}
+
+// WriteSnapshot encodes every session together with the watchers' file states. No watcher may be ingesting.
+func (s *Store) WriteSnapshot(files map[string]FileState, writer io.Writer) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	snapshot := &StoreSnapshot{Files: files, PlainTitleById: s.plainTitleById}
+	for _, session := range s.sessions {
+		snapshot.Sessions = append(snapshot.Sessions, newSessionSnapshot(session))
+	}
+
+	err := gob.NewEncoder(writer).Encode(snapshot)
+	return errors.Wrap(err, "Store.WriteSnapshot: Failed to encode")
 }
 
 func (s *Store) getOrCreate(id Id, agent Agent) *Session {
@@ -555,6 +628,43 @@ func (s *Store) hydrateFromState(session *Session) {
 	s.hydratePlanState(agent, id, session)
 }
 
+func (s *Store) adoptPlanVersions(agent, id string, session *Session) {
+	next := nextPlanIndex(session.PlanRevisions)
+	for _, version := range s.StateDir.ReadPlanVersions(agent, id) {
+		if version.Index < next {
+			continue
+		}
+
+		revision := s.appendPlanVersion(session, version)
+		if revision.Index == 0 {
+			continue
+		}
+
+		planPayload := &PlanPayload{Revision: revision.Index}
+		event := &Event{Kind: EventKindPlanRevised, Plan: planPayload, Timestamp: revision.Timestamp}
+		s.appendEvent(session, event)
+	}
+}
+
+func (s *Store) appendPlanVersion(session *Session, version *state.PlanVersion) *PlanRevision {
+	revision := &PlanRevision{
+		Index:        version.Index,
+		IsAlteration: version.IsAlteration,
+		Timestamp:    version.ModTime,
+	}
+	if version.Index == 0 {
+		revision.Content = version.Content
+	} else {
+		revision.Diff = version.Content
+	}
+
+	session.PlanRevisions = append(session.PlanRevisions, revision)
+	if revision.IsAlteration {
+		session.Counters.PlanAlterations++
+	}
+	return revision
+}
+
 func (s *Store) hydratePlanState(agent, id string, session *Session) {
 	versions := s.StateDir.ReadPlanVersions(agent, id)
 	if len(versions) == 0 {
@@ -562,21 +672,7 @@ func (s *Store) hydratePlanState(agent, id string, session *Session) {
 	}
 
 	for _, version := range versions {
-		revision := &PlanRevision{
-			Index:        version.Index,
-			IsAlteration: version.IsAlteration,
-			Timestamp:    version.ModTime,
-		}
-		if version.Index == 0 {
-			revision.Content = version.Content
-		} else {
-			revision.Diff = version.Content
-		}
-
-		session.PlanRevisions = append(session.PlanRevisions, revision)
-		if revision.IsAlteration {
-			session.Counters.PlanAlterations++
-		}
+		s.appendPlanVersion(session, version)
 	}
 
 	if latest, ok := s.StateDir.ReadPlanLatest(agent, id); ok {
@@ -667,6 +763,13 @@ func resolveSubagentActor(event *Event, session *Session) {
 			seen.Actor = event.Subagent.AgentId
 		}
 	}
+}
+
+func nextPlanIndex(revisions []*PlanRevision) int {
+	if len(revisions) == 0 {
+		return 0
+	}
+	return revisions[len(revisions)-1].Index + 1
 }
 
 func unifiedDiff(current, previous string) string {

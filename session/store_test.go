@@ -173,6 +173,62 @@ func TestStore_Ready(t *testing.T) {
 	}
 }
 
+func TestStore_Reset(t *testing.T) {
+	// sessions-dropped
+	t.Run("sessions-dropped", func(t *testing.T) {
+		s := provideCompleteStore()
+		s.Reset()
+
+		assert.Empty(t, s.List())
+		_, ok := s.GetById("s1")
+		assert.False(t, ok)
+		_, err := s.GetByTitle("Login simplification", "")
+		assert.Error(t, err)
+		assert.Empty(t, s.plainTitleById)
+	})
+
+	// ready-rearmed
+	t.Run("ready-rearmed", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.MarkReady()
+		previous := s.Ready()
+		s.Reset()
+
+		assert.False(t, s.IsReady())
+		select {
+		case <-previous:
+		default:
+			assert.Fail(t, "Previous ready channel reopened by Reset")
+		}
+	})
+
+	// diff-cache-cleared
+	t.Run("diff-cache-cleared", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.snapshots.put("s1", "diff")
+		s.Reset()
+
+		_, isCached := s.snapshots.get("s1")
+		assert.False(t, isCached)
+		assert.Equal(t, 0, s.snapshots.order.Len())
+	})
+
+	// mark-ready-after-reset
+	t.Run("mark-ready-after-reset", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.MarkReady()
+		s.Reset()
+		s.MarkReady()
+
+		assert.True(t, s.IsReady())
+		select {
+		case <-s.Ready():
+		default:
+			assert.Fail(t, "Ready channel not closed after MarkReady")
+		}
+	})
+}
+
 func TestList_SortedByLastActive(t *testing.T) {
 	s := provideCompleteStore()
 
