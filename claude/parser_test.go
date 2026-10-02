@@ -326,3 +326,61 @@ func TestClaude_InvalidJSON(t *testing.T) {
 		assert.Nil(t, p.ParseLine([]byte(`{"type": "user"}`)))
 	})
 }
+
+func TestParser_StateRoundTrip(t *testing.T) {
+	type testCase struct {
+		_id string
+
+		lines    [][]byte
+		original *Parser
+		restored *Parser
+	}
+
+	toolUseLine := []byte(`{"type":"assistant","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-bash","name":"Bash","input":{"command":"rm -rf /tmp/x"}}]}}`)
+	denialLine := []byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:01.000Z","isSidechain":false,"toolDenialKind":"user-rejected","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-bash","is_error":true,"content":"The user doesn't want to proceed with this tool use."}]}}`)
+
+	tests := make([]*testCase, 0)
+
+	// pending-tool-survives
+	original := NewParser()
+	original.ParseLine(toolUseLine)
+	tests = append(tests, &testCase{
+		_id:      "pending-tool-survives",
+		lines:    [][]byte{denialLine},
+		original: original,
+		restored: NewParser(),
+	})
+
+	// permission-mode-survives
+	original = NewParser()
+	original.ParseLine([]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"permissionMode":"acceptEdits","promptId":"p1","message":{"role":"user","content":[{"type":"text","text":"go"}]}}`))
+	tests = append(tests, &testCase{
+		_id:      "permission-mode-survives",
+		lines:    [][]byte{[]byte(`{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:01:00.000Z","isSidechain":false,"permissionMode":"acceptEdits","promptId":"p2","message":{"role":"user","content":[{"type":"text","text":"next"}]}}`)},
+		original: original,
+		restored: NewParser(),
+	})
+
+	// empty-state
+	tests = append(tests, &testCase{
+		_id:      "empty-state",
+		lines:    [][]byte{toolUseLine, denialLine},
+		original: NewParser(),
+		restored: NewParser(),
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			state, err := test.original.State()
+			require.NoError(t, err)
+			require.NoError(t, test.restored.Restore(state))
+
+			for _, line := range test.lines {
+				expected := test.original.ParseLine(line)
+				require.NotNil(t, expected)
+				assert.Equal(t, expected, test.restored.ParseLine(line))
+			}
+		})
+	}
+}

@@ -1,6 +1,8 @@
 package claude
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -9,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/pkg/errors"
 )
 
 const ProjectsDir = "projects"
@@ -101,6 +104,28 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 	default:
 		return nil
 	}
+}
+
+func (p *Parser) Restore(data []byte) error {
+	state := &parserState{}
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(state); err != nil {
+		return errors.Wrap(err, "Parser.Restore: Failed to decode")
+	}
+
+	p.permissionMode = state.PermissionMode
+	if state.PendingTools != nil {
+		p.pendingTools = state.PendingTools
+	}
+	return nil
+}
+
+func (p *Parser) State() ([]byte, error) {
+	var buffer bytes.Buffer
+	state := &parserState{PendingTools: p.pendingTools, PermissionMode: p.permissionMode}
+	if err := gob.NewEncoder(&buffer).Encode(state); err != nil {
+		return nil, errors.Wrap(err, "Parser.State: Failed to encode")
+	}
+	return buffer.Bytes(), nil
 }
 
 func (p *Parser) handleUser(entry *Entry) *session.Turn {
@@ -354,7 +379,7 @@ func (p *Parser) eventsFromUserContent(entry *Entry, message *Message) ([]*sessi
 		pending, ok := p.pendingTools[block.ToolUseId]
 		delete(p.pendingTools, block.ToolUseId)
 
-		isPlanVerdict := ok && pending.name == toolNameExitPlanMode
+		isPlanVerdict := ok && pending.Name == toolNameExitPlanMode
 		if entry.ToolDenialKind != "" && !isPlanVerdict {
 			events = append(events, deniedToolEvent(block, entry, pending))
 			continue
@@ -384,7 +409,7 @@ func (p *Parser) rememberToolUse(block *ContentBlock) {
 	if len(p.pendingTools) >= maxPendingTools {
 		p.pendingTools = make(map[string]*pendingToolUse)
 	}
-	p.pendingTools[block.Id] = &pendingToolUse{input: block.Input, name: block.Name}
+	p.pendingTools[block.Id] = &pendingToolUse{Input: block.Input, Name: block.Name}
 }
 
 func (p *Parser) handleCustomTitle(entry *Entry) *session.Turn {
@@ -414,9 +439,14 @@ func (p *Parser) handleQueueOperation(entry *Entry) *session.Turn {
 	return eventTurn(entry, events, nil, nil)
 }
 
+type parserState struct {
+	PendingTools   map[string]*pendingToolUse
+	PermissionMode string
+}
+
 type pendingToolUse struct {
-	input json.RawMessage
-	name  string
+	Input json.RawMessage
+	Name  string
 }
 
 type skillInput struct {
@@ -435,7 +465,7 @@ func fileTouchFromResult(block *ContentBlock, pending *pendingToolUse) *session.
 	}
 
 	var isWrite bool
-	switch pending.name {
+	switch pending.Name {
 	case toolNameEdit, toolNameMultiEdit, toolNameNotebookEdit, toolNameWrite:
 		isWrite = true
 	case toolNameRead:
@@ -444,7 +474,7 @@ func fileTouchFromResult(block *ContentBlock, pending *pendingToolUse) *session.
 	}
 
 	var input fileToolInput
-	if err := json.Unmarshal(pending.input, &input); err != nil {
+	if err := json.Unmarshal(pending.Input, &input); err != nil {
 		return nil
 	}
 
@@ -473,7 +503,7 @@ func deniedToolEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse)
 	if pending == nil {
 		return permissionDeniedEvent(block, "", entry, entry.ToolDenialKind, "")
 	}
-	return permissionDeniedEvent(block, commandFromInput(pending), entry, entry.ToolDenialKind, pending.name)
+	return permissionDeniedEvent(block, commandFromInput(pending), entry, entry.ToolDenialKind, pending.Name)
 }
 
 func eventTurn(entry *Entry, events []*session.Event, results []*session.ToolResult, touches []*session.FileTouch) *session.Turn {
@@ -576,7 +606,7 @@ type deniedToolInput struct {
 
 func commandFromInput(pending *pendingToolUse) string {
 	var input deniedToolInput
-	if err := json.Unmarshal(pending.input, &input); err != nil {
+	if err := json.Unmarshal(pending.Input, &input); err != nil {
 		return ""
 	}
 	if input.Command != "" {
@@ -827,7 +857,7 @@ func toolResultEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse)
 		text = extractTextBlocks(block.Content)
 	}
 
-	switch pending.name {
+	switch pending.Name {
 	case toolNameExitPlanMode:
 		return planVerdictEvent(block, entry, text)
 	case toolNameAgent:
@@ -862,7 +892,7 @@ func toolResultsFromContent(message *Message) []*session.ToolResult {
 
 func userAnswerEvent(block *ContentBlock, entry *Entry, pending *pendingToolUse, text string) *session.Event {
 	var input askUserQuestionInput
-	if err := json.Unmarshal(pending.input, &input); err != nil {
+	if err := json.Unmarshal(pending.Input, &input); err != nil {
 		slog.Debug("userAnswerEvent: Failed to unmarshal question input", "err", err)
 	}
 
