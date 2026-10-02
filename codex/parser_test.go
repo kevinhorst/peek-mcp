@@ -255,6 +255,67 @@ func TestExtractProposedPlan(t *testing.T) {
 	}
 }
 
+func TestParser_StateRoundTrip(t *testing.T) {
+	type testCase struct {
+		_id string
+
+		line     []byte
+		original *Parser
+		restored *Parser
+	}
+
+	rejectedOutputLine := []byte(`{"timestamp":"2026-03-29T23:45:24.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"exec failed: Rejected(\"rejected by user\")"}}`)
+
+	tests := make([]*testCase, 0)
+
+	// session-id-and-model-survive
+	original := NewParser()
+	original.ParseLine([]byte(`{"timestamp":"2026-03-29T23:45:22.019Z","type":"session_meta","payload":{"id":"sess-codex-1","cwd":"/project"}}`))
+	original.ParseLine([]byte(`{"timestamp":"2026-03-29T23:47:38.000Z","type":"turn_context","payload":{"turn_id":"t1","model":"gpt-5.4"}}`))
+	test := &testCase{
+		_id:      "session-id-and-model-survive",
+		line:     []byte(`{"timestamp":"2026-03-29T23:47:40.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}`),
+		original: original,
+		restored: NewParser(),
+	}
+	tests = append(tests, test)
+
+	// pending-escalation-survives
+	original = seededParser(t)
+	original.ParseLine([]byte(escalatedCallLine))
+	test = &testCase{
+		_id:      "pending-escalation-survives",
+		line:     rejectedOutputLine,
+		original: original,
+		restored: NewParser(),
+	}
+	tests = append(tests, test)
+
+	// subagent-actor-survives
+	original = subagentParser(t)
+	original.ParseLine([]byte(escalatedCallLine))
+	test = &testCase{
+		_id:      "subagent-actor-survives",
+		line:     rejectedOutputLine,
+		original: original,
+		restored: NewParser(),
+	}
+	tests = append(tests, test)
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			state, err := test.original.State()
+			require.NoError(t, err)
+			require.NoError(t, test.restored.Restore(state))
+
+			expected := test.original.ParseLine(test.line)
+			require.NotNil(t, expected)
+			assert.Equal(t, expected, test.restored.ParseLine(test.line))
+		})
+	}
+}
+
 func TestCodex_InvalidJSON(t *testing.T) {
 	p := NewParser()
 

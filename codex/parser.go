@@ -1,12 +1,15 @@
 package codex
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -36,8 +39,8 @@ const (
 )
 
 type escalatedCall struct {
-	cmd           string
-	justification string
+	Cmd           string
+	Justification string
 }
 
 type execCommandArgs struct {
@@ -82,6 +85,35 @@ func (p *Parser) ParseLine(line []byte) *session.Turn {
 	default:
 		return nil
 	}
+}
+
+func (p *Parser) Restore(data []byte) error {
+	state := &parserState{}
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(state); err != nil {
+		return errors.Wrap(err, "Parser.Restore: Failed to decode")
+	}
+
+	p.model = state.Model
+	p.sessionId = state.SessionId
+	p.subagentActor = state.SubagentActor
+	if state.PendingEscalated != nil {
+		p.pendingEscalated = state.PendingEscalated
+	}
+	return nil
+}
+
+func (p *Parser) State() ([]byte, error) {
+	var buffer bytes.Buffer
+	state := &parserState{
+		Model:            p.model,
+		PendingEscalated: p.pendingEscalated,
+		SessionId:        p.sessionId,
+		SubagentActor:    p.subagentActor,
+	}
+	if err := gob.NewEncoder(&buffer).Encode(state); err != nil {
+		return nil, errors.Wrap(err, "Parser.State: Failed to encode")
+	}
+	return buffer.Bytes(), nil
 }
 
 func (p *Parser) handleSessionMeta(payload json.RawMessage, ts time.Time) *session.Turn {
@@ -241,7 +273,7 @@ func (p *Parser) rememberEscalatedCall(item *ResponseItem) {
 	if len(p.pendingEscalated) >= maxPendingCalls {
 		p.pendingEscalated = make(map[string]*escalatedCall)
 	}
-	p.pendingEscalated[item.CallId] = &escalatedCall{cmd: args.Cmd, justification: args.Justification}
+	p.pendingEscalated[item.CallId] = &escalatedCall{Cmd: args.Cmd, Justification: args.Justification}
 }
 
 func (p *Parser) handleFunctionCallOutput(item *ResponseItem, ts time.Time) *session.Turn {
@@ -263,8 +295,8 @@ func (p *Parser) handleFunctionCallOutput(item *ResponseItem, ts time.Time) *ses
 	}
 
 	payload := &session.PermissionPayload{
-		Command:       pending.cmd,
-		Justification: pending.justification,
+		Command:       pending.Cmd,
+		Justification: pending.Justification,
 		Tool:          execCommandTool,
 		ToolUseId:     item.CallId,
 	}
@@ -367,6 +399,13 @@ func (p *Parser) extractText(blocks []ContentBlock, targetType string) string {
 		}
 	}
 	return builder.String()
+}
+
+type parserState struct {
+	Model            string
+	PendingEscalated map[string]*escalatedCall
+	SessionId        session.Id
+	SubagentActor    string
 }
 
 // extractProposedPlan returns the content of the last complete
