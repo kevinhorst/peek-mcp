@@ -377,7 +377,17 @@ func (d *Dir) WritePlanVersion(agent, sessionId string, version *PlanVersion) er
 		}
 		name = fmt.Sprintf("%03d", version.Index) + suffix
 	}
-	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), planDir, name), version.Content)
+
+	path := filepath.Join(d.sessionDir(agent, sessionId), planDir, name)
+	if err := d.writeFile(path, version.Content); err != nil {
+		return err
+	}
+	if version.ModTime.IsZero() {
+		return nil
+	}
+
+	err := os.Chtimes(path, version.ModTime, version.ModTime)
+	return errors.Wrap(err, "Dir.WritePlanVersion: Failed to set the revision time")
 }
 
 type PlanVersion struct {
