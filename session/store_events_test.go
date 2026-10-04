@@ -580,6 +580,84 @@ func TestPlanRevisions_SharedDisk(t *testing.T) {
 		assert.Equal(t, 1, all[0].Plan.Revision)
 	})
 
+	// cold-replay-of-recorded-history-writes-nothing
+	t.Run("cold-replay-of-recorded-history-writes-nothing", func(t *testing.T) {
+		root := t.TempDir()
+		dir := state.NewDir(root)
+		recorder := newSharedStore(dir)
+		recorder.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", -2*time.Minute))
+		recorder.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", -time.Minute))
+		recorded := versionPayloads(dir.ReadPlanVersions("claude", "s1"))
+
+		replayer := newSharedStore(dir)
+		replayer.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", -2*time.Minute))
+		replayer.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", -time.Minute))
+
+		sess, ok := replayer.GetById("s1")
+		require.True(t, ok)
+		assert.Equal(t, recorded, versionPayloads(dir.ReadPlanVersions("claude", "s1")), "a replayed history records nothing new")
+		require.Len(t, sess.PlanRevisions, 2)
+		assert.WithinDuration(t, now.Add(-time.Minute), sess.PlanRevisions[1].Timestamp, time.Second, "a restored revision keeps its transcript time")
+		assert.Equal(t, "# Plan v2\n", sess.PlanContent)
+		assert.Empty(t, sess.Events.All())
+		latest, ok := dir.ReadPlanLatest("claude", "s1")
+		require.True(t, ok)
+		assert.Equal(t, "# Plan v2\n", latest)
+	})
+
+	// edit-after-recorded-history-appends
+	t.Run("edit-after-recorded-history-appends", func(t *testing.T) {
+		dir := state.NewDir(t.TempDir())
+		recorder := newSharedStore(dir)
+		recorder.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", -2*time.Minute))
+		recorder.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", -time.Minute))
+
+		replayer := newSharedStore(dir)
+		replayer.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", -2*time.Minute))
+		replayer.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", -time.Minute))
+		replayer.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v3\n", 0))
+
+		sess, ok := replayer.GetById("s1")
+		require.True(t, ok)
+		require.Len(t, sess.PlanRevisions, 3)
+		assert.Equal(t, 2, sess.PlanRevisions[2].Index)
+		assert.Equal(t, unifiedDiff("# Plan v3\n", "# Plan v2\n"), sess.PlanRevisions[2].Diff)
+		assert.Len(t, dir.ReadPlanVersions("claude", "s1"), 3)
+	})
+
+	// replay-over-stale-latest-restores-content
+	t.Run("replay-over-stale-latest-restores-content", func(t *testing.T) {
+		root := t.TempDir()
+		dir := state.NewDir(root)
+		initial := &state.PlanVersion{Content: "# Plan v1\n", Index: 0}
+		require.NoError(t, dir.WritePlanVersion("claude", "s1", initial))
+		require.NoError(t, dir.WritePlanLatest("claude", "# Plan v1\n", "s1"))
+		filesBefore := planFileCount(root)
+
+		replayer := newSharedStore(dir)
+		replayer.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", -time.Minute))
+
+		sess, ok := replayer.GetById("s1")
+		require.True(t, ok)
+		assert.Equal(t, "# Plan v2\n", sess.PlanContent)
+		assert.Len(t, sess.PlanRevisions, 1)
+		assert.Equal(t, filesBefore, planFileCount(root), "a replayed change writes nothing")
+	})
+
+	// same-session-in-second-file-records-nothing
+	t.Run("same-session-in-second-file-records-nothing", func(t *testing.T) {
+		s := NewStore(10, 25, events.NewBroker())
+		s.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", -2*time.Minute))
+		s.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", -time.Minute))
+		s.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v1\n", -2*time.Minute))
+		s.AddTurnBySessionId("s1", AgentClaude, planTurn("# Plan v2\n", -time.Minute))
+
+		sess, ok := s.GetById("s1")
+		require.True(t, ok)
+		assert.Len(t, sess.PlanRevisions, 2)
+		assert.Equal(t, "# Plan v2\n", sess.PlanContent)
+	})
+
 	// codex-session-not-synced
 	t.Run("codex-session-not-synced", func(t *testing.T) {
 		dir := state.NewDir(t.TempDir())

@@ -1,6 +1,8 @@
 package session
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,6 +173,18 @@ func TestStore_Ready(t *testing.T) {
 	default:
 		assert.Fail(t, "Ready channel not closed after MarkReady")
 	}
+
+	// ready-answers-while-store-write-locked
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	answers := make(chan bool, 1)
+	go func() { answers <- s.IsReady() }()
+	select {
+	case isReady := <-answers:
+		assert.True(t, isReady)
+	case <-time.After(time.Second):
+		assert.Fail(t, "IsReady blocked on the store lock")
+	}
 }
 
 func TestStore_Reset(t *testing.T) {
@@ -305,6 +319,11 @@ func TestAddTurn_PlanFileReadFallback(t *testing.T) {
 }
 
 func TestAddTurn_PlanFileReadFailure_PreservesExisting(t *testing.T) {
+	var logBuffer bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuffer, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
 	s := NewStore(10, 25, events.NewBroker())
 	// First turn sets plan content via inline
 	s.AddTurnBySessionId("s1", AgentClaude, &Turn{
@@ -323,6 +342,7 @@ func TestAddTurn_PlanFileReadFailure_PreservesExisting(t *testing.T) {
 	// PlanFilePath updated but content preserved (file read failed, no inline content)
 	assert.Equal(t, "/nonexistent/plan.md", sess.PlanFilePath)
 	assert.Equal(t, "# Existing Plan", sess.PlanContent)
+	assert.Empty(t, logBuffer.String(), "a missing plan file logs nothing at the default level")
 }
 
 func TestAddTurn_PlanWorktreeFallback(t *testing.T) {

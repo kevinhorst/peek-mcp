@@ -35,6 +35,7 @@ type Store struct {
 	depth          int
 	enabledAgents  []Agent
 	plainTitleById map[Id]string
+	readyMu        sync.Mutex
 	ready          chan struct{}
 	sessions       map[Id]*Session
 	snapshots      *snapshotCache
@@ -200,6 +201,11 @@ func (s *Store) setPlanContent(content string, session *Session, timestamp time.
 	if content == "" || content == session.PlanContent {
 		return
 	}
+	if session.isPlanReplay(timestamp) {
+		session.PlanContent = content
+		s.publish(events.TypePlanUpdated, session.Meta.SessionId, session.Agent)
+		return
+	}
 
 	if !s.syncPlanFromDisk(content, session) {
 		previous := session.PlanContent
@@ -272,6 +278,7 @@ func (s *Store) persistPlanVersion(latest string, revision *PlanRevision, sessio
 		Content:      revision.Content,
 		Index:        revision.Index,
 		IsAlteration: revision.IsAlteration,
+		ModTime:      revision.Timestamp,
 	}
 	if revision.Index > 0 {
 		record.Content = revision.Diff
@@ -533,15 +540,15 @@ func (s *Store) IsReady() bool {
 }
 
 func (s *Store) MarkReady() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.readyMu.Lock()
+	defer s.readyMu.Unlock()
 
 	close(s.ready)
 }
 
 func (s *Store) Ready() <-chan struct{} {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.readyMu.Lock()
+	defer s.readyMu.Unlock()
 
 	return s.ready
 }
@@ -550,6 +557,8 @@ func (s *Store) Ready() <-chan struct{} {
 func (s *Store) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.readyMu.Lock()
+	defer s.readyMu.Unlock()
 
 	s.plainTitleById = make(map[Id]string)
 	s.ready = make(chan struct{})
@@ -708,7 +717,7 @@ func (s *Store) updatePlanContent(session *Session, turn *Turn) {
 		}
 	}
 
-	slog.Warn("Failed to read plan file", "path", turn.PlanFilePath)
+	slog.Debug("Store.updatePlanContent: Failed to read plan file", "path", turn.PlanFilePath)
 }
 
 func (s *Store) sortByLastActiveDesc(agents ...Agent) []*Session {

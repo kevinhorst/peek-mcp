@@ -114,6 +114,17 @@ func (s *Session) isAlterationPhase() bool {
 	return s.planExitSeen
 }
 
+// isPlanReplay reports a plan change no newer than the latest recorded revision: a replayed transcript line, not a new edit.
+func (s *Session) isPlanReplay(timestamp time.Time) bool {
+	isUndated := timestamp.IsZero() || len(s.PlanRevisions) == 0
+	if isUndated {
+		return false
+	}
+
+	latest := s.PlanRevisions[len(s.PlanRevisions)-1]
+	return !timestamp.After(latest.Timestamp)
+}
+
 func (s *Session) AddEvent(event *Event) {
 	s.Events.Push(event)
 
