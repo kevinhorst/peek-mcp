@@ -110,7 +110,7 @@ func Register(
 	}
 
 	sessionGet := mcp.NewTool("session_get",
-		mcp.WithDescription("Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memory) for a session. Defaults to the most recently active session when id and title are omitted. Select sections with the turns/events/plan/diff/uncommitted_diff/remember flags. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
+		mcp.WithDescription("Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memory) for a session. Defaults to the most recently active session when id and title are omitted. Select sections with the turns/events/plan/diff/uncommitted_diff/remember flags; diff and uncommitted_diff are off by default and dominate response size, so request them only when the code change itself is needed. Responses are paginated: if has_more is true, call again with the returned request_id to get the next page."),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("id",
 			mcp.Description("Session ID (omit for most recent session)"),
@@ -134,7 +134,7 @@ func Register(
 			mcp.Description("Return the session plan (default true)."),
 		),
 		mcp.WithBoolean("diff",
-			mcp.Description("Return the pre-computed merge-base git diff against the inferred base branch, reported as diff_target (default true)."),
+			mcp.Description("Return the pre-computed merge-base git diff against the inferred base branch, reported as diff_target (default false)."),
 		),
 		mcp.WithBoolean("uncommitted_diff",
 			mcp.Description("Return the live uncommitted git diff (`git diff HEAD`) in the session's own working tree (default false)."),
@@ -255,7 +255,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 		withTurns := boolArgFromRequest(request, "turns", true)
 		withEvents := boolArgFromRequest(request, "events", true)
 		withPlan := boolArgFromRequest(request, "plan", true)
-		withDiff := boolArgFromRequest(request, "diff", true)
+		withDiff := boolArgFromRequest(request, "diff", false)
 		withUncommitted := boolArgFromRequest(request, "uncommitted_diff", false)
 		withMemory := boolArgFromRequest(request, "remember", false)
 		n := intArgFromRequest(request, "n")

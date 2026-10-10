@@ -106,8 +106,8 @@ func TestSessionGet_Defaults(t *testing.T) {
 	payload := decodeResult(t, result)
 	assert.Contains(t, payload, "turns")
 	assert.Equal(t, "# Plan", payload["plan"])
-	assert.Equal(t, "diff-output", payload["diff"])
-	assert.Equal(t, "main", payload["diff_target"])
+	assert.NotContains(t, payload, "diff")
+	assert.NotContains(t, payload, "diff_target")
 	assert.NotContains(t, payload, "uncommitted_diff")
 	assert.Equal(t, false, payload["has_more"])
 }
@@ -234,6 +234,7 @@ func TestSessionGet_Pagination(t *testing.T) {
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{
 		"id":    "s1",
+		"diff":  true,
 		"turns": false,
 		"plan":  false,
 	}))
@@ -261,7 +262,7 @@ func TestSessionGet_JsonTypedUnpaginated(t *testing.T) {
 	s1.DiffSource = session.DiffSourceLive
 	handler := sessionGetHandler(store, providePageStore())
 
-	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true}))
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "diff": true, "json": true}))
 
 	assert.NoError(t, err)
 	require.False(t, result.IsError)
