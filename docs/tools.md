@@ -24,7 +24,7 @@ Returns session data (turns, events, plan, git diff, uncommitted diff, auto-memo
 | `turns` | boolean | no | Return the session turns (default `true`) |
 | `events` | boolean | no | Return the compact one-line event entries (default `true`) — interleave them with turns by timestamp; the full typed event stream lives in `session_events` |
 | `plan` | boolean | no | Return the session plan (default `true`). For Claude sessions this is the plan-mode plan file; for Codex the latest `proposed_plan` block |
-| `diff` | boolean | no | Return the pre-computed merge-base diff against the inferred base branch, reported as `diff_target` (default `true`) |
+| `diff` | boolean | no | Return the pre-computed merge-base diff against the inferred base branch, reported as `diff_target` (default `false` — the diff is usually the largest section, so it is opt-in) |
 | `uncommitted_diff` | boolean | no | Return the live `git diff HEAD` in the session's own working tree, refreshed as files are saved (default `false`) |
 | `remember` | boolean | no | Include the project's auto-memory (`MEMORY.md` + fact files). Claude sessions only (default `false`) |
 | `subagent` | string | no | Subagent id: scope the response to that agent's transcript and actor-tagged events (plan/diff/memory sections are omitted). Valid ids are listed in every response's `subagents` field |

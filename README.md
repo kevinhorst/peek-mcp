@@ -31,7 +31,7 @@ Claude Code / Codex writes JSONL to disk (always, no configuration needed)
 Alongside turns, peek-mcp passively watches two more sources:
 
 - **Plans** — Claude Code writes a plan file per task; peek-mcp stores it with the session so `session_get` surfaces it. For Codex, the plan is the latest `proposed_plan` block.
-- **Git diffs** — after each new turn, peek-mcp infers the session branch's base and runs `git diff --merge-base <base>` in the session's working directory. `session_get` exposes the result via its `diff` section; the resolved base is reported as `diff_target`.
+- **Git diffs** — after each new turn, peek-mcp infers the session branch's base and runs `git diff --merge-base <base>` in the session's working directory. `session_get` exposes the result via its `diff` section, returned only on explicit request (`diff: true`) since it is usually the largest part of a session; the resolved base is reported as `diff_target`.
 
 ## Quick start
 
@@ -92,7 +92,7 @@ One call — `session_get` — does the job: turns, events, plan, and diffs for 
 
 | Tool | Returns |
 |---|---|
-| `session_get` | turns + events + plan + diff (+ uncommitted diff, auto-memory) for a session, sections selected by flags |
+| `session_get` | turns + events + plan (+ diff, uncommitted diff, auto-memory on request) for a session, sections selected by flags |
 | `session_list` | all sessions with metadata (branch, model, activity, diff base) |
 | `session_events` | typed event stream with counters, token usage, session time, touched files, plan revisions |
 

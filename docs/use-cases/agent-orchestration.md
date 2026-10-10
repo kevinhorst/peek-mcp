@@ -31,7 +31,7 @@ Nothing beyond the [Quick start](../../README.md#quick-start). Every worker writ
    }
    ```
 
-2. For any worker, pull progress with `session_get` — recent turns plus the produced code as the `diff` section (the change against its base branch), all in one call.
+2. For any worker, pull progress with `session_get` — recent turns by default; add `diff: true` only when the orchestrator needs the produced code itself (the change against its base branch), since the diff is the largest section and polling it every round burns context.
 
 3. The orchestrator decides per worker — let it run, redirect it, or stop it — from live state, then repeats.
 
