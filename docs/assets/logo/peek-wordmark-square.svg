@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="-7.5 -44.5 176 176">
+  <rect x="-7.5" y="-44.5" width="176" height="176" fill="#000000"/>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="48" font-weight="400" letter-spacing="-1" fill="#F4F4F4">
+    <text x="16" y="56">/</text>
+    <text x="27.5" y="56">peek</text>
+  </g>
+  <circle cx="139" cy="49" r="7" fill="#00EBAA"/>
+</svg>
