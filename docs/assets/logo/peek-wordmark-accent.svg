@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="96" viewBox="0 0 160 96">
+  <text x="16" y="56" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="48" font-weight="400" letter-spacing="-1" fill="#111111">peek</text>
+  <circle cx="127" cy="52" r="4.5" fill="#111111"/>
+  <path d="M80 28 L87 20" stroke="#111111" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

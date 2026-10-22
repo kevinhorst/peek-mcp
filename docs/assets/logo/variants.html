@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peek wordmark variants</title>
+<style>
+  body { margin: 0; padding: 32px 16px; font: 13px/1.5 Helvetica Neue, Helvetica, Arial, sans-serif; color: #555; background: #fff; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 900px; }
+  .cell { border: 1px solid #e5e5e5; padding: 24px 16px 8px; text-align: center; }
+  .cell span { display: block; margin-top: 8px; }
+  svg { width: 100%; height: auto; }
+  text { font-family: Helvetica Neue, Helvetica, Arial, sans-serif; font-size: 48px; font-weight: 400; letter-spacing: -1px; fill: #111; }
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="cell">
+    <svg viewBox="0 0 160 96"><text x="16" y="56">peek</text><circle cx="127" cy="52" r="4.5" fill="#111"/></svg>
+    <span>A — plain</span>
+  </div>
+  <div class="cell">
+    <svg viewBox="0 0 160 96"><text x="16" y="56">peek</text><circle cx="127" cy="52" r="4.5" fill="#111"/><circle cx="29" cy="76" r="4.5" fill="#111"/></svg>
+    <span>B — dot below p</span>
+  </div>
+  <div class="cell">
+    <svg viewBox="0 0 160 96"><text x="16" y="56">peek</text><circle cx="127" cy="52" r="4.5" fill="#111"/><path d="M80 28 L87 20" stroke="#111" stroke-width="3.5" stroke-linecap="round"/></svg>
+    <span>C — accent on second e</span>
+  </div>
+</div>
+</body>
+</html>
