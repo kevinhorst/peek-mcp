@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"time"
 
 	"github.com/pkg/errors"
 )
@@ -15,35 +14,26 @@ import (
 const (
 	KeyBackLink              = "back-link"
 	KeyDepth                 = "depth"
-	KeyDiffCacheSessions     = "diff-cache-sessions"
 	KeyLogLevel              = "log-level"
-	KeyPollInterval          = "poll-interval"
-	KeyPollWindow            = "poll-window"
 	KeySnapshotRetentionDays = "snapshot-retention-days"
 	KeyStateRetentionDays    = "state-retention-days"
 
 	dirPerm  = 0o700
 	filePerm = 0o600
 
-	maxDepth             = 1000
-	maxDiffCacheSessions = 1000
-	maxRetentionDays     = 3650
-	minDepth             = 1
-	minPollInterval      = time.Second
-	minPollWindow        = time.Minute
+	maxDepth         = 1000
+	maxRetentionDays = 3650
+	minDepth         = 1
 )
 
-var EditableKeys = []string{KeyBackLink, KeyDepth, KeyPollInterval, KeyPollWindow, KeyStateRetentionDays, KeySnapshotRetentionDays, KeyDiffCacheSessions, KeyLogLevel}
+var EditableKeys = []string{KeyBackLink, KeyDepth, KeyStateRetentionDays, KeySnapshotRetentionDays, KeyLogLevel}
 
 var logLevels = []string{"debug", "info", "warn", "error"}
 
 type File struct {
 	BackLink              *string `json:"back_link,omitempty"`
 	Depth                 *int    `json:"depth,omitempty"`
-	DiffCacheSessions     *int    `json:"diff_cache_sessions,omitempty"`
 	LogLevel              *string `json:"log_level,omitempty"`
-	PollInterval          *string `json:"poll_interval,omitempty"`
-	PollWindow            *string `json:"poll_window,omitempty"`
 	SnapshotRetentionDays *int    `json:"snapshot_retention_days,omitempty"`
 	StateRetentionDays    *int    `json:"state_retention_days,omitempty"`
 }
@@ -54,14 +44,8 @@ func (f *File) Set(key, value string) error {
 		return f.setBackLink(value)
 	case KeyDepth:
 		return f.setDepth(value)
-	case KeyDiffCacheSessions:
-		return f.setDiffCacheSessions(value)
 	case KeyLogLevel:
 		return f.setLogLevel(value)
-	case KeyPollInterval:
-		return f.setPollInterval(value)
-	case KeyPollWindow:
-		return f.setPollWindow(value)
 	case KeySnapshotRetentionDays:
 		return f.setSnapshotRetentionDays(value)
 	case KeyStateRetentionDays:
@@ -82,19 +66,6 @@ func (f *File) setBackLink(value string) error {
 	}
 
 	f.BackLink = &value
-	return nil
-}
-
-func (f *File) setDiffCacheSessions(value string) error {
-	sessions, err := strconv.Atoi(value)
-	if err != nil {
-		return errors.Errorf("File.setDiffCacheSessions: Invalid field diff-cache-sessions: %s (want an integer)", value)
-	}
-	if sessions < 0 || sessions > maxDiffCacheSessions {
-		return errors.Errorf("File.setDiffCacheSessions: Invalid field diff-cache-sessions: %d (want 0-%d, 0 disables caching)", sessions, maxDiffCacheSessions)
-	}
-
-	f.DiffCacheSessions = &sessions
 	return nil
 }
 
@@ -133,34 +104,6 @@ func (f *File) setLogLevel(value string) error {
 	return nil
 }
 
-func (f *File) setPollInterval(value string) error {
-	interval, err := time.ParseDuration(value)
-	if err != nil {
-		return errors.Errorf("File.setPollInterval: Invalid field poll-interval: %s (want a Go duration, e.g. 5s)", value)
-	}
-	if interval < minPollInterval {
-		return errors.Errorf("File.setPollInterval: Invalid field poll-interval: %s (want >= 1s)", value)
-	}
-
-	normalized := interval.String()
-	f.PollInterval = &normalized
-	return nil
-}
-
-func (f *File) setPollWindow(value string) error {
-	window, err := time.ParseDuration(value)
-	if err != nil {
-		return errors.Errorf("File.setPollWindow: Invalid field poll-window: %s (want a Go duration, e.g. 1h)", value)
-	}
-	if window < minPollWindow {
-		return errors.Errorf("File.setPollWindow: Invalid field poll-window: %s (want >= 1m)", value)
-	}
-
-	normalized := window.String()
-	f.PollWindow = &normalized
-	return nil
-}
-
 func (f *File) setStateRetentionDays(value string) error {
 	days, err := strconv.Atoi(value)
 	if err != nil {
@@ -185,20 +128,11 @@ func (f *File) FlagValues() map[string]string {
 	if f.LogLevel != nil {
 		values[KeyLogLevel] = *f.LogLevel
 	}
-	if f.PollInterval != nil {
-		values[KeyPollInterval] = *f.PollInterval
-	}
-	if f.PollWindow != nil {
-		values[KeyPollWindow] = *f.PollWindow
-	}
 	if f.SnapshotRetentionDays != nil {
 		values[KeySnapshotRetentionDays] = strconv.Itoa(*f.SnapshotRetentionDays)
 	}
 	if f.StateRetentionDays != nil {
 		values[KeyStateRetentionDays] = strconv.Itoa(*f.StateRetentionDays)
-	}
-	if f.DiffCacheSessions != nil {
-		values[KeyDiffCacheSessions] = strconv.Itoa(*f.DiffCacheSessions)
 	}
 	return values
 }

@@ -40,12 +40,22 @@ func TestLoad(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, saved, loaded)
 	})
+
+	// retired-keys-ignored
+	t.Run("retired-keys-ignored", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.json")
+		content := `{"depth": 50, "poll_interval": "5s", "poll_window": "1h0m0s", "diff_cache_sessions": 25}`
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+		loaded, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{KeyDepth: "50"}, loaded.FlagValues())
+	})
 }
 
 func TestFile_Set(t *testing.T) {
 	type testCase struct {
 		_id         string
-		_saved      string
 		_shouldPass bool
 		key         string
 		value       string
@@ -104,28 +114,11 @@ func TestFile_Set(t *testing.T) {
 		value: "0",
 	})
 
-	// poll-interval-valid-normalized
+	// retired-key-poll-interval
 	tests = append(tests, &testCase{
-		_id:         "poll-interval-valid-normalized",
-		_shouldPass: true,
-		key:         KeyPollInterval,
-		value:       "10s",
-	})
-
-	// poll-interval-below-minimum
-	tests = append(tests, &testCase{
-		_id:   "poll-interval-below-minimum",
-		key:   KeyPollInterval,
-		value: "500ms",
-	})
-
-	// poll-window-valid
-	tests = append(tests, &testCase{
-		_id:         "poll-window-valid",
-		_saved:      "1h0m0s",
-		_shouldPass: true,
-		key:         KeyPollWindow,
-		value:       "1h",
+		_id:   "retired-key-poll-interval",
+		key:   "poll-interval",
+		value: "10s",
 	})
 
 	// log-level-valid
@@ -179,11 +172,7 @@ func TestFile_Set(t *testing.T) {
 			err := file.Set(test.key, test.value)
 			assert.Equalf(t, test._shouldPass, err == nil, "err = %v", err)
 			if test._shouldPass {
-				saved := test._saved
-				if saved == "" {
-					saved = test.value
-				}
-				assert.Equal(t, saved, file.FlagValues()[test.key])
+				assert.Equal(t, test.value, file.FlagValues()[test.key])
 			}
 		})
 	}
@@ -204,7 +193,7 @@ func TestSave(t *testing.T) {
 	t.Run("roundtrip-load-equals-saved", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "nested", "config.json")
 		file := &File{}
-		require.NoError(t, file.Set(KeyPollInterval, "10s"))
+		require.NoError(t, file.Set(KeyDepth, "50"))
 		require.NoError(t, Save(path, file))
 
 		loaded, err := Load(path)
