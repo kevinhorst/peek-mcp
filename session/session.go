@@ -35,20 +35,11 @@ const maxTouchedFiles = 2000
 
 const maxSubagentStats = 300
 
-const minSubagentTurnDepth = 200
-
 const AllTurns = math.MaxInt
 
 const maxSkillStats = 200
 
 const StopReasonToolUse = "tool_use"
-
-type DiffSource string
-
-const (
-	DiffSourceLive     DiffSource = "live"
-	DiffSourceSnapshot DiffSource = "snapshot"
-)
 
 type Session struct {
 	activeSkills     map[string]*SkillStat
@@ -59,12 +50,10 @@ type Session struct {
 	Agent           Agent                       `json:"agent"`
 	Counters        Counters                    `json:"-"`
 	DiffBase        string                      `json:"-"`
-	DiffCapturedAt  time.Time                   `json:"-"`
-	DiffOutput      string                      `json:"-"`
-	DiffSource      DiffSource                  `json:"-"`
 	DiffTarget      string                      `json:"diff_target,omitempty"`
 	Events          *EventBuffer                `json:"-"`
 	FilePath        string                      `json:"-"`
+	FilePaths       []string                    `json:"-"`
 	HasDiffSnapshot bool                        `json:"-"`
 	Idle            time.Duration               `json:"-"`
 	LastActive      time.Time                   `json:"last_active"`
@@ -81,7 +70,6 @@ type Session struct {
 	TouchedFiles    map[string]*FileTouchCounts `json:"-"`
 	TurnActive      *Turn                       `json:"-"`
 	TurnsFinished   *TurnBuffer
-	UncommittedDiff string `json:"-"`
 }
 
 // countDenial counts a denial as a cancellation or a denial by its kind.
@@ -240,6 +228,7 @@ func (s *Session) openSkillWindow(event *Event) {
 type SubagentStat struct {
 	AgentType    string                      `json:"agent_type,omitempty"`
 	Description  string                      `json:"description,omitempty"`
+	FilePath     string                      `json:"-"`
 	FirstActive  time.Time                   `json:"first_active"`
 	LastActive   time.Time                   `json:"last_active"`
 	Model        string                      `json:"model,omitempty"`
@@ -259,12 +248,15 @@ func (s *Session) AddSubagentTurn(turn *Turn) {
 		if len(s.Subagents) >= maxSubagentStats {
 			return
 		}
-		depth := max(s.TurnsFinished.capacity, minSubagentTurnDepth)
-		stat = &SubagentStat{Turns: NewTurnBuffer(depth)}
+		stat = &SubagentStat{Turns: NewTurnBuffer(s.TurnsFinished.capacity)}
 		s.Subagents[turn.SubagentId] = stat
 	}
 
 	applyToolResults(stat.TurnActive, stat.Turns, turn.ToolResults)
+
+	if turn.FilePath != "" && stat.FilePath == "" {
+		stat.FilePath = turn.FilePath
+	}
 
 	if turn.Role != "" {
 		stat.TurnActive = appendTurn(stat.TurnActive, stat.Turns, turn)
@@ -398,6 +390,23 @@ func (s *Session) CurrentUsage() *Usage {
 	return &total
 }
 
+// AddFilePath records a transcript file that fed the session, in first-seen order, so a reload replays the same files.
+func (s *Session) AddFilePath(path string) {
+	if path == "" || slices.Contains(s.FilePaths, path) {
+		return
+	}
+
+	if s.FilePath == "" {
+		s.FilePath = path
+	}
+	s.FilePaths = append(s.FilePaths, path)
+}
+
+// HasDiff reports whether a diff can be served: computed on request in the working tree, or read from the persisted snapshot.
+func (s *Session) HasDiff() bool {
+	return s.Meta.CWD != "" || s.HasDiffSnapshot
+}
+
 func (s *Session) HasNewTitle(title string, source TitleSource) bool {
 	if title == "" {
 		return false
@@ -421,7 +430,7 @@ func (s *Session) TotalTurnsWithToolCalls() int {
 }
 
 func (s *Session) Turns(number int) []*Turn {
-	return lastTurns(s.TurnActive, conversationalTurns(s.TurnsFinished.items), number)
+	return lastTurns(s.TurnActive, s.TurnsFinished.conversational, number)
 }
 
 func (s *Session) TurnsWithToolCalls(number int) []*Turn {
@@ -454,7 +463,7 @@ func (s *Session) SubagentTurns(agentId string, number int) ([]*Turn, bool) {
 		return nil, false
 	}
 
-	return lastTurns(stat.TurnActive, conversationalTurns(stat.Turns.items), number), true
+	return lastTurns(stat.TurnActive, stat.Turns.conversational, number), true
 }
 
 func (s *Session) SubagentTurnsWithToolCalls(agentId string, number int) ([]*Turn, bool) {
@@ -476,12 +485,6 @@ func lastTurns(active *Turn, finished []*Turn, number int) []*Turn {
 		turns = turns[len(turns)-number:]
 	}
 	return turns
-}
-
-// conversationalTurns hides finished tool-only turns; the active turn is
-// never passed in, so default output keeps today's in-progress turn.
-func conversationalTurns(finished []*Turn) []*Turn {
-	return slices.DeleteFunc(slices.Clone(finished), (*Turn).IsToolOnly)
 }
 
 // findToolCall scans newest first: a result almost always answers the

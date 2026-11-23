@@ -61,6 +61,7 @@ func (s *sessionSnapshot) restore() *Session {
 	session := s.Session
 	session.currentPromptId = s.CurrentPromptId
 	session.planExitSeen = s.PlanExitSeen
+	session.AddFilePath(session.FilePath)
 
 	session.activeSkills = make(map[string]*SkillStat, len(s.ActiveSkills))
 	for actor, index := range s.ActiveSkills {

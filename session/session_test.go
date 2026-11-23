@@ -418,7 +418,7 @@ func TestSession_TurnsTotal(t *testing.T) {
 		})
 	}
 
-	assert.Len(t, evictedTurns, 201, "ring floor 200 plus the active turn")
+	assert.Len(t, evictedTurns, 21, "session depth 20 plus the active turn")
 }
 
 func TestSession_AddSubagentTurn_ToolCalls(t *testing.T) {
@@ -448,12 +448,30 @@ func TestSession_AddSubagentTurn_ToolCalls(t *testing.T) {
 	turns, _ = s.SubagentTurnsWithToolCalls("ag1", 10)
 	assert.Len(t, turns, 2)
 
-	// ring-follows-depth-floor-200
-	assert.Equal(t, minSubagentTurnDepth, s.Subagents["ag1"].Turns.capacity)
+	// ring-follows-session-depth
+	assert.Equal(t, 20, s.Subagents["ag1"].Turns.capacity)
 	deep := provideCompleteSession()
 	deep.TurnsFinished = NewTurnBuffer(500)
 	deep.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleUser, Text: "prompt", Timestamp: timestamp, Meta: meta})
 	assert.Equal(t, 500, deep.Subagents["ag1"].Turns.capacity)
+}
+
+func TestSession_AddFilePath(t *testing.T) {
+	s := provideCompleteSession()
+
+	// empty-ignored
+	s.AddFilePath("")
+	assert.Empty(t, s.FilePaths)
+	assert.Empty(t, s.FilePath)
+
+	// first-seen-order-deduplicated
+	s.AddFilePath("/t/a.jsonl")
+	s.AddFilePath("/t/b.jsonl")
+	s.AddFilePath("/t/a.jsonl")
+	assert.Equal(t, []string{"/t/a.jsonl", "/t/b.jsonl"}, s.FilePaths)
+
+	// first-path-is-file-path
+	assert.Equal(t, "/t/a.jsonl", s.FilePath)
 }
 
 func TestSession_AddSubagentTurn_Transcript(t *testing.T) {
@@ -488,6 +506,13 @@ func TestSession_AddSubagentTurn_Transcript(t *testing.T) {
 	// model-captured-from-turn-meta
 	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Role: RoleAssistant, Text: "y", RequestId: "req-s2", Timestamp: timestamp, Meta: &Meta{SessionId: Id("sess-123"), Model: "claude-haiku-4-5-20251001"}})
 	assert.Equal(t, "claude-haiku-4-5-20251001", s.Subagents["ag1"].Model)
+
+	// transcript-path-first-wins
+	assert.Empty(t, s.Subagents["ag1"].FilePath, "turns without a path leave it unset")
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", FilePath: "/t/agent-ag1.jsonl", Role: RoleUser, Text: "z", Timestamp: timestamp, Meta: meta})
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", FilePath: "/t/other.jsonl", Role: RoleUser, Text: "z", Timestamp: timestamp, Meta: meta})
+	s.AddSubagentTurn(&Turn{SubagentId: "ag1", Meta: meta, Timestamp: timestamp})
+	assert.Equal(t, "/t/agent-ag1.jsonl", s.Subagents["ag1"].FilePath)
 }
 
 func TestSession_AddSubagentTurn_TouchedFiles(t *testing.T) {

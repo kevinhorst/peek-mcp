@@ -36,7 +36,7 @@ func ingestTurns(store *Store, turns []*Turn) {
 }
 
 func provideSnapshotStore() *Store {
-	store := NewStore(10, 25, events.NewBroker())
+	store := NewStore(10, events.NewBroker())
 	ingestTurns(store, provideSnapshotTurns())
 
 	store.AddTurnBySessionId("c", AgentCodex, &Turn{
@@ -216,7 +216,7 @@ func restoredStore(t *testing.T, store *Store) *Store {
 	snapshot, err := ReadStoreSnapshot(&buffer)
 	require.NoError(t, err)
 
-	restored := NewStore(10, 25, events.NewBroker())
+	restored := NewStore(10, events.NewBroker())
 	restored.Restore(snapshot)
 	return restored
 }
@@ -330,14 +330,14 @@ func TestStoreSnapshot_RoundTrip(t *testing.T) {
 
 		originalTurns := originalSession.Subagents["sub-1"].Turns
 		restoredTurns := restoredSession.Subagents["sub-1"].Turns
-		assert.Equal(t, minSubagentTurnDepth, restoredTurns.capacity)
+		assert.Equal(t, 10, restoredTurns.capacity)
 		assert.Equal(t, originalTurns.PushedWithToolCalls(), restoredTurns.PushedWithToolCalls())
 		assert.Equal(t, originalSession.TotalTurns(), restoredSession.TotalTurns())
 	})
 
 	// zero-payload-event-restored
 	t.Run("zero-payload-event-restored", func(t *testing.T) {
-		original := NewStore(10, 25, events.NewBroker())
+		original := NewStore(10, events.NewBroker())
 		original.AddTurnBySessionId("z", AgentClaude, &Turn{
 			Events: []*Event{{Kind: EventKindModelChanged, Model: &ModelPayload{}, Timestamp: snapshotFixtureStart}},
 			Meta:   &Meta{SessionId: "z"},
@@ -355,6 +355,14 @@ func TestStoreSnapshot_RoundTrip(t *testing.T) {
 	})
 }
 
+func TestSessionSnapshot_RestoreFillsFilePaths(t *testing.T) {
+	sess := &Session{FilePath: "/t/a.jsonl", Meta: Meta{SessionId: "s1"}}
+
+	restored := newSessionSnapshot(sess).restore()
+
+	assert.Equal(t, []string{"/t/a.jsonl"}, restored.FilePaths)
+}
+
 func TestStoreSnapshot_SplitIngest(t *testing.T) {
 	type testCase struct {
 		_id       string
@@ -362,7 +370,7 @@ func TestStoreSnapshot_SplitIngest(t *testing.T) {
 		store     *Store
 	}
 
-	full := NewStore(10, 25, events.NewBroker())
+	full := NewStore(10, events.NewBroker())
 	ingestTurns(full, provideSnapshotTurns())
 	expected := decodedSnapshot(t, full)
 
@@ -372,7 +380,7 @@ func TestStoreSnapshot_SplitIngest(t *testing.T) {
 	turnCount := len(provideSnapshotTurns())
 	for splitIndex := 0; splitIndex <= turnCount; splitIndex++ {
 		turns := provideSnapshotTurns()
-		before := NewStore(10, 25, events.NewBroker())
+		before := NewStore(10, events.NewBroker())
 		ingestTurns(before, turns[:splitIndex])
 		after := restoredStore(t, before)
 		ingestTurns(after, turns[splitIndex:])

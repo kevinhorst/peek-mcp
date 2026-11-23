@@ -4,7 +4,59 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestTurnBuffer_ConversationalRing(t *testing.T) {
+	first := &Turn{Text: "first"}
+	second := &Turn{Text: "second"}
+	buffer := NewTurnBuffer(2)
+	buffer.Push(first)
+	for range 5 {
+		buffer.Push(&Turn{ToolCalls: []*ToolCall{{Id: "tu"}}})
+	}
+	buffer.Push(second)
+
+	// tool-only-flood-keeps-conversational
+	assert.Equal(t, []*Turn{first, second}, buffer.conversational)
+	assert.Len(t, buffer.items, 2)
+	assert.Same(t, second, buffer.items[1])
+
+	// backing-array-never-grows
+	assert.Equal(t, 2, cap(buffer.items))
+	assert.Equal(t, 2, cap(buffer.conversational))
+
+	// session-turns-read-conversational-ring
+	sess := &Session{TurnsFinished: buffer}
+	assert.Equal(t, []*Turn{first, second}, sess.Turns(AllTurns))
+	assert.Len(t, sess.TurnsWithToolCalls(AllTurns), 2)
+}
+
+func TestTurnBuffer_Gob(t *testing.T) {
+	first := &Turn{Text: "first"}
+	buffer := NewTurnBuffer(2)
+	buffer.Push(first)
+	buffer.Push(&Turn{ToolCalls: []*ToolCall{{Id: "tu1"}}})
+	buffer.Push(&Turn{Text: "second"})
+
+	data, err := buffer.GobEncode()
+	require.NoError(t, err)
+	decoded := &TurnBuffer{}
+	require.NoError(t, decoded.GobDecode(data))
+
+	// rings-restored
+	require.Len(t, decoded.conversational, 2)
+	assert.Equal(t, "first", decoded.conversational[0].Text)
+	assert.Equal(t, "second", decoded.conversational[1].Text)
+	require.Len(t, decoded.items, 2)
+
+	// shared-turn-stays-shared
+	assert.Same(t, decoded.items[1], decoded.conversational[1])
+
+	// counts-restored
+	assert.Equal(t, 2, decoded.Pushed())
+	assert.Equal(t, 3, decoded.PushedWithToolCalls())
+}
 
 func TestTurnBuffer_Validate(t *testing.T) {
 	type testCase struct {
