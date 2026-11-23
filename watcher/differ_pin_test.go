@@ -55,7 +55,7 @@ func TestDiffer_SessionDiffPinAndSnapshot(t *testing.T) {
 		dir := buildFeatureRepo(t)
 		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
-		differ := NewDiffer(store, state.NewDir(t.TempDir()))
+		differ := NewDiffer(nil, store, state.NewDir(t.TempDir()))
 
 		content, target, _ := differ.SessionDiff(ctx, "s1")
 		sess, _ := store.GetById("s1")
@@ -83,7 +83,7 @@ func TestDiffer_SessionDiffPinAndSnapshot(t *testing.T) {
 		dir := buildFeatureRepo(t)
 		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
-		differ := NewDiffer(store, state.NewDir(t.TempDir()))
+		differ := NewDiffer(nil, store, state.NewDir(t.TempDir()))
 
 		differ.SessionDiff(ctx, "s1")
 		sess, _ := store.GetById("s1")
@@ -104,7 +104,7 @@ func TestDiffer_SessionDiffPinAndSnapshot(t *testing.T) {
 		dir := buildFeatureRepo(t)
 		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
-		differ := NewDiffer(store, state.NewDir(t.TempDir()))
+		differ := NewDiffer(nil, store, state.NewDir(t.TempDir()))
 
 		differ.SessionDiff(ctx, "s1")
 		require.NoError(t, os.RemoveAll(dir))
@@ -119,7 +119,7 @@ func TestDiffer_SessionDiffPinAndSnapshot(t *testing.T) {
 	t.Run("gone-tree-without-snapshot-empty", func(t *testing.T) {
 		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", filepath.Join(t.TempDir(), "removed"))
-		differ := NewDiffer(store, state.NewDir(t.TempDir()))
+		differ := NewDiffer(nil, store, state.NewDir(t.TempDir()))
 
 		content, _, isFound := differ.SessionDiff(ctx, "s1")
 		assert.True(t, isFound)
@@ -139,7 +139,7 @@ func TestDiffer_SessionDiffPinAndSnapshot(t *testing.T) {
 		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		stateDir := state.NewDir(t.TempDir())
-		differ := NewDiffer(store, stateDir)
+		differ := NewDiffer(nil, store, stateDir)
 
 		differ.SessionDiff(ctx, "s1")
 		snapshotBefore, _, ok := stateDir.ReadDiffSnapshot("claude", "s1")
@@ -161,7 +161,7 @@ func TestDiffer_SessionDiffPinAndSnapshot(t *testing.T) {
 		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 		stateDir := state.NewDir(t.TempDir())
-		differ := NewDiffer(store, stateDir)
+		differ := NewDiffer(nil, store, stateDir)
 
 		content, _, _ := differ.SessionDiff(ctx, "s1")
 		snapshot, _, ok := stateDir.ReadDiffSnapshot("claude", "s1")
@@ -181,7 +181,7 @@ func TestDiffer_SessionDiffPinAndSnapshot(t *testing.T) {
 		require.NoError(t, err)
 		written := state.DiffBase{Sha: head, Target: "develop"}
 		require.NoError(t, stateDir.WriteDiffBase("claude", written, "s1"))
-		differ := NewDiffer(store, stateDir)
+		differ := NewDiffer(nil, store, stateDir)
 
 		content, target, _ := differ.SessionDiff(ctx, "s1")
 		sess, _ := store.GetById("s1")
@@ -196,9 +196,98 @@ func TestDiffer_SessionDiffPinAndSnapshot(t *testing.T) {
 
 	// unknown-session-not-found
 	t.Run("unknown-session-not-found", func(t *testing.T) {
-		differ := NewDiffer(session.NewStore(10, events.NewBroker(), session.AgentClaude), nil)
+		differ := NewDiffer(nil, session.NewStore(10, events.NewBroker(), session.AgentClaude), nil)
 
 		_, _, isFound := differ.SessionDiff(ctx, "missing")
 		assert.False(t, isFound)
 	})
+}
+
+func TestDiffer_PinFirstTurn(t *testing.T) {
+	ctx := context.Background()
+
+	// landed-branch-keeps-committed-work
+	t.Run("landed-branch-keeps-committed-work", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		differ := NewDiffer(nil, store, state.NewDir(t.TempDir()))
+		differ.pinFirstTurn(ctx, "s1")
+
+		gitRun(t, dir, "checkout", "main")
+		gitRun(t, dir, "merge", "--no-edit", "feature")
+		gitRun(t, dir, "checkout", "feature")
+
+		content, target, _ := differ.SessionDiff(ctx, "s1")
+		assert.Equal(t, "main", target)
+		assert.Contains(t, content, "feature.txt", "committed work stays in the diff after the branch landed")
+		assert.Contains(t, content, "+uncommitted")
+	})
+
+	// stale-session-not-pinned
+	t.Run("stale-session-not-pinned", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
+			Meta:      &session.Meta{SessionId: "s1", CWD: dir},
+			Role:      session.RoleUser,
+			Text:      "hello",
+			Timestamp: time.Now().Add(-2 * pinWindow),
+		})
+		differ := NewDiffer(nil, store, nil)
+
+		differ.pinFirstTurn(ctx, "s1")
+
+		sess, _ := store.GetById("s1")
+		assert.Empty(t, sess.DiffBase)
+		assert.NotContains(t, differ.pinAttempted, session.Id("s1"))
+	})
+
+	// already-pinned-untouched
+	t.Run("already-pinned-untouched", func(t *testing.T) {
+		dir := buildFeatureRepo(t)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", dir)
+		store.PinDiffBase("s1", "abc1234", "develop")
+		differ := NewDiffer(nil, store, nil)
+
+		differ.pinFirstTurn(ctx, "s1")
+
+		sess, _ := store.GetById("s1")
+		assert.Equal(t, "abc1234", sess.DiffBase)
+		assert.Equal(t, "develop", sess.DiffTarget)
+	})
+
+	// not-a-repo-attempted-once
+	t.Run("not-a-repo-attempted-once", func(t *testing.T) {
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+		seedSession(t, store, "s1", t.TempDir())
+		differ := NewDiffer(nil, store, nil)
+
+		differ.pinFirstTurn(ctx, "s1")
+
+		sess, _ := store.GetById("s1")
+		assert.Empty(t, sess.DiffBase)
+		assert.Contains(t, differ.pinAttempted, session.Id("s1"), "a failed pin is not retried on every turn")
+	})
+}
+
+func TestDiffer_Run(t *testing.T) {
+	dir := buildFeatureRepo(t)
+	broker := events.NewBroker()
+	store := session.NewStore(10, broker, session.AgentClaude)
+	differ := NewDiffer(broker, store, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- differ.Run(ctx) }()
+
+	require.Eventually(t, func() bool {
+		seedSession(t, store, "s1", dir)
+		var base string
+		store.WithSession("s1", func(sess *session.Session) { base = sess.DiffBase })
+		return base != ""
+	}, 5*time.Second, 50*time.Millisecond, "a turn of a live session pins its base")
+
+	cancel()
+	assert.ErrorIs(t, <-done, context.Canceled)
 }

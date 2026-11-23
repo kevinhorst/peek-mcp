@@ -157,7 +157,7 @@ func TestDiffer_DiffBase(t *testing.T) {
 	gitRun(t, dir, "branch", "develop")
 	gitRun(t, dir, "checkout", "-b", "feature", "develop")
 
-	differ := NewDiffer(session.NewStore(10, events.NewBroker(), session.AgentClaude), nil)
+	differ := NewDiffer(nil, session.NewStore(10, events.NewBroker(), session.AgentClaude), nil)
 	ctx := context.Background()
 
 	// cached-after-base-deleted
@@ -176,7 +176,7 @@ func TestDiffer_SessionDiff(t *testing.T) {
 	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	seedSession(t, store, "sess-1", dir)
 
-	content, target, isFound := NewDiffer(store, nil).SessionDiff(context.Background(), "sess-1")
+	content, target, isFound := NewDiffer(nil, store, nil).SessionDiff(context.Background(), "sess-1")
 
 	assert.True(t, isFound)
 	assert.Equal(t, "main", target)
@@ -194,7 +194,7 @@ func TestDiffer_UncommittedDiff(t *testing.T) {
 		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", dir)
 
-		content, isFound := NewDiffer(store, nil).UncommittedDiff(ctx, "s1")
+		content, isFound := NewDiffer(nil, store, nil).UncommittedDiff(ctx, "s1")
 
 		assert.True(t, isFound)
 		assert.Contains(t, content, "+uncommitted")
@@ -207,7 +207,7 @@ func TestDiffer_UncommittedDiff(t *testing.T) {
 		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		seedSession(t, store, "s1", t.TempDir())
 
-		content, isFound := NewDiffer(store, nil).UncommittedDiff(ctx, "s1")
+		content, isFound := NewDiffer(nil, store, nil).UncommittedDiff(ctx, "s1")
 
 		assert.True(t, isFound)
 		assert.Empty(t, content)
@@ -215,7 +215,7 @@ func TestDiffer_UncommittedDiff(t *testing.T) {
 
 	// unknown-session-not-found
 	t.Run("unknown-session-not-found", func(t *testing.T) {
-		differ := NewDiffer(session.NewStore(10, events.NewBroker(), session.AgentClaude), nil)
+		differ := NewDiffer(nil, session.NewStore(10, events.NewBroker(), session.AgentClaude), nil)
 
 		_, isFound := differ.UncommittedDiff(ctx, "missing")
 		assert.False(t, isFound)

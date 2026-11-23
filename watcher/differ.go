@@ -9,12 +9,17 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 
+	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
 )
+
+// pinWindow bounds first-turn pinning to live sessions, so the startup backfill of old transcripts runs no git.
+const pinWindow = time.Hour
 
 // excludedPaths lists dependency and generated paths excluded from diffs.
 var excludedPaths = []string{
@@ -65,26 +70,31 @@ type diffBaseKey struct {
 
 // diffRequest is what a diff computation needs from the session, copied out under the store lock.
 type diffRequest struct {
-	agent  session.Agent
-	base   string
-	cwd    string
-	id     session.Id
-	target string
+	agent      session.Agent
+	base       string
+	cwd        string
+	id         session.Id
+	lastActive time.Time
+	target     string
 }
 
 // Differ computes a session's git diffs when a caller asks for them; nothing is polled or held in memory.
 type Differ struct {
 	baseByKey      map[diffBaseKey]string
 	baseByKeyMutex sync.Mutex
+	broker         *events.Broker
+	pinAttempted   map[session.Id]struct{}
 	stateDir       *state.Dir
 	store          *session.Store
 }
 
-func NewDiffer(store *session.Store, stateDir *state.Dir) *Differ {
+func NewDiffer(broker *events.Broker, store *session.Store, stateDir *state.Dir) *Differ {
 	return &Differ{
-		baseByKey: make(map[diffBaseKey]string),
-		stateDir:  stateDir,
-		store:     store,
+		baseByKey:    make(map[diffBaseKey]string),
+		broker:       broker,
+		pinAttempted: make(map[session.Id]struct{}),
+		stateDir:     stateDir,
+		store:        store,
 	}
 }
 
@@ -113,11 +123,12 @@ func (d *Differ) newRequest(id session.Id) (*diffRequest, bool) {
 	var request *diffRequest
 	found := d.store.WithSession(id, func(sess *session.Session) {
 		request = &diffRequest{
-			agent:  sess.Agent,
-			base:   sess.DiffBase,
-			cwd:    sess.Meta.CWD,
-			id:     id,
-			target: sess.DiffTarget,
+			agent:      sess.Agent,
+			base:       sess.DiffBase,
+			cwd:        sess.Meta.CWD,
+			id:         id,
+			lastActive: sess.LastActive,
+			target:     sess.DiffTarget,
 		}
 	})
 	return request, found
@@ -171,6 +182,27 @@ func (d *Differ) pinBase(ctx context.Context, request *diffRequest) bool {
 	return true
 }
 
+// pinFirstTurn pins a live session's base once, at the turn that introduces its working tree; Run is its only caller.
+func (d *Differ) pinFirstTurn(ctx context.Context, id session.Id) {
+	if _, isAttempted := d.pinAttempted[id]; isAttempted {
+		return
+	}
+
+	request, found := d.newRequest(id)
+	if !found || request.base != "" || request.cwd == "" {
+		return
+	}
+	if time.Since(request.lastActive) > pinWindow {
+		return
+	}
+
+	d.pinAttempted[id] = struct{}{}
+	if !gitReady(ctx, request.cwd) {
+		return
+	}
+	d.pinBase(ctx, request)
+}
+
 func (d *Differ) readSnapshot(request *diffRequest) string {
 	if d.stateDir == nil {
 		return ""
@@ -178,6 +210,24 @@ func (d *Differ) readSnapshot(request *diffRequest) string {
 
 	content, _, _ := d.stateDir.ReadDiffSnapshot(string(request.agent), string(request.id))
 	return content
+}
+
+// Run pins each live session's diff base at its first turn, so a branch that lands before the first diff request keeps its committed work in the diff.
+func (d *Differ) Run(ctx context.Context) error {
+	turns, cancel := d.broker.Subscribe()
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event := <-turns:
+			if event.Type != events.TypeTurnAdded {
+				continue
+			}
+			d.pinFirstTurn(ctx, session.Id(event.SessionId))
+		}
+	}
 }
 
 // SessionDiff diffs the working tree against the pinned merge-base, or serves the snapshot once the tree is gone.
