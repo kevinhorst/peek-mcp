@@ -1,4 +1,13 @@
+<p align="center">
+  <img src="docs/assets/logo/peek-wordmark.png" alt="peek" width="240">
+</p>
+
 # peek-mcp
+
+[![CI](https://github.com/kevinhorst/peek-mcp/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/kevinhorst/peek-mcp/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/kevinhorst/peek-mcp)](https://github.com/kevinhorst/peek-mcp/releases/latest)
+[![Go version](https://img.shields.io/github/go-mod/go-version/kevinhorst/peek-mcp)](go.mod)
+[![License: MIT](https://img.shields.io/github/license/kevinhorst/peek-mcp)](LICENSE)
 
 Shared session context for AI agents. peek-mcp watches the sessions Claude Code and Codex CLI write to disk and serves them live over MCP — turns, plans, and git diffs — so agents can hand work to each other, review each other, escape full context windows, be orchestrated as a fleet, and have their history mined. No copy-paste, no summarization, no workflow change.
 
@@ -63,15 +72,17 @@ peek-mcp start
 
 This serves the MCP endpoint on `http://localhost:4242/mcp` by default.
 
-Connect it to a client:
+Connect it to a client by hand (the wizard above does this for you):
+
+Claude Code, with its CLI:
 
 ```bash
-# Claude Chat
-claude mcp add peek-mcp http://localhost:4242/mcp --transport http
+claude mcp add --transport http peek-mcp http://localhost:4242/mcp
 ```
 
+Claude Code, or edit `~/.claude.json` directly:
+
 ```json
-// Claude Code — .claude/settings.json
 {
   "mcpServers": {
     "peek-mcp": { "type": "http", "url": "http://localhost:4242/mcp" }
@@ -79,8 +90,9 @@ claude mcp add peek-mcp http://localhost:4242/mcp --transport http
 }
 ```
 
+Codex CLI, in `~/.codex/config.toml`:
+
 ```toml
-# Codex — ~/codex/config.toml
 [mcp_servers.peek-mcp]
 command = "/absolute/path/to/peek-mcp"
 args = ["start", "--transport=stdio"]
