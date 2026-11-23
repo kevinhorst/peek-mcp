@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/gob"
 	"io"
+	"slices"
 
 	"github.com/pkg/errors"
 )
@@ -13,7 +14,11 @@ const (
 	usageTargetSession usageTargetKind = iota + 1
 	usageTargetSkill
 	usageTargetSubagent
+	usageTargetSkillRun
 )
+
+// noActiveRun marks a snapshot whose session has no open skill run.
+const noActiveRun = -1
 
 // FileState is one transcript file's read position and its parser's cross-line state.
 type FileState struct {
@@ -40,6 +45,7 @@ func (s *requestUsageSnapshot) restore(session *Session) *requestUsage {
 }
 
 type sessionSnapshot struct {
+	ActiveRunIndex  int
 	ActiveSkills    map[string]int
 	CurrentPromptId string
 	PlanExitSeen    bool
@@ -49,6 +55,7 @@ type sessionSnapshot struct {
 
 func newSessionSnapshot(session *Session) *sessionSnapshot {
 	return &sessionSnapshot{
+		ActiveRunIndex:  activeRunIndex(session),
 		ActiveSkills:    activeSkillIndexes(session),
 		CurrentPromptId: session.currentPromptId,
 		PlanExitSeen:    session.planExitSeen,
@@ -68,6 +75,11 @@ func (s *sessionSnapshot) restore() *Session {
 		session.activeSkills[actor] = session.Skills[index]
 	}
 
+	isRunOpen := s.ActiveRunIndex >= 0 && s.ActiveRunIndex < len(session.SkillRuns)
+	if isRunOpen {
+		session.activeRun = session.SkillRuns[s.ActiveRunIndex]
+	}
+
 	session.usageByRequestId = make(map[string]*requestUsage, len(s.RequestUsage))
 	for requestId, usage := range s.RequestUsage {
 		session.usageByRequestId[requestId] = usage.restore(session)
@@ -83,9 +95,10 @@ type StoreSnapshot struct {
 }
 
 type usageTarget struct {
-	Kind       usageTargetKind
-	SkillIndex int
-	SubagentId string
+	Kind          usageTargetKind
+	SkillIndex    int
+	SkillRunIndex int
+	SubagentId    string
 }
 
 func (t *usageTarget) resolve(session *Session) *Usage {
@@ -96,8 +109,17 @@ func (t *usageTarget) resolve(session *Session) *Usage {
 		return &session.Skills[t.SkillIndex].Usage
 	case usageTargetSubagent:
 		return &session.Subagents[t.SubagentId].Usage
+	case usageTargetSkillRun:
+		return &session.SkillRuns[t.SkillRunIndex].Usage
 	}
 	return nil
+}
+
+func activeRunIndex(session *Session) int {
+	if session.activeRun == nil {
+		return noActiveRun
+	}
+	return slices.Index(session.SkillRuns, session.activeRun)
 }
 
 func activeSkillIndexes(session *Session) map[string]int {
@@ -140,6 +162,9 @@ func usageTargets(session *Session) map[*Usage]*usageTarget {
 	}
 	for id, stat := range session.Subagents {
 		targets[&stat.Usage] = &usageTarget{Kind: usageTargetSubagent, SubagentId: id}
+	}
+	for index, run := range session.SkillRuns {
+		targets[&run.Usage] = &usageTarget{Kind: usageTargetSkillRun, SkillRunIndex: index}
 	}
 	return targets
 }

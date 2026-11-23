@@ -1,6 +1,7 @@
 package session
 
 import (
+	"cmp"
 	"errors"
 	"maps"
 	"math"
@@ -42,6 +43,7 @@ const maxSkillStats = 200
 const StopReasonToolUse = "tool_use"
 
 type Session struct {
+	activeRun        *SkillRun
 	activeSkills     map[string]*SkillStat
 	currentPromptId  string
 	planExitSeen     bool
@@ -61,6 +63,7 @@ type Session struct {
 	PlanContent     string                      `json:"-"`
 	PlanFilePath    string                      `json:"-"`
 	PlanRevisions   []*PlanRevision             `json:"-"`
+	SkillRuns       []*SkillRun                 `json:"-"`
 	Skills          []*SkillStat                `json:"-"`
 	StartedAt       time.Time                   `json:"-"`
 	Subagents       map[string]*SubagentStat    `json:"-"`
@@ -133,6 +136,7 @@ func (s *Session) AddEvent(event *Event) {
 		s.Counters.SkillsInvoked++
 		if event.Skill != nil {
 			s.openSkillWindow(event)
+			s.openSkillRun(event)
 		}
 	case EventKindSubagentSpawned:
 		s.Counters.SubagentsSpawned++
@@ -225,8 +229,146 @@ func (s *Session) openSkillWindow(event *Event) {
 	s.activeSkills[event.Actor] = stat
 }
 
+// AgentTypeUsage sums the subagents of one agent type and model that a skill run spawned.
+type AgentTypeUsage struct {
+	AgentType string `json:"agent_type,omitempty"`
+	ContextLoad
+	Count      int       `json:"count"`
+	LastActive time.Time `json:"last_active"`
+	Model      string    `json:"model,omitempty"`
+	Seconds    int       `json:"seconds"`
+	Usage      Usage     `json:"usage"`
+}
+
+// add counts one subagent: requests, seconds and usage summed, the peak context the largest of any.
+func (u *AgentTypeUsage) add(stat *SubagentStat) {
+	u.Count++
+	u.PeakContext = max(u.PeakContext, stat.PeakContext)
+	u.Requests += stat.Requests
+	u.Seconds += int(stat.LastActive.Sub(stat.FirstActive).Seconds())
+	u.Usage.Add(&stat.Usage)
+	if stat.LastActive.After(u.LastActive) {
+		u.LastActive = stat.LastActive
+	}
+}
+
+type agentTypeKey struct {
+	agentType string
+	model     string
+}
+
+// ContextLoad counts an agent's model requests and the largest context a single request sent.
+type ContextLoad struct {
+	PeakContext int `json:"peak_context"`
+	Requests    int `json:"requests"`
+}
+
+func (l *ContextLoad) record(isNewRequest bool, usage *Usage) {
+	if isNewRequest {
+		l.Requests++
+	}
+	l.PeakContext = max(l.PeakContext, usage.contextTokens())
+}
+
+// SkillRun is one skill invocation at the root: the root's usage from the invocation until the next root invocation.
+type SkillRun struct {
+	Args string `json:"args,omitempty"`
+	ContextLoad
+	EndedAt    time.Time `json:"ended_at,omitempty"`
+	LastActive time.Time `json:"last_active"`
+	Model      string    `json:"model,omitempty"`
+	Skill      string    `json:"skill"`
+	Source     string    `json:"source,omitempty"`
+	StartedAt  time.Time `json:"started_at"`
+	Usage      Usage     `json:"usage"`
+}
+
+func (s *Session) closeSkillRun(timestamp time.Time) {
+	run := s.activeRun
+	if run == nil {
+		return
+	}
+
+	run.EndedAt = timestamp
+	if timestamp.IsZero() {
+		run.EndedAt = run.LastActive
+	}
+	s.activeRun = nil
+}
+
+// isWithinSkillRun reports whether a timestamp falls from the run's start to the next root invocation; the open run has no end.
+func (s *Session) isWithinSkillRun(run *SkillRun, timestamp time.Time) bool {
+	if timestamp.Before(run.StartedAt) {
+		return false
+	}
+	if run == s.activeRun {
+		return true
+	}
+	return timestamp.Before(run.EndedAt)
+}
+
+// openSkillRun starts a run on a root-level invocation; a subagent's invocation stays inside the run that spawned it.
+func (s *Session) openSkillRun(event *Event) {
+	if event.Actor != "" {
+		return
+	}
+
+	s.closeSkillRun(event.Timestamp)
+	if len(s.SkillRuns) >= maxSkillStats {
+		return
+	}
+
+	run := &SkillRun{
+		Args:       event.Skill.Args,
+		LastActive: event.Timestamp,
+		Skill:      event.Skill.Skill,
+		Source:     event.Skill.Source,
+		StartedAt:  event.Timestamp,
+	}
+	s.SkillRuns = append(s.SkillRuns, run)
+	s.activeRun = run
+}
+
+func (s *Session) recordSkillRunTurn(isNewRequest bool, turn *Turn) {
+	run := s.activeRun
+	if run == nil {
+		return
+	}
+
+	run.record(isNewRequest, turn.Usage)
+	if !turn.Timestamp.IsZero() {
+		run.LastActive = turn.Timestamp
+	}
+	if run.Model == "" {
+		run.Model = turn.Meta.Model
+	}
+}
+
+// SkillRunAgents sums the subagents first active within a skill run, per agent type and model.
+func (s *Session) SkillRunAgents(run *SkillRun) []*AgentTypeUsage {
+	totalByKey := make(map[agentTypeKey]*AgentTypeUsage)
+	for _, stat := range s.Subagents {
+		if !s.isWithinSkillRun(run, stat.FirstActive) {
+			continue
+		}
+
+		key := agentTypeKey{agentType: stat.AgentType, model: stat.Model}
+		total, ok := totalByKey[key]
+		if !ok {
+			total = &AgentTypeUsage{AgentType: stat.AgentType, Model: stat.Model}
+			totalByKey[key] = total
+		}
+		total.add(stat)
+	}
+
+	totals := slices.Collect(maps.Values(totalByKey))
+	slices.SortFunc(totals, compareAgentTypeUsage)
+	return totals
+}
+
 type SubagentStat struct {
-	AgentType    string                      `json:"agent_type,omitempty"`
+	AgentType string `json:"agent_type,omitempty"`
+	ContextLoad
 	Description  string                      `json:"description,omitempty"`
 	FilePath     string                      `json:"-"`
 	FirstActive  time.Time                   `json:"first_active"`
@@ -295,7 +437,8 @@ func (s *Session) AddSubagentTurn(turn *Turn) {
 			skill.Model = turn.Meta.Model
 		}
 	}
-	s.applyRequestUsage(turn.RequestId, turn.Usage, targets)
+	isNewRequest := s.applyRequestUsage(turn.RequestId, turn.Usage, targets)
+	stat.record(isNewRequest, turn.Usage)
 }
 
 type requestUsage struct {
@@ -303,11 +446,13 @@ type requestUsage struct {
 	targets []*Usage
 }
 
-func (s *Session) applyRequestUsage(requestId string, usage *Usage, targets []*Usage) {
+// applyRequestUsage replaces a request's earlier chunk usage on its targets and reports whether the request is new.
+func (s *Session) applyRequestUsage(requestId string, usage *Usage, targets []*Usage) bool {
 	if s.usageByRequestId == nil {
 		s.usageByRequestId = make(map[string]*requestUsage)
 	}
-	if previous, counted := s.usageByRequestId[requestId]; counted {
+	previous, isCounted := s.usageByRequestId[requestId]
+	if isCounted {
 		for _, target := range previous.targets {
 			target.Sub(&previous.counted)
 		}
@@ -316,6 +461,7 @@ func (s *Session) applyRequestUsage(requestId string, usage *Usage, targets []*U
 		target.Add(usage)
 	}
 	s.usageByRequestId[requestId] = &requestUsage{counted: *usage, targets: targets}
+	return !isCounted
 }
 
 func (s *Session) AddTurn(nextTurn *Turn) {
@@ -341,7 +487,11 @@ func (s *Session) AddTurn(nextTurn *Turn) {
 				skill.Model = nextTurn.Meta.Model
 			}
 		}
-		s.applyRequestUsage(nextTurn.RequestId, nextTurn.Usage, targets)
+		if s.activeRun != nil {
+			targets = append(targets, &s.activeRun.Usage)
+		}
+		isNewRequest := s.applyRequestUsage(nextTurn.RequestId, nextTurn.Usage, targets)
+		s.recordSkillRunTurn(isNewRequest, nextTurn)
 	}
 
 	if nextTurn.StopReason != "" && nextTurn.StopReason != StopReasonToolUse {
@@ -543,6 +693,13 @@ func (s *Session) Validate() error {
 	}
 
 	return nil
+}
+
+func compareAgentTypeUsage(left, right *AgentTypeUsage) int {
+	return cmp.Or(
+		cmp.Compare(left.AgentType, right.AgentType),
+		cmp.Compare(left.Model, right.Model),
+	)
 }
 
 func titleSourceRank(source TitleSource) int {

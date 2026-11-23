@@ -14,6 +14,11 @@ type Usage struct {
 	TotalTokens                int `json:"total_tokens,omitempty"`
 }
 
+// contextTokens is the context one request sent the model: fresh input, cache writes and cache reads.
+func (u *Usage) contextTokens() int {
+	return u.InputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
+}
+
 func (u *Usage) Validate() error {
 	if u == nil {
 		return errors.New("usage is nil")

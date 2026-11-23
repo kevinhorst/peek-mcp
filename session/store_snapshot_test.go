@@ -308,6 +308,54 @@ func TestStoreSnapshot_RoundTrip(t *testing.T) {
 		assert.Equal(t, 11, restoredSession.Subagents["sub-1"].Usage.OutputTokens)
 	})
 
+	// active-skill-run-relinked
+	t.Run("active-skill-run-relinked", func(t *testing.T) {
+		restored := restoredStore(t, provideSnapshotStore())
+
+		session, ok := restored.GetById("p")
+		require.True(t, ok)
+		require.Len(t, session.SkillRuns, 2)
+		assert.Equal(t, "review", session.SkillRuns[1].Skill)
+		assert.Same(t, session.SkillRuns[1], session.activeRun)
+		assert.Equal(t, snapshotFixtureStart.Add(13*time.Minute), session.SkillRuns[0].EndedAt)
+	})
+
+	// skill-run-usage-relinked
+	t.Run("skill-run-usage-relinked", func(t *testing.T) {
+		repeatedChunk := func() *Turn {
+			return &Turn{
+				Meta:      &Meta{Model: "claude-fable", SessionId: "p"},
+				RequestId: "r4",
+				Role:      RoleAssistant,
+				Text:      " more",
+				Timestamp: snapshotFixtureStart.Add(14 * time.Minute),
+				Usage:     &Usage{InputTokens: 8, OutputTokens: 9},
+			}
+		}
+		original := provideSnapshotStore()
+		restored := restoredStore(t, original)
+		original.AddTurnBySessionId("p", AgentClaude, repeatedChunk())
+		restored.AddTurnBySessionId("p", AgentClaude, repeatedChunk())
+
+		originalSession, ok := original.GetById("p")
+		require.True(t, ok)
+		restoredSession, ok := restored.GetById("p")
+		require.True(t, ok)
+		assert.Equal(t, originalSession.SkillRuns[1].Usage, restoredSession.SkillRuns[1].Usage)
+		assert.Equal(t, 9, restoredSession.SkillRuns[1].Usage.OutputTokens)
+		assert.Equal(t, 1, restoredSession.SkillRuns[1].Requests, "a repeated chunk is no new request")
+	})
+
+	// session-without-skill-run-restores-none
+	t.Run("session-without-skill-run-restores-none", func(t *testing.T) {
+		restored := restoredStore(t, provideSnapshotStore())
+
+		session, ok := restored.GetById("q")
+		require.True(t, ok)
+		assert.Empty(t, session.SkillRuns)
+		assert.Nil(t, session.activeRun)
+	})
+
 	// buffers-keep-capacity-and-counters
 	t.Run("buffers-keep-capacity-and-counters", func(t *testing.T) {
 		original := provideSnapshotStore()
