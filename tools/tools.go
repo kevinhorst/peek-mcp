@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/telemetry"
+	"github.com/kevinhorst/peek-mcp/watcher"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -97,7 +99,9 @@ func resultBytes(result *mcp.CallToolResult) int64 {
 func Register(
 	counter *InvocationCounter,
 	detector *telemetry.Detector,
+	differ *watcher.Differ,
 	lifecycle *Lifecycle,
+	loader *watcher.TurnLoader,
 	server *server.MCPServer,
 	store *session.Store,
 	telemetryStore *telemetry.Store,
@@ -122,7 +126,7 @@ func Register(
 			mcp.Description("Agent: \"claude\" or \"codex\". Required when id and title are omitted and more than one agent is enabled."),
 		),
 		mcp.WithNumber("n",
-			mcp.Description("Number of turns to return (default 20). Only applies to the turns section."),
+			mcp.Description("Number of turns to return (default 20). Only applies to the turns section. Turns beyond the instance's in-memory buffer are re-read from the transcript, which is slower."),
 		),
 		mcp.WithBoolean("turns",
 			mcp.Description("Return the session turns (default true)."),
@@ -134,10 +138,10 @@ func Register(
 			mcp.Description("Return the session plan (default true)."),
 		),
 		mcp.WithBoolean("diff",
-			mcp.Description("Return the pre-computed merge-base git diff against the inferred base branch, reported as diff_target (default false)."),
+			mcp.Description("Return the merge-base git diff against the inferred base branch, computed on request and reported as diff_target; once the working tree is gone, the last computed diff (default false)."),
 		),
 		mcp.WithBoolean("uncommitted_diff",
-			mcp.Description("Return the live uncommitted git diff (`git diff HEAD`) in the session's own working tree (default false)."),
+			mcp.Description("Return the uncommitted git diff (`git diff HEAD`) in the session's own working tree, computed on request (default false)."),
 		),
 		mcp.WithBoolean("remember",
 			mcp.Description("Include the project's auto-memory (MEMORY.md + fact files). Claude sessions only (default false)."),
@@ -159,7 +163,7 @@ func Register(
 		),
 	)
 	sessionGet.Meta = withMaxResultSize()
-	getHandler := awaitReady(sessionGetHandler(store, pageStore), lifecycle, store, readyTimeout)
+	getHandler := awaitReady(sessionGetHandler(differ, loader, pageStore, store), lifecycle, store, readyTimeout)
 	server.AddTool(sessionGet, counted(counter, "session_get", getHandler))
 
 	sessionList :=
@@ -213,7 +217,12 @@ func Register(
 	server.AddTool(sessionEvents, counted(counter, "session_events", awaitReady(eventsHandler, lifecycle, store, readyTimeout)))
 }
 
-func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]) server.ToolHandlerFunc {
+func sessionGetHandler(
+	differ *watcher.Differ,
+	loader *watcher.TurnLoader,
+	pageStore *PageStore[*sessionGetResult],
+	s *session.Store,
+) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := request.GetArguments()
 
@@ -268,13 +277,13 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 
 		withTools := boolArgFromRequest(request, "tools", false)
 
-		var scopedTurns []*turnView
+		var bufferedTurns []*session.Turn
+		var source *TurnSource
 		var header *sessionGetResult
 		isKnownSubagent := true
 		isFound := s.WithSession(sess.Meta.SessionId, func(lockedSession *session.Session) {
-			turns, ok := scopeTurns(lockedSession, n, subagentId, withTools)
-			isKnownSubagent = ok
-			scopedTurns = newTurnViews(turns, withThinking, withTools)
+			bufferedTurns, isKnownSubagent = scopeTurns(lockedSession, n, subagentId, withTools)
+			source = NewTurnSource(lockedSession, subagentId, withTools)
 			turnsTotal := scopeTurnsTotal(lockedSession, subagentId, withTools)
 			header = &sessionGetResult{
 				LastActive:    lockedSession.LastActive,
@@ -292,10 +301,23 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 			return mcp.NewToolResultError(fmt.Sprintf("unknown subagent id %q; valid ids: %v", subagentId, sess.SubagentIds())), nil
 		}
 
+		var scopedTurns []*turnView
+		if withTurns {
+			scopedTurns = newTurnViews(source.Turns(loader, bufferedTurns, n), withThinking, withTools)
+		}
+
 		scopedEvents := sess.Events.All()
 		if subagentId != "" {
 			scopedEvents = filterEventsByActor(scopedEvents, subagentId)
 			withPlan, withDiff, withUncommitted, withMemory = false, false, false, false
+		}
+
+		var diff, diffTarget, uncommitted string
+		if withDiff {
+			diff, diffTarget, _ = differ.SessionDiff(ctx, sess.Meta.SessionId)
+		}
+		if withUncommitted {
+			uncommitted, _ = differ.UncommittedDiff(ctx, sess.Meta.SessionId)
 		}
 
 		if boolArgFromRequest(request, "json", false) {
@@ -314,12 +336,11 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 				result.Plan = sess.PlanContent
 			}
 			if withDiff {
-				diffContent, diffTarget, _ := s.LoadDiff(sess.Meta.SessionId)
-				result.Diff = diffContent
+				result.Diff = diff
 				result.DiffTarget = diffTarget
 			}
 			if withUncommitted {
-				result.UncommittedDiff = sess.UncommittedDiff
+				result.UncommittedDiff = uncommitted
 			}
 			if withMemory {
 				result.Memory = memoryBlock(sess)
@@ -327,7 +348,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 			return respondWithStructured(result)
 		}
 
-		var turns, events, plan, diff, uncommitted, memory string
+		var turns, events, plan, memory string
 		if withTurns {
 			data, err := json.Marshal(scopedTurns)
 			if err != nil {
@@ -340,12 +361,6 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 		}
 		if withPlan {
 			plan = sess.PlanContent
-		}
-		if withDiff {
-			diff, _, _ = s.LoadDiff(sess.Meta.SessionId)
-		}
-		if withUncommitted {
-			uncommitted = sess.UncommittedDiff
 		}
 		if withMemory {
 			memory = marshalMemoryBlock(sess)
@@ -360,7 +375,7 @@ func sessionGetHandler(s *session.Store, pageStore *PageStore[*sessionGetResult]
 			uncommitted,
 		)
 		if withDiff {
-			firstPage.DiffTarget = sess.DiffTarget
+			firstPage.DiffTarget = diffTarget
 		}
 		firstPage.LastActive = header.LastActive
 		firstPage.PlanRevisions = header.PlanRevisions
@@ -409,7 +424,7 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 				TitleSource: sess.TitleSource,
 				LastActive:  sess.LastActive,
 				HasPlan:     sess.PlanContent != "" || sess.PlanFilePath != "",
-				HasDiff:     sess.DiffOutput != "" || sess.HasDiffSnapshot,
+				HasDiff:     sess.HasDiff(),
 				DiffTarget:  sess.DiffTarget,
 				Meta:        sess.Meta,
 			}
@@ -537,16 +552,20 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 	}
 }
 
+// diffAvailability reports live while the working tree exists (computed on request), else snapshot or none.
 func diffAvailability(currentSession *session.Session) string {
-	if currentSession.DiffOutput == "" && !currentSession.HasDiffSnapshot {
-		return "none"
+	cwd := currentSession.Meta.CWD
+	if cwd != "" {
+		_, err := os.Stat(cwd)
+		if err == nil {
+			return "live"
+		}
 	}
 
-	if currentSession.DiffSource == session.DiffSourceSnapshot {
+	if currentSession.HasDiffSnapshot {
 		return "snapshot"
 	}
-
-	return "live"
+	return "none"
 }
 
 func memoryBlock(currentSession *session.Session) *memoryBlockResult {
