@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,8 @@ import (
 var (
 	errInitialLoadPending     = errors.New("initial session load still in progress; retry shortly")
 	errSessionSelectorMissing = errors.New("id or title parameter is required")
+	errSkillMissing           = errors.New("skill parameter is required")
+	errSkillRunsLimitInvalid  = errors.New("limit must be at least 1")
 	errWindowDaysInvalid      = errors.New("window_days must be at least 1")
 )
 
@@ -215,6 +218,24 @@ func Register(
 	sessionEvents.Meta = withMaxResultSize()
 	eventsHandler := sessionEventsHandler(detector, store, eventsPageStore, telemetryStore)
 	server.AddTool(sessionEvents, counted(counter, "session_events", awaitReady(eventsHandler, lifecycle, store, readyTimeout)))
+
+	skillRuns := mcp.NewTool("skill_runs",
+		mcp.WithDescription("Returns a skill's past runs across all sessions, newest first, to estimate what its next run costs. A run is one invocation of the skill by the main agent; it lasts until the main agent's next skill invocation. Each run carries the main agent's model, request count, largest single-request context (peak_context) and token usage, and its subagents summed per agent type and model: count, requests, the largest peak_context of any of them, summed seconds and token usage. No turns, events or file lists. Claude sessions only; covers the instance's watch window."),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithString("skill",
+			mcp.Required(),
+			mcp.Description("Skill name as invoked, without the slash (e.g. \"fdesign\"); a plugin-namespaced invocation (\"plugin:fdesign\") matches too."),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Number of runs to return (default 5); total reports how many runs the window holds."),
+		),
+		mcp.WithNumber(windowDaysParam,
+			mcp.Description("Widen this instance's watch window to this many days before searching (stdio instances start with 3). The wider window stays until the instance exits, and the call waits while the added days load. Omit to search the current window."),
+		),
+	)
+	skillRuns.Meta = withMaxResultSize()
+	runsHandler := awaitReady(skillRunsHandler(store), lifecycle, store, readyTimeout)
+	server.AddTool(skillRuns, counted(counter, "skill_runs", widened(runsHandler, lifecycle)))
 }
 
 func sessionGetHandler(
@@ -431,6 +452,33 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 		}
 
 		return respondWithStructured(map[string]any{"sessions": items})
+	}
+}
+
+func skillRunsHandler(s *session.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// skill
+		skill := strings.TrimSpace(request.GetString("skill", ""))
+		if skill == "" {
+			return mcp.NewToolResultError(errSkillMissing.Error()), nil
+		}
+
+		// limit
+		limit := request.GetInt("limit", defaultSkillRuns)
+		if limit < 1 {
+			return mcp.NewToolResultError(errSkillRunsLimitInvalid.Error()), nil
+		}
+
+		var runs []*skillRunView
+		s.WithSessions(nil, func(sessions []*session.Session) {
+			runs = newSkillRunViews(sessions, skill)
+		})
+
+		result := &skillRunsResult{
+			Runs:  runs[:min(limit, len(runs))],
+			Total: len(runs),
+		}
+		return respondWithStructured(result)
 	}
 }
 

@@ -999,6 +999,157 @@ func TestSnapshot_ToolOutputEqual(t *testing.T) {
 	}
 }
 
+func provideSkillRunsStore() *session.Store {
+	s := session.NewStore(10, events.NewBroker(), session.AgentClaude)
+	start := time.Date(2026, 11, 23, 15, 0, 0, 0, time.UTC)
+	at := func(minutes int) time.Time {
+		return start.Add(time.Duration(minutes) * time.Minute)
+	}
+	invoke := func(sessionId session.Id, skill string, minutes int) {
+		s.AddTurnBySessionId(sessionId, session.AgentClaude, &session.Turn{
+			Events:    []*session.Event{{Kind: session.EventKindSkillInvoked, Skill: &session.SkillPayload{Args: "go", Skill: skill, Source: session.SkillSourceSlash}, Timestamp: at(minutes)}},
+			Meta:      &session.Meta{CWD: "/project", SessionId: sessionId},
+			Role:      session.RoleUser,
+			Text:      "/" + skill,
+			Timestamp: at(minutes),
+		})
+	}
+
+	invoke("old", "railroad-review", 0)
+	s.AddTurnBySessionId("old", session.AgentClaude, &session.Turn{
+		Meta:      &session.Meta{Model: "claude-opus-5-5", SessionId: "old"},
+		RequestId: "old-r1",
+		Role:      session.RoleAssistant,
+		Timestamp: at(1),
+		Usage:     &session.Usage{CacheReadInputTokens: 2000, InputTokens: 10, OutputTokens: 30},
+	})
+	s.AddTurnBySessionId("old", session.AgentClaude, &session.Turn{
+		Events:     []*session.Event{{Actor: "lane", Kind: session.EventKindSubagentSpawned, Subagent: &session.SubagentPayload{AgentId: "lane", AgentType: "railroad-lane-tests"}}},
+		Meta:       &session.Meta{Model: "claude-opus-5-5", SessionId: "old"},
+		RequestId:  "lane-r1",
+		Role:       session.RoleAssistant,
+		SubagentId: "lane",
+		Timestamp:  at(20),
+		Usage:      &session.Usage{CacheCreationInputTokens: 500, OutputTokens: 40},
+	})
+	invoke("old", "qq", 60)
+
+	invoke("new", "plugin:railroad-review", 120)
+	invoke("other", "fdesign", 130)
+	return s
+}
+
+func TestSkillRuns(t *testing.T) {
+	type testCase struct {
+		_id            string
+		_expectedError string
+		_expectedRuns  []session.Id
+		_expectedTotal int
+		args           map[string]any
+		handler        server.ToolHandlerFunc
+	}
+
+	tests := make([]*testCase, 0)
+
+	// newest-first-across-sessions
+	tests = append(tests, &testCase{
+		_id:            "newest-first-across-sessions",
+		_expectedRuns:  []session.Id{"new", "old"},
+		_expectedTotal: 2,
+		args:           map[string]any{"skill": "railroad-review"},
+		handler:        skillRunsHandler(provideSkillRunsStore()),
+	})
+
+	// limit-cuts-runs-keeps-total
+	tests = append(tests, &testCase{
+		_id:            "limit-cuts-runs-keeps-total",
+		_expectedRuns:  []session.Id{"new"},
+		_expectedTotal: 2,
+		args:           map[string]any{"limit": float64(1), "skill": "railroad-review"},
+		handler:        skillRunsHandler(provideSkillRunsStore()),
+	})
+
+	// unknown-skill-no-runs
+	tests = append(tests, &testCase{
+		_id:            "unknown-skill-no-runs",
+		_expectedRuns:  []session.Id{},
+		_expectedTotal: 0,
+		args:           map[string]any{"skill": "review"},
+		handler:        skillRunsHandler(provideSkillRunsStore()),
+	})
+
+	// skill-missing
+	tests = append(tests, &testCase{
+		_id:            "skill-missing",
+		_expectedError: errSkillMissing.Error(),
+		args:           map[string]any{"skill": "  "},
+		handler:        skillRunsHandler(provideSkillRunsStore()),
+	})
+
+	// limit-invalid
+	tests = append(tests, &testCase{
+		_id:            "limit-invalid",
+		_expectedError: errSkillRunsLimitInvalid.Error(),
+		args:           map[string]any{"limit": float64(0), "skill": "railroad-review"},
+		handler:        skillRunsHandler(provideSkillRunsStore()),
+	})
+
+	// Run tests
+	for _, test := range tests {
+		t.Run(test._id, func(t *testing.T) {
+			result, err := test.handler(context.Background(), requestWithArgs(test.args))
+			require.NoError(t, err)
+
+			if test._expectedError != "" {
+				assert.Equal(t, test._expectedError, errorText(t, result))
+				return
+			}
+
+			payload, ok := result.StructuredContent.(*skillRunsResult)
+			require.True(t, ok)
+			sessionIds := make([]session.Id, 0, len(payload.Runs))
+			for _, run := range payload.Runs {
+				sessionIds = append(sessionIds, run.SessionId)
+			}
+			assert.Equal(t, test._expectedRuns, sessionIds)
+			assert.Equal(t, test._expectedTotal, payload.Total)
+		})
+	}
+}
+
+func TestSkillRuns_RunShape(t *testing.T) {
+	handler := skillRunsHandler(provideSkillRunsStore())
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"skill": "railroad-review"}))
+	require.NoError(t, err)
+	payload, ok := result.StructuredContent.(*skillRunsResult)
+	require.True(t, ok)
+	require.Len(t, payload.Runs, 2)
+	run := payload.Runs[1]
+
+	// root
+	assert.Equal(t, "railroad-review", run.Skill)
+	assert.Equal(t, "go", run.Args)
+	assert.Equal(t, "/project", run.CWD)
+	assert.Equal(t, "claude-opus-5-5", run.Root.Model)
+	assert.Equal(t, 1, run.Root.Requests)
+	assert.Equal(t, 2010, run.Root.PeakContext)
+	assert.Equal(t, 30, run.Root.Usage.OutputTokens)
+
+	// subagents
+	require.Len(t, run.Agents, 1)
+	assert.Equal(t, "railroad-lane-tests", run.Agents[0].AgentType)
+	assert.Equal(t, 1, run.Agents[0].Count)
+	assert.Equal(t, 500, run.Agents[0].PeakContext)
+	assert.Equal(t, 40, run.Agents[0].Usage.OutputTokens)
+
+	// the run ends at its last subagent activity, not at the next invocation
+	assert.Equal(t, 20*60, run.Seconds)
+
+	// a namespaced invocation matches
+	assert.Equal(t, "plugin:railroad-review", payload.Runs[0].Skill)
+}
+
 func TestRegister_ReadOnlyHint(t *testing.T) {
 	srv := server.NewMCPServer("peek-mcp", "test")
 	lifecycle := NewLifecycle(
