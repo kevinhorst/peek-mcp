@@ -34,8 +34,6 @@ func newConfigTestServer(t *testing.T, mutate ...func(*Options)) (*Server, strin
 			Transport:          "http",
 			Port:               4242,
 			Depth:              20,
-			PollInterval:       "5s",
-			PollWindow:         "1h0m0s",
 			StateRetentionDays: 90,
 			ControlPort:        42442,
 			LogLevel:           "info",

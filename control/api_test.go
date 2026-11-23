@@ -15,6 +15,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
+	"github.com/kevinhorst/peek-mcp/watcher"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +42,6 @@ func TestSessions(t *testing.T) {
 	assert.Equal(t, "opus", list.Sessions[1].Model)
 	assert.True(t, list.Sessions[1].HasPlan)
 	assert.True(t, list.Sessions[1].HasDiff)
-	assert.True(t, list.Sessions[1].HasUncommittedDiff)
 	assert.False(t, list.Sessions[0].HasPlan)
 }
 
@@ -150,17 +150,23 @@ func TestDiff(t *testing.T) {
 }
 
 func TestUncommittedDiff(t *testing.T) {
-	server, _ := newTestServer(t, "")
+	store, broker := newTestStore()
+	s1, _ := store.GetById("s1")
+	s1.Meta.CWD = newDirtyRepo(t)
+	server, err := New(&Options{Store: store, Broker: broker, Differ: watcher.NewDiffer(store, nil), Version: "test", Depth: 10})
+	require.NoError(t, err)
 
 	diff := decode[diffResponse](t, get(server, "/api/sessions/s1/uncommitted-diff"))
 	assert.Empty(t, diff.Target)
-	assert.Equal(t, "uncommitted-content", diff.Diff)
+	assert.Contains(t, diff.Diff, "+uncommitted-content")
+
+	assert.Equal(t, http.StatusNotFound, get(server, "/api/sessions/unknown/uncommitted-diff").Code)
 }
 
 func TestDiff_DefaultTruncation(t *testing.T) {
 	store, broker := newTestStore()
-	store.UpdateDiff("s1", "main", strings.Repeat("x", defaultDiffSize+1))
-	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+	differ := newSnapshotDiffer(t, store, strings.Repeat("x", defaultDiffSize+1))
+	server, err := New(&Options{Store: store, Broker: broker, Differ: differ, Version: "test", Depth: 10})
 	require.NoError(t, err)
 
 	diff := decode[diffResponse](t, get(server, "/api/sessions/s1/diff"))

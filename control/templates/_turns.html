@@ -1,4 +1,4 @@
-<div class="turns-panel" hx-get="/fragments/sessions/{{.Id}}/turns{{.Query}}" hx-trigger="peek-refresh from:body throttle:1s" hx-swap="outerHTML">
+<div class="turns-panel" hx-get="/fragments/sessions/{{.Id}}/turns{{.Query}}"{{if not .ShowAll}} hx-trigger="peek-refresh from:body throttle:1s"{{end}} hx-swap="outerHTML">
 {{$root := .}}
 {{if .Info}}
 <table class="usage-table turns-info">
@@ -45,6 +45,9 @@
   <a class="badge {{if not .Role}}badge-ok{{else}}badge-dim{{end}}" hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries ""}}" hx-target="closest .turns-panel" hx-swap="outerHTML">all</a>
   <a class="badge {{if eq .Role "user"}}badge-ok{{else}}badge-dim{{end}}" hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries "user"}}" hx-target="closest .turns-panel" hx-swap="outerHTML">user</a>
   <a class="badge {{if eq .Role "assistant"}}badge-ok{{else}}badge-dim{{end}}" hx-get="/fragments/sessions/{{.Id}}/turns{{index .RoleQueries "assistant"}}" hx-target="closest .turns-panel" hx-swap="outerHTML">assistant</a>
+  {{if .HasOlder}}
+  <a class="badge badge-dim" title="re-read the full transcript; live refresh pauses while every turn is shown" hx-get="/fragments/sessions/{{.Id}}/turns{{.AllQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML">load older turns</a>
+  {{end}}
   {{if .HasThinking}}
   <label class="thinking-toggle" title="show assistant thinking"><input type="checkbox"{{if .ShowThinking}} checked{{end}} hx-get="/fragments/sessions/{{.Id}}/turns{{.ToggleQuery}}" hx-target="closest .turns-panel" hx-swap="outerHTML"> thinking</label>
   {{end}}

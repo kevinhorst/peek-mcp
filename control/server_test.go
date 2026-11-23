@@ -3,18 +3,24 @@ package control
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
+	"github.com/kevinhorst/peek-mcp/state"
+	"github.com/kevinhorst/peek-mcp/watcher"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func newTestStore() (*session.Store, *events.Broker) {
 	broker := events.NewBroker()
-	store := session.NewStore(10, 25, broker, session.AgentClaude, session.AgentCodex)
+	store := session.NewStore(10, broker, session.AgentClaude, session.AgentCodex)
 	now := time.Now()
 
 	store.AddTurnBySessionId("s1", session.AgentClaude, &session.Turn{
@@ -41,8 +47,7 @@ func newTestStore() (*session.Store, *events.Broker) {
 		PlanContent:  "# Plan\n\ncontent",
 		Meta:         &session.Meta{SessionId: "s1"},
 	})
-	store.UpdateDiff("s1", "main", "diff-content")
-	store.UpdateUncommittedDiff("s1", "uncommitted-content")
+	store.PinDiffBase("s1", "abc1234", "main")
 
 	store.AddTurnBySessionId("s2", session.AgentCodex, &session.Turn{
 		Role:      session.RoleUser,
@@ -54,9 +59,44 @@ func newTestStore() (*session.Store, *events.Broker) {
 	return store, broker
 }
 
+// newSnapshotDiffer serves s1's diff from a persisted snapshot, as /project is no working tree.
+func newSnapshotDiffer(t *testing.T, store *session.Store, content string) *watcher.Differ {
+	t.Helper()
+	stateDir := state.NewDir(t.TempDir())
+	require.NoError(t, stateDir.WriteDiffSnapshot("claude", content, "s1"))
+	return watcher.NewDiffer(store, stateDir)
+}
+
+// newDirtyRepo commits a.txt and leaves an uncommitted edit on it.
+func newDirtyRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	identity := []string{"-c", "user.email=t@t", "-c", "user.name=t"}
+	steps := [][]string{
+		{"init", "-q"},
+		append(slices.Clone(identity), "commit", "-q", "--allow-empty", "-m", "init"),
+	}
+	for _, args := range steps {
+		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644))
+	steps = [][]string{
+		{"add", "a.txt"},
+		append(slices.Clone(identity), "commit", "-q", "-m", "a"),
+	}
+	for _, args := range steps {
+		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nuncommitted-content\n"), 0o644))
+	return dir
+}
+
 func newTestServer(t *testing.T, token string) (*Server, *events.Broker) {
 	store, broker := newTestStore()
-	server, err := New(&Options{Store: store, Broker: broker, Token: token, Version: "test", Depth: 10})
+	differ := newSnapshotDiffer(t, store, "diff-content")
+	server, err := New(&Options{Store: store, Broker: broker, Differ: differ, Token: token, Version: "test", Depth: 10})
 	require.NoError(t, err)
 	return server, broker
 }

@@ -9,16 +9,15 @@ import (
 )
 
 type sessionSummary struct {
-	Id                 session.Id    `json:"id"`
-	Agent              session.Agent `json:"agent"`
-	Title              string        `json:"title,omitempty"`
-	LastActive         time.Time     `json:"last_active"`
-	CWD                string        `json:"cwd,omitempty"`
-	GitBranch          string        `json:"git_branch,omitempty"`
-	Model              string        `json:"model,omitempty"`
-	HasPlan            bool          `json:"has_plan"`
-	HasDiff            bool          `json:"has_diff"`
-	HasUncommittedDiff bool          `json:"has_uncommitted_diff"`
+	Id         session.Id    `json:"id"`
+	Agent      session.Agent `json:"agent"`
+	Title      string        `json:"title,omitempty"`
+	LastActive time.Time     `json:"last_active"`
+	CWD        string        `json:"cwd,omitempty"`
+	GitBranch  string        `json:"git_branch,omitempty"`
+	Model      string        `json:"model,omitempty"`
+	HasPlan    bool          `json:"has_plan"`
+	HasDiff    bool          `json:"has_diff"`
 }
 
 type sessionDetail struct {
@@ -76,12 +75,9 @@ type Config struct {
 	ClaudeHome            string `json:"claude_home,omitempty"`
 	CodexHome             string `json:"codex_home,omitempty"`
 	CoworkHome            string `json:"cowork_home,omitempty"`
-	PollInterval          string `json:"poll_interval"`
-	PollWindow            string `json:"poll_window"`
 	StateDir              string `json:"state_dir,omitempty"`
 	StateRetentionDays    int    `json:"state_retention_days"`
 	SnapshotRetentionDays int    `json:"snapshot_retention_days"`
-	DiffCacheSessions     int    `json:"diff_cache_sessions"`
 	ControlPort           int    `json:"control_port"`
 	TokenSet              bool   `json:"token_set"`
 	LogLevel              string `json:"log_level"`
@@ -123,15 +119,14 @@ type instanceView struct {
 
 func newSessionSummary(sess *session.Session) sessionSummary {
 	return sessionSummary{
-		Id:                 sess.Meta.SessionId,
-		Agent:              sess.Agent,
-		Title:              sess.Title,
-		LastActive:         sess.LastActive,
-		CWD:                sess.Meta.CWD,
-		GitBranch:          sess.Meta.GitBranch,
-		Model:              sess.Meta.Model,
-		HasPlan:            sess.PlanContent != "" || sess.PlanFilePath != "",
-		HasDiff:            sess.DiffOutput != "" || sess.HasDiffSnapshot,
-		HasUncommittedDiff: sess.UncommittedDiff != "",
+		Id:         sess.Meta.SessionId,
+		Agent:      sess.Agent,
+		Title:      sess.Title,
+		LastActive: sess.LastActive,
+		CWD:        sess.Meta.CWD,
+		GitBranch:  sess.Meta.GitBranch,
+		Model:      sess.Meta.Model,
+		HasPlan:    sess.PlanContent != "" || sess.PlanFilePath != "",
+		HasDiff:    sess.HasDiff(),
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
+	"github.com/kevinhorst/peek-mcp/watcher"
 )
 
 //go:embed templates/*.html
@@ -28,6 +29,8 @@ type Options struct {
 	Broker         *events.Broker
 	Telemetry      *telemetry.Store
 	Detector       *telemetry.Detector
+	Differ         *watcher.Differ
+	Loader         *watcher.TurnLoader
 	Token          string
 	Version        string
 	Depth          int
@@ -45,6 +48,8 @@ type Server struct {
 	broker         *events.Broker
 	telemetry      *telemetry.Store
 	detector       *telemetry.Detector
+	differ         *watcher.Differ
+	loader         *watcher.TurnLoader
 	token          string
 	version        string
 	depth          int
@@ -79,6 +84,8 @@ func New(opts *Options) (*Server, error) {
 		broker:         opts.Broker,
 		telemetry:      opts.Telemetry,
 		detector:       opts.Detector,
+		differ:         opts.Differ,
+		loader:         opts.Loader,
 		token:          opts.Token,
 		version:        opts.Version,
 		depth:          opts.Depth,

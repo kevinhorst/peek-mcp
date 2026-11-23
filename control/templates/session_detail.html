@@ -38,14 +38,14 @@
 </details>
 <details class="section">
   <summary>Diff</summary>
-  <div hx-get="/fragments/sessions/{{.Summary.Id}}/diff" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
-    <div class="empty">Loading…</div>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/diff" hx-trigger="toggle once from:closest details" hx-swap="outerHTML">
+    <div class="empty">Computed when opened.</div>
   </div>
 </details>
 <details class="section">
   <summary>Uncommitted diff</summary>
-  <div hx-get="/fragments/sessions/{{.Summary.Id}}/uncommitted-diff" hx-trigger="load, peek-refresh from:body throttle:1s" hx-swap="outerHTML">
-    <div class="empty">Loading…</div>
+  <div hx-get="/fragments/sessions/{{.Summary.Id}}/uncommitted-diff" hx-trigger="toggle once from:closest details" hx-swap="outerHTML">
+    <div class="empty">Computed when opened.</div>
   </div>
 </details>
 <details class="section">

@@ -91,7 +91,7 @@ func TestEvents_AgentFilter(t *testing.T) {
 				return
 			case <-ticker.C:
 				broker.Publish(events.Event{Type: events.TypeTurnAdded, SessionId: "s1", Agent: "claude", Ts: time.Now()})
-				broker.Publish(events.Event{Type: events.TypeDiffUpdated, SessionId: "s2", Agent: "codex", Ts: time.Now()})
+				broker.Publish(events.Event{Type: events.TypePlanUpdated, SessionId: "s2", Agent: "codex", Ts: time.Now()})
 			}
 		}
 	}()
@@ -102,7 +102,7 @@ func TestEvents_AgentFilter(t *testing.T) {
 		case line, ok := <-lines:
 			require.True(t, ok, "stream closed early")
 			assert.NotEqual(t, "event: turn_added", line)
-			if line == "event: diff_updated" {
+			if line == "event: plan_updated" {
 				return
 			}
 		case <-deadline:

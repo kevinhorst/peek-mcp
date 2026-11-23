@@ -64,9 +64,12 @@ type turnsData struct {
 	Info         *turnsInfo
 	Role         string
 	RoleQueries  map[string]string
+	ShowAll      bool
 	ShowThinking bool
+	HasOlder     bool
 	HasThinking  bool
 	Query        string
+	AllQuery     string
 	MainQuery    string
 	ToggleQuery  string
 }
@@ -278,23 +281,33 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 		Id:           id,
 		Subagent:     r.URL.Query().Get("subagent"),
 		Role:         roleParam(r),
+		ShowAll:      r.URL.Query().Get("all") == "on",
 		ShowThinking: r.URL.Query().Get("thinking") != "off",
 	}
+	var source *tools.TurnSource
 	if !s.store.WithSession(id, func(sess *session.Session) {
-		data.Groups = newSubagentGroups(sess, data.Subagent, data.Role, data.ShowThinking)
+		data.Groups = newSubagentGroups(sess, data.Subagent, data.Role, data.ShowThinking, data.ShowAll)
 		data.HasSubagents = len(data.Groups) > 0
 		if data.Subagent != "" {
 			if turns, ok := sess.SubagentTurns(data.Subagent, session.AllTurns); ok {
 				data.Turns = turns
 				data.Info = newSubagentInfo(id, data.Subagent, sess)
+				source = tools.NewTurnSource(sess, data.Subagent, false)
 			}
 			return
 		}
 		data.Turns = sess.Turns(session.AllTurns)
 		data.Info = newMainInfo(sess)
+		source = tools.NewTurnSource(sess, "", false)
 	}) {
 		respondNotFound("unknown session", w)
 		return
+	}
+	if source != nil {
+		if data.ShowAll {
+			data.Turns = source.Turns(s.loader, data.Turns, session.AllTurns)
+		}
+		data.HasOlder = source.HasOlder(len(data.Turns))
 	}
 	data.Turns = slices.Clone(data.Turns)
 	slices.Reverse(data.Turns)
@@ -313,13 +326,14 @@ func (s *Server) handleTurnsFragment(w http.ResponseWriter, r *http.Request) {
 		}
 		data.Turns = filtered
 	}
-	data.Query = turnsQuery(data.Subagent, data.Role, data.ShowThinking)
-	data.MainQuery = turnsQuery("", data.Role, data.ShowThinking)
-	data.ToggleQuery = turnsQuery(data.Subagent, data.Role, !data.ShowThinking)
+	data.Query = turnsQuery(data.Subagent, data.Role, data.ShowThinking, data.ShowAll)
+	data.AllQuery = turnsQuery(data.Subagent, data.Role, data.ShowThinking, true)
+	data.MainQuery = turnsQuery("", data.Role, data.ShowThinking, data.ShowAll)
+	data.ToggleQuery = turnsQuery(data.Subagent, data.Role, !data.ShowThinking, data.ShowAll)
 	data.RoleQueries = map[string]string{
-		"":          turnsQuery(data.Subagent, "", data.ShowThinking),
-		"user":      turnsQuery(data.Subagent, "user", data.ShowThinking),
-		"assistant": turnsQuery(data.Subagent, "assistant", data.ShowThinking),
+		"":          turnsQuery(data.Subagent, "", data.ShowThinking, data.ShowAll),
+		"user":      turnsQuery(data.Subagent, "user", data.ShowThinking, data.ShowAll),
+		"assistant": turnsQuery(data.Subagent, "assistant", data.ShowThinking, data.ShowAll),
 	}
 	s.renderFragment(w, tmplTurns, data)
 }
@@ -332,7 +346,7 @@ func roleParam(r *http.Request) string {
 	return ""
 }
 
-func newSubagentGroups(sess *session.Session, selected, role string, showThinking bool) []subagentGroup {
+func newSubagentGroups(sess *session.Session, selected, role string, showThinking, showAll bool) []subagentGroup {
 	byType := make(map[string]int)
 	var groups []subagentGroup
 	for _, agentId := range sess.SubagentIds() {
@@ -353,7 +367,7 @@ func newSubagentGroups(sess *session.Session, selected, role string, showThinkin
 			Description: stat.Description,
 			LastActive:  stat.LastActive,
 			Active:      agentId == selected,
-			Query:       turnsQuery(agentId, role, showThinking),
+			Query:       turnsQuery(agentId, role, showThinking, showAll),
 		})
 		if agentId == selected {
 			groups[index].Open = true
@@ -384,7 +398,7 @@ func newSubagentInfo(id session.Id, agentId string, sess *session.Session) *turn
 	}
 }
 
-func turnsQuery(subagent, role string, showThinking bool) string {
+func turnsQuery(subagent, role string, showThinking, showAll bool) string {
 	values := url.Values{}
 	if subagent != "" {
 		values.Set("subagent", subagent)
@@ -394,6 +408,9 @@ func turnsQuery(subagent, role string, showThinking bool) string {
 	}
 	if !showThinking {
 		values.Set("thinking", "off")
+	}
+	if showAll {
+		values.Set("all", "on")
 	}
 	if len(values) == 0 {
 		return ""
@@ -493,27 +510,14 @@ func (s *Server) handleMemoryFragment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDiffFragment(w http.ResponseWriter, r *http.Request) {
 	s.serveDiffFragment(w, r, "diff", func(id session.Id) (string, string, bool) {
-		var target string
-		found := s.store.WithSession(id, func(sess *session.Session) {
-			target = sess.DiffTarget
-		})
-		if !found {
-			return "", "", false
-		}
-
-		content, loadedTarget, ok := s.store.LoadDiff(id)
-		if ok {
-			target = loadedTarget
-		}
-		return content, target, true
+		return s.differ.SessionDiff(r.Context(), id)
 	})
 }
 
 func (s *Server) handleUncommittedDiffFragment(w http.ResponseWriter, r *http.Request) {
 	s.serveDiffFragment(w, r, "uncommitted-diff", func(id session.Id) (string, string, bool) {
-		var diff string
-		found := s.store.WithSession(id, func(sess *session.Session) { diff = sess.UncommittedDiff })
-		return diff, "", found
+		content, found := s.differ.UncommittedDiff(r.Context(), id)
+		return content, "", found
 	})
 }
 

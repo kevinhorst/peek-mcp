@@ -131,19 +131,21 @@ func (s *Server) handleTurns(w http.ResponseWriter, r *http.Request) {
 		respondBadRequest("n must be a non-negative integer", w)
 		return
 	}
-	if n == 0 || n > s.depth {
+	if n == 0 {
 		n = s.depth
 	}
 
 	var turns []*session.Turn
+	var source *tools.TurnSource
 	found := s.store.WithSession(session.Id(r.PathValue("id")), func(sess *session.Session) {
 		turns = sess.Turns(n)
+		source = tools.NewTurnSource(sess, "", false)
 	})
 	if !found {
 		respondNotFound("unknown session", w)
 		return
 	}
-	writeJSON(w, turnsResponse{Turns: turns})
+	writeJSON(w, turnsResponse{Turns: source.Turns(s.loader, turns, n)})
 }
 
 func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
@@ -164,28 +166,15 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 	s.serveDiff(w, r, func(id session.Id) (diffResponse, bool) {
-		var resp diffResponse
-		found := s.store.WithSession(id, func(sess *session.Session) {
-			resp = diffResponse{Target: sess.DiffTarget}
-		})
-		if !found {
-			return resp, false
-		}
-
-		if content, target, ok := s.store.LoadDiff(id); ok {
-			resp = diffResponse{Diff: content, Target: target}
-		}
-		return resp, true
+		content, target, found := s.differ.SessionDiff(r.Context(), id)
+		return diffResponse{Diff: content, Target: target}, found
 	})
 }
 
 func (s *Server) handleUncommittedDiff(w http.ResponseWriter, r *http.Request) {
 	s.serveDiff(w, r, func(id session.Id) (diffResponse, bool) {
-		var resp diffResponse
-		found := s.store.WithSession(id, func(sess *session.Session) {
-			resp = diffResponse{Diff: sess.UncommittedDiff}
-		})
-		return resp, found
+		content, found := s.differ.UncommittedDiff(r.Context(), id)
+		return diffResponse{Diff: content}, found
 	})
 }
 

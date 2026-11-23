@@ -139,7 +139,7 @@ func TestSessionsFragment_MissingAgent(t *testing.T) {
 
 func TestSessionsFragment_Pagination(t *testing.T) {
 	broker := events.NewBroker()
-	store := session.NewStore(10, 25, broker, session.AgentClaude)
+	store := session.NewStore(10, broker, session.AgentClaude)
 	for i := 0; i < defaultSessionLimit+1; i++ {
 		id := session.Id("p" + strconv.Itoa(i))
 		store.AddTurnBySessionId(id, session.AgentClaude, &session.Turn{
@@ -166,7 +166,7 @@ func TestSessionsFragment_Pagination(t *testing.T) {
 
 func TestSessionsFragment_Empty(t *testing.T) {
 	broker := events.NewBroker()
-	store := session.NewStore(10, 25, broker)
+	store := session.NewStore(10, broker)
 	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
 	require.NoError(t, err)
 
@@ -394,8 +394,8 @@ func TestDiffFragment(t *testing.T) {
 
 func TestDiffFragment_Truncated(t *testing.T) {
 	store, broker := newTestStore()
-	store.UpdateDiff("s1", "main", strings.Repeat("x", defaultDiffSize+1))
-	server, err := New(&Options{Store: store, Broker: broker, Version: "test", Depth: 10})
+	differ := newSnapshotDiffer(t, store, strings.Repeat("x", defaultDiffSize+1))
+	server, err := New(&Options{Store: store, Broker: broker, Differ: differ, Version: "test", Depth: 10})
 	require.NoError(t, err)
 
 	response := get(server, "/fragments/sessions/s1/diff")
