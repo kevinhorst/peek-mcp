@@ -72,17 +72,13 @@ func newTestWarmDeps(t *testing.T, isStateDirActive bool) (*warmDeps, string) {
 		StartedAt: time.Now(),
 		Transport: "stdio",
 	}
-	broker := events.NewBroker()
 	deps := &warmDeps{
-		broker:       broker,
-		claudeHome:   claudeHome,
-		codexHome:    t.TempDir(),
-		coworkHome:   t.TempDir(),
-		invocations:  tools.NewInvocationCounter(info, stateDir),
-		pollInterval: time.Hour,
-		pollWindow:   time.Hour,
-		stateDir:     stateDir,
-		store:        session.NewStore(200, 25, broker, session.AgentClaude, session.AgentCodex),
+		claudeHome:  claudeHome,
+		codexHome:   t.TempDir(),
+		coworkHome:  t.TempDir(),
+		invocations: tools.NewInvocationCounter(info, stateDir),
+		stateDir:    stateDir,
+		store:       session.NewStore(200, events.NewBroker(), session.AgentClaude, session.AgentCodex),
 	}
 	return deps, transcriptPath
 }

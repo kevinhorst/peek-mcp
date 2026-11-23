@@ -15,7 +15,6 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/codex"
-	"github.com/kevinhorst/peek-mcp/events"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/tools"
@@ -24,15 +23,12 @@ import (
 
 // warmDeps is what every warm period is built from; it lives as long as the process.
 type warmDeps struct {
-	broker       *events.Broker
-	claudeHome   string
-	codexHome    string
-	coworkHome   string
-	invocations  *tools.InvocationCounter
-	pollInterval time.Duration
-	pollWindow   time.Duration
-	stateDir     *state.Dir
-	store        *session.Store
+	claudeHome  string
+	codexHome   string
+	coworkHome  string
+	invocations *tools.InvocationCounter
+	stateDir    *state.Dir
+	store       *session.Store
 }
 
 func (d *warmDeps) coworkStoreDirs() []string {
@@ -86,15 +82,15 @@ func (d *warmDeps) restoreSnapshot(watchers []*watcher.Watcher) bool {
 
 func (d *warmDeps) transcriptWatchers(window time.Duration) []*watcher.Watcher {
 	var watchers []*watcher.Watcher
-	newClaudeParser := func() watcher.Parser { return claude.NewParser() }
+	parserByAgent := newParserByAgent()
 
 	if d.claudeHome != "" {
 		watchedDir := filepath.Join(d.claudeHome, claude.ProjectsDir)
-		watchers = append(watchers, watcher.New(session.AgentClaude, watchedDir, window, newClaudeParser, d.store))
+		watchers = append(watchers, watcher.New(session.AgentClaude, watchedDir, window, parserByAgent[session.AgentClaude], d.store))
 	}
 
 	for _, storeDir := range d.coworkStoreDirs() {
-		coworkWatcher := watcher.New(session.AgentClaude, storeDir, window, newClaudeParser, d.store)
+		coworkWatcher := watcher.New(session.AgentClaude, storeDir, window, parserByAgent[session.AgentClaude], d.store)
 		coworkWatcher.TranscriptPathOk = isCoworkTranscriptPath
 		coworkWatcher.Project = "cowork"
 		watchers = append(watchers, coworkWatcher)
@@ -102,8 +98,7 @@ func (d *warmDeps) transcriptWatchers(window time.Duration) []*watcher.Watcher {
 
 	if d.codexHome != "" {
 		watchedDir := filepath.Join(d.codexHome, codex.SessionDir)
-		newCodexParser := func() watcher.Parser { return codex.NewParser() }
-		watchers = append(watchers, watcher.New(session.AgentCodex, watchedDir, window, newCodexParser, d.store))
+		watchers = append(watchers, watcher.New(session.AgentCodex, watchedDir, window, parserByAgent[session.AgentCodex], d.store))
 	}
 	return watchers
 }
@@ -165,15 +160,6 @@ func startWarmSet(ctx context.Context, deps *warmDeps, window time.Duration) *wa
 		set.group.Go(func() { runWatcher(warmCtx, index.Run, "codex index watcher") })
 	}
 
-	diffs := watcher.NewDiffWatcher(
-		deps.store,
-		deps.broker,
-		deps.pollInterval,
-		deps.pollWindow,
-		deps.stateDir,
-	)
-	set.group.Go(func() { runWatcher(warmCtx, diffs.Run, "diff watcher") })
-
 	set.group.Go(func() { reportLoaded(warmCtx, deps, loads, startedAt) })
 	return set
 }
@@ -186,6 +172,14 @@ func (s *warmSet) stop(deps *warmDeps) {
 	deps.writeSnapshot(s.watchers)
 	deps.store.Reset()
 	debug.FreeOSMemory()
+}
+
+// newParserByAgent is the one place a transcript parser is chosen per agent; Cowork transcripts are Claude transcripts.
+func newParserByAgent() map[session.Agent]func() watcher.Parser {
+	return map[session.Agent]func() watcher.Parser{
+		session.AgentClaude: func() watcher.Parser { return claude.NewParser() },
+		session.AgentCodex:  func() watcher.Parser { return codex.NewParser() },
+	}
 }
 
 func reportLoaded(ctx context.Context, deps *warmDeps, loads []<-chan struct{}, startedAt time.Time) {

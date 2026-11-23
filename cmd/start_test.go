@@ -21,8 +21,6 @@ func newConfigFlagCommand() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("back-link", "", "")
 	cmd.Flags().Int("depth", 20, "")
-	cmd.Flags().Duration("poll-interval", time.Second*5, "")
-	cmd.Flags().Duration("poll-window", time.Hour, "")
 	cmd.Flags().Int("state-retention-days", 90, "")
 	cmd.Flags().String("log-level", "info", "")
 	return cmd
@@ -61,16 +59,16 @@ func TestApplyConfigFileFallbacks(t *testing.T) {
 		file := &config.File{}
 		require.NoError(t, file.Set(config.KeyBackLink, "http://127.0.0.1:6001/"))
 		require.NoError(t, file.Set(config.KeyDepth, "50"))
-		require.NoError(t, file.Set(config.KeyPollInterval, "10s"))
+		require.NoError(t, file.Set(config.KeyStateRetentionDays, "30"))
 
 		applyConfigFileFallbacks(cmd, file)
 
 		backLink, _ := cmd.Flags().GetString("back-link")
 		depth, _ := cmd.Flags().GetInt("depth")
-		interval, _ := cmd.Flags().GetDuration("poll-interval")
+		retention, _ := cmd.Flags().GetInt("state-retention-days")
 		assert.Equal(t, "http://127.0.0.1:6001/", backLink)
 		assert.Equal(t, 50, depth)
-		assert.Equal(t, 10*time.Second, interval)
+		assert.Equal(t, 30, retention)
 	})
 
 	// empty-file-keeps-defaults
@@ -178,7 +176,7 @@ func serveHealthz(t *testing.T, store *session.Store) (*httptest.ResponseRecorde
 }
 
 func TestHealthzHandler(t *testing.T) {
-	store := session.NewStore(10, 25, events.NewBroker())
+	store := session.NewStore(10, events.NewBroker())
 
 	// ready-false-before-mark
 	rec, body := serveHealthz(t, store)
@@ -220,7 +218,7 @@ func TestAwaitInitialLoad(t *testing.T) {
 
 		ctx:   context.Background(),
 		loads: []<-chan struct{}{closedLoad, closedLoad},
-		store: session.NewStore(10, 25, events.NewBroker()),
+		store: session.NewStore(10, events.NewBroker()),
 	})
 
 	// no-loaders-returns-true
@@ -229,7 +227,7 @@ func TestAwaitInitialLoad(t *testing.T) {
 		_expectedLoaded: true,
 
 		ctx:   context.Background(),
-		store: session.NewStore(10, 25, events.NewBroker()),
+		store: session.NewStore(10, events.NewBroker()),
 	})
 
 	// cancelled-returns-false
@@ -239,7 +237,7 @@ func TestAwaitInitialLoad(t *testing.T) {
 
 		ctx:   cancelledCtx,
 		loads: []<-chan struct{}{closedLoad, make(chan struct{})},
-		store: session.NewStore(10, 25, events.NewBroker()),
+		store: session.NewStore(10, events.NewBroker()),
 	})
 
 	// Run tests

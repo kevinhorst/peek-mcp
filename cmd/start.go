@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/tools"
+	"github.com/kevinhorst/peek-mcp/watcher"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
@@ -49,6 +51,7 @@ var startCmd = &cobra.Command{
 		}
 		applyConfigFileFallbacks(cmd, configFile)
 		warnMaxOutputTokens()
+		limitMemory()
 		flags := cmd.Flags()
 		logLevel, _ := flags.GetString("log-level")
 		transport, _ := flags.GetString("transport")
@@ -57,12 +60,9 @@ var startCmd = &cobra.Command{
 		claudeHome, _ := flags.GetString("claude-home")
 		codexHome, _ := flags.GetString("codex-home")
 		coworkHome, _ := flags.GetString("cowork-home")
-		pollInterval, _ := flags.GetDuration("poll-interval")
-		pollWindow, _ := flags.GetDuration("poll-window")
 		stateDirPath, _ := flags.GetString("state-dir")
 		stateRetentionDays, _ := flags.GetInt("state-retention-days")
 		snapshotRetentionDays, _ := flags.GetInt("snapshot-retention-days")
-		diffCacheSessions, _ := flags.GetInt("diff-cache-sessions")
 		controlPort, _ := flags.GetInt("control-port")
 		controlToken, _ := flags.GetString("control-token")
 		backLink, _ := flags.GetString("back-link")
@@ -94,7 +94,7 @@ var startCmd = &cobra.Command{
 		}
 
 		broker := events.NewBroker()
-		store := session.NewStore(depth, diffCacheSessions, broker, agents...)
+		store := session.NewStore(depth, broker, agents...)
 
 		var telemetryStore *telemetry.Store
 		if controlPort > 0 {
@@ -110,6 +110,8 @@ var startCmd = &cobra.Command{
 		if telemetryStore != nil {
 			telemetryStore.StateDir = stateDir
 		}
+		differ := watcher.NewDiffer(store, stateDir)
+		loader := watcher.NewTurnLoader(newParserByAgent())
 
 		info := tools.InstanceInfo{
 			PID:       os.Getpid(),
@@ -123,15 +125,12 @@ var startCmd = &cobra.Command{
 		defer invocations.Persist()
 
 		deps := &warmDeps{
-			broker:       broker,
-			claudeHome:   claudeHome,
-			codexHome:    codexHome,
-			coworkHome:   coworkHome,
-			invocations:  invocations,
-			pollInterval: pollInterval,
-			pollWindow:   pollWindow,
-			stateDir:     stateDir,
-			store:        store,
+			claudeHome:  claudeHome,
+			codexHome:   codexHome,
+			coworkHome:  coworkHome,
+			invocations: invocations,
+			stateDir:    stateDir,
+			store:       store,
 		}
 		var warm *warmSet
 		warmUp := func(window time.Duration) { warm = startWarmSet(ctx, deps, window) }
@@ -180,6 +179,8 @@ var startCmd = &cobra.Command{
 				Broker:         broker,
 				Telemetry:      telemetryStore,
 				Detector:       detector,
+				Differ:         differ,
+				Loader:         loader,
 				Token:          controlToken,
 				Version:        Version(),
 				Depth:          depth,
@@ -195,12 +196,9 @@ var startCmd = &cobra.Command{
 					ClaudeHome:            claudeHome,
 					CodexHome:             codexHome,
 					CoworkHome:            coworkHome,
-					PollInterval:          pollInterval.String(),
-					PollWindow:            pollWindow.String(),
 					StateDir:              stateDirPath,
 					StateRetentionDays:    stateRetentionDays,
 					SnapshotRetentionDays: snapshotRetentionDays,
-					DiffCacheSessions:     diffCacheSessions,
 					ControlPort:           boundPort,
 					TokenSet:              controlToken != "",
 					LogLevel:              logLevel,
@@ -242,7 +240,9 @@ var startCmd = &cobra.Command{
 		tools.Register(
 			invocations,
 			detector,
+			differ,
 			lifecycle,
+			loader,
 			srv,
 			store,
 			telemetryStore,
@@ -289,18 +289,15 @@ func init() {
 	flags := startCmd.Flags()
 	flags.String("transport", "http", "Transport: http or stdio")
 	flags.Int("port", 4244, "HTTP port (http transport only)")
-	flags.Int("depth", 200, "Ring buffer size per session (max turns kept); each subagent keeps the larger of this and 200")
+	flags.Int("depth", 20, "Turns kept in memory per session and per subagent; older turns are re-read from the transcript on request")
 	flags.String("claude-home", defaultHome(".claude"), "Claude Code session root")
 	flags.String("codex-home", defaultHome(".codex"), "Codex session root")
 	flags.String("cowork-home", defaultCoworkHome(), "Claude Desktop Cowork data root (empty disables; macOS default set automatically)")
-	flags.Duration("poll-interval", time.Second*5, "How often to recompute the live uncommitted diff (git diff HEAD)")
-	flags.Duration("poll-window", time.Hour, "Only poll repos whose session was active within this window")
 	flags.String("state-dir", filepath.Join(defaultHome(".peek"), "state"), "State directory for diff pins/snapshots and plan revisions (empty disables persistence)")
 	flags.Int("state-retention-days", 90, "Days to keep per-session state before GC removes it (0 disables)")
 	flags.Int("watch-window-days", 14, "How far back peek ingests transcripts and watches directories for live activity (0 = everything; stdio defaults to 3; macOS holds one fd per watched file)")
 	flags.Int("cache-keepalive-sec", 0, "Seconds an instance stays loaded after its last tool call before it closes its watchers and frees its session store (0 = always loaded; stdio defaults to 3600)")
 	flags.Int("snapshot-retention-days", 14, "Days to keep diff snapshots before GC removes them; session dirs and plans follow state-retention-days (0 disables)")
-	flags.Int("diff-cache-sessions", 25, "How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching)")
 	flags.Int("control-port", controlPortBase, "Control server start port; walks up to +57 if taken (dashboard + JSON API + SSE); 0 disables")
 	flags.String("control-token", "", "Optional bearer token protecting the control server")
 	flags.String("back-link", "", "URL of an external dashboard the control server nav links back to (empty hides the link)")
@@ -373,14 +370,11 @@ var envFallbacks = map[string]string{
 	"claude-home":             "PEEK_CLAUDE_HOME",
 	"codex-home":              "PEEK_CODEX_HOME",
 	"cowork-home":             "PEEK_COWORK_HOME",
-	"poll-interval":           "PEEK_POLL_INTERVAL",
-	"poll-window":             "PEEK_POLL_WINDOW",
 	"state-dir":               "PEEK_STATE_DIR",
 	"state-retention-days":    "PEEK_STATE_RETENTION_DAYS",
 	"watch-window-days":       "PEEK_WATCH_WINDOW_DAYS",
 	"cache-keepalive-sec":     "PEEK_CACHE_KEEPALIVE_SEC",
 	"snapshot-retention-days": "PEEK_SNAPSHOT_RETENTION_DAYS",
-	"diff-cache-sessions":     "PEEK_DIFF_CACHE_SESSIONS",
 	"control-port":            "PEEK_CONTROL_PORT",
 	"control-token":           "PEEK_CONTROL_TOKEN",
 	"back-link":               "PEEK_BACK_LINK",
@@ -413,10 +407,22 @@ func isCoworkTranscriptPath(path string) bool {
 }
 
 const (
+	gcPercent                  = 50
+	memoryLimitBytes           = 256 << 20
 	recommendedMaxOutputTokens = 50_000
 	stdioCacheKeepaliveSec     = 3600
 	stdioWatchWindowDays       = 3
 )
+
+// limitMemory keeps the heap goal near the live heap unless GOGC or GOMEMLIMIT set their own.
+func limitMemory() {
+	if _, isSet := os.LookupEnv("GOGC"); !isSet {
+		debug.SetGCPercent(gcPercent)
+	}
+	if _, isSet := os.LookupEnv("GOMEMLIMIT"); !isSet {
+		debug.SetMemoryLimit(memoryLimitBytes)
+	}
+}
 
 func warnMaxOutputTokens() {
 	val, ok := os.LookupEnv("MAX_MCP_OUTPUT_TOKENS")
