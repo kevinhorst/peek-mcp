@@ -100,7 +100,7 @@ func TestSessionList_ProjectFilter(t *testing.T) {
 
 func TestSessionGet_Defaults(t *testing.T) {
 	store := provideToolStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"agent": "claude"}))
 
@@ -116,7 +116,7 @@ func TestSessionGet_Defaults(t *testing.T) {
 
 func TestSessionGet_PlanOnly(t *testing.T) {
 	store := provideToolStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{
 		"agent": "claude",
@@ -159,7 +159,7 @@ func TestSessionGet_UncommittedDiff(t *testing.T) {
 	store := provideToolStore()
 	s1, _ := store.GetById("s1")
 	s1.Meta.CWD = provideDirtyRepo(t)
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{
 		"agent":            "claude",
@@ -179,7 +179,7 @@ func TestSessionGet_UncommittedDiff(t *testing.T) {
 
 func TestSessionGet_ById(t *testing.T) {
 	store := provideToolStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1"}))
 	assert.NoError(t, err)
@@ -193,7 +193,7 @@ func TestSessionGet_ById(t *testing.T) {
 
 func TestSessionGet_LatestFallback(t *testing.T) {
 	store := provideToolStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"agent": "claude"}))
 
@@ -204,7 +204,7 @@ func TestSessionGet_LatestFallback(t *testing.T) {
 
 func TestSessionGet_AgentRequired(t *testing.T) {
 	store := provideToolStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{}))
 
@@ -214,7 +214,7 @@ func TestSessionGet_AgentRequired(t *testing.T) {
 
 func TestSessionGet_NoSessions(t *testing.T) {
 	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{}))
 
@@ -235,7 +235,7 @@ func TestSessionGet_TurnCount(t *testing.T) {
 			Meta:      &session.Meta{SessionId: "s1"},
 		})
 	}
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{
 		"id":   "s1",
@@ -256,7 +256,7 @@ func provideSnapshotDiffer(t *testing.T, store *session.Store, content string) *
 	t.Helper()
 	stateDir := state.NewDir(t.TempDir())
 	require.NoError(t, stateDir.WriteDiffSnapshot("claude", content, "s1"))
-	return watcher.NewDiffer(store, stateDir)
+	return watcher.NewDiffer(nil, store, stateDir)
 }
 
 func TestSessionGet_Pagination(t *testing.T) {
@@ -337,7 +337,7 @@ func provideSubagentStore() *session.Store {
 
 func TestSessionGet_Subagent(t *testing.T) {
 	store := provideSubagentStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "subagent": "ag1"}))
 
@@ -361,7 +361,7 @@ func TestSessionGet_Subagent(t *testing.T) {
 
 func TestSessionGet_SubagentUnknown(t *testing.T) {
 	store := provideSubagentStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "subagent": "nope"}))
 
@@ -373,7 +373,7 @@ func TestSessionGet_SubagentUnknown(t *testing.T) {
 
 func TestSessionGet_SubagentListWithoutParam(t *testing.T) {
 	store := provideSubagentStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1"}))
 
@@ -387,7 +387,7 @@ func TestSessionGet_SubagentListWithoutParam(t *testing.T) {
 
 func TestSessionGet_Thinking(t *testing.T) {
 	store := provideSubagentStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	// default-strips-thinking
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1"}))
@@ -438,7 +438,7 @@ func turnsFromJson(t *testing.T, payload map[string]any) []map[string]any {
 
 func TestSessionGet_Tools(t *testing.T) {
 	store := provideToolCallStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 
 	// default-omits-tool-calls
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"id": "s1"}))
@@ -501,7 +501,7 @@ func TestSessionGet_Tools(t *testing.T) {
 
 func TestSessionGet_TurnsTotal(t *testing.T) {
 	store := provideToolCallStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 	s1, _ := store.GetById("s1")
 	defaultTotal := s1.TotalTurns()
 
@@ -522,7 +522,7 @@ func TestSessionGet_TurnsTotal(t *testing.T) {
 	assert.Equal(t, defaultTotal+1, *payload.TurnsTotal)
 
 	// json-subagent-scope
-	subagentHandler := sessionGetHandler(watcher.NewDiffer(provideSubagentStore(), nil), nil, providePageStore(), provideSubagentStore())
+	subagentHandler := sessionGetHandler(watcher.NewDiffer(nil, provideSubagentStore(), nil), nil, providePageStore(), provideSubagentStore())
 	result, err = subagentHandler(context.Background(), requestWithArgs(map[string]any{"id": "s1", "json": true, "subagent": "ag1"}))
 	assert.NoError(t, err)
 	payload, ok = result.StructuredContent.(*sessionGetResult)
@@ -583,7 +583,7 @@ func provideSubagentUsageStore() *session.Store {
 
 func TestSessionGet_WatchHeader(t *testing.T) {
 	store := provideSubagentUsageStore()
-	handler := sessionGetHandler(watcher.NewDiffer(store, nil), nil, providePageStore(), store)
+	handler := sessionGetHandler(watcher.NewDiffer(nil, store, nil), nil, providePageStore(), store)
 	s1, _ := store.GetById("s1")
 
 	// json-subagent-model-last-active-usage
@@ -966,9 +966,9 @@ func TestSnapshot_ToolOutputEqual(t *testing.T) {
 	// session-get-equal-after-restore
 	tests = append(tests, &testCase{
 		_id:      "session-get-equal-after-restore",
-		original: sessionGetHandler(watcher.NewDiffer(originalStore, nil), nil, providePageStore(), originalStore),
+		original: sessionGetHandler(watcher.NewDiffer(nil, originalStore, nil), nil, providePageStore(), originalStore),
 		request:  requestWithArgs(map[string]any{"id": "s1", "json": true, "thinking": true, "tools": true}),
-		restored: sessionGetHandler(watcher.NewDiffer(restoredStore, nil), nil, providePageStore(), restoredStore),
+		restored: sessionGetHandler(watcher.NewDiffer(nil, restoredStore, nil), nil, providePageStore(), restoredStore),
 	})
 
 	// session-events-equal-after-restore
@@ -1013,7 +1013,7 @@ func TestRegister_ReadOnlyHint(t *testing.T) {
 	Register(
 		NewInvocationCounter(InstanceInfo{}, nil),
 		telemetry.NewDetector(0, ""),
-		watcher.NewDiffer(store, nil),
+		watcher.NewDiffer(nil, store, nil),
 		lifecycle,
 		nil,
 		srv,

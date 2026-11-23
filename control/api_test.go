@@ -153,7 +153,7 @@ func TestUncommittedDiff(t *testing.T) {
 	store, broker := newTestStore()
 	s1, _ := store.GetById("s1")
 	s1.Meta.CWD = newDirtyRepo(t)
-	server, err := New(&Options{Store: store, Broker: broker, Differ: watcher.NewDiffer(store, nil), Version: "test", Depth: 10})
+	server, err := New(&Options{Store: store, Broker: broker, Differ: watcher.NewDiffer(nil, store, nil), Version: "test", Depth: 10})
 	require.NoError(t, err)
 
 	diff := decode[diffResponse](t, get(server, "/api/sessions/s1/uncommitted-diff"))

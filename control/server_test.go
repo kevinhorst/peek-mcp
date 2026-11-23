@@ -64,7 +64,7 @@ func newSnapshotDiffer(t *testing.T, store *session.Store, content string) *watc
 	t.Helper()
 	stateDir := state.NewDir(t.TempDir())
 	require.NoError(t, stateDir.WriteDiffSnapshot("claude", content, "s1"))
-	return watcher.NewDiffer(store, stateDir)
+	return watcher.NewDiffer(nil, store, stateDir)
 }
 
 // newDirtyRepo commits a.txt and leaves an uncommitted edit on it.
