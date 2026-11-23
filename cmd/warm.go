@@ -26,6 +26,7 @@ type warmDeps struct {
 	claudeHome  string
 	codexHome   string
 	coworkHome  string
+	differ      *watcher.Differ
 	invocations *tools.InvocationCounter
 	stateDir    *state.Dir
 	store       *session.Store
@@ -141,6 +142,10 @@ func startWarmSet(ctx context.Context, deps *warmDeps, window time.Duration) *wa
 	set.watchers = deps.transcriptWatchers(window)
 	if !deps.restoreSnapshot(set.watchers) {
 		set.watchers = deps.transcriptWatchers(window)
+	}
+
+	if deps.differ != nil {
+		set.group.Go(func() { runWatcher(warmCtx, deps.differ.Run, "diff base pinner") })
 	}
 
 	var loads []<-chan struct{}

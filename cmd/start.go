@@ -110,7 +110,7 @@ var startCmd = &cobra.Command{
 		if telemetryStore != nil {
 			telemetryStore.StateDir = stateDir
 		}
-		differ := watcher.NewDiffer(store, stateDir)
+		differ := watcher.NewDiffer(broker, store, stateDir)
 		loader := watcher.NewTurnLoader(newParserByAgent())
 
 		info := tools.InstanceInfo{
@@ -128,6 +128,7 @@ var startCmd = &cobra.Command{
 			claudeHome:  claudeHome,
 			codexHome:   codexHome,
 			coworkHome:  coworkHome,
+			differ:      differ,
 			invocations: invocations,
 			stateDir:    stateDir,
 			store:       store,
