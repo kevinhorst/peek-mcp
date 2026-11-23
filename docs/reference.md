@@ -28,7 +28,7 @@ peek-mcp start --port 4242 --depth 20
 | `--control-token` | — | Optional bearer token protecting the control server |
 | `--back-link` | — | URL of an external dashboard the control server nav links back to (empty hides the link) |
 
-Diffs are computed only when asked for (`session_get` `diff`/`uncommitted_diff`, the diff API, the dashboard's diff panels); peek runs no git command in the background. Output is capped at 5 MB, and git runs with `diff.autoRefreshIndex=false` so peek never rewrites a repository's index or takes `index.lock`. The last non-empty merge-base diff is kept in the state dir and served once the working tree is gone.
+Diffs are computed only when asked for (`session_get` `diff`/`uncommitted_diff`, the diff API, the dashboard's diff panels). The only git peek runs on its own is pinning a session's diff base: once, at the first turn of a session active within the last hour, a few read-only calls (`symbolic-ref`, `reflog`, `merge-base`) fix the merge-base SHA, so a branch that lands before the first diff request still shows its committed work. Output is capped at 5 MB, and git runs with `diff.autoRefreshIndex=false` so peek never rewrites a repository's index or takes `index.lock`. The last non-empty merge-base diff is kept in the state dir and served once the working tree is gone.
 
 The Go runtime runs with `GOGC=50` and a 256 MiB soft memory limit, so an instance's memory tracks its live heap. Set `GOGC` or `GOMEMLIMIT` in the environment to override either.
 
