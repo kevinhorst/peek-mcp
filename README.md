@@ -88,13 +88,14 @@ args = ["start", "--transport=stdio"]
 
 ## Tools
 
-One call — `session_get` — does the job: turns, events, plan, and diffs for a session, with flat boolean flags to select the sections you want. `session_list` is the roster; `session_events` digs into a session's analytics.
+One call — `session_get` — does the job: turns, events, plan, and diffs for a session, with flat boolean flags to select the sections you want. `session_list` is the roster; `session_events` digs into a session's analytics; `skill_runs` answers what a skill's runs cost.
 
 | Tool | Returns |
 |---|---|
 | `session_get` | turns + events + plan (+ diff, uncommitted diff, auto-memory on request) for a session, sections selected by flags |
 | `session_list` | all sessions with metadata (branch, model, activity, diff base) |
 | `session_events` | typed event stream with counters, token usage, session time, touched files, plan revisions |
+| `skill_runs` | a skill's past runs across sessions, newest first: main-agent and per-agent-type requests, peak context and token usage |
 
 Full parameters, title-matching and pagination rules, supported agents, and the Claude/Codex parity table: [docs/tools.md](docs/tools.md).
 

@@ -60,6 +60,23 @@ The event list keeps a session's first 2000 `permission_denied` events and its f
 
 A background Agent-tool subagent's `subagent_result` is its launch acknowledgement (content starts `Async agent launched`), not its completion. Its completion is a `task_completed` event with `task` `{task_id, tool_use_id, status, summary}`, where `task_id` is the agent id and `status` is terminal (`completed`, `failed`, `killed`, `stopped`, …). Background shell commands and workflow runs emit `task_completed` too, with their own task ids. Workflow agents report their completion as `subagent_result`.
 
+## `skill_runs`
+
+Returns a skill's past runs across all sessions, newest first, so an agent can estimate what the skill's next run costs before it starts it. A run is one invocation of the skill by the main agent; it lasts until the main agent's next skill invocation, across prompts and turn ends (unlike a `breakdown` skill window, which closes at the turn end). A skill a subagent invokes stays inside the run that spawned the subagent.
+
+Each run carries `session_id`, `title`, `cwd`, `skill` (as invoked, a plugin namespace included), `args`, `source` (`slash` or `tool`), `started_at`, `ended_at` (the run's last main-agent or subagent activity, so the idle gap before the next invocation never counts) and `seconds`, plus:
+
+- `root` — the main agent's `model` (of its first turn in the run), `requests` (model requests, each streamed chunk of one request counted once), `peak_context` (the largest context a single request sent: input, cache writes and cache reads) and `usage` (token totals).
+- `agents` — the subagents first active from the run's start to the next main-agent invocation (the open run takes every later one), summed per `agent_type` and `model`: `count`, `requests`, `peak_context` (the largest of any of them), `seconds` (summed active spans), `last_active` and `usage`.
+
+No turns, events or file lists. The result's `total` is the number of runs the watch window holds; `runs` is cut to `limit`. Claude sessions only.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `skill` | string | yes | Skill name as invoked, without the slash; a plugin-namespaced invocation (`plugin:<skill>`) matches too |
+| `limit` | number | no | Number of runs to return (default 5); at least 1 |
+| `window_days` | number | no | Widen this instance's watch window to this many days before searching; at least 1. The wider window stays until the instance exits, and the call waits while the added days load. A stdio instance starts with 3 days |
+
 ## `session_list`
 
 Lists all sessions. Returns session ID, agent, title, title source (`custom` \| `index` \| `derived`), last activity timestamp, whether a plan or diff is available, the inferred diff base (`diff_target`), and session metadata (cwd, git branch, model, origin).
