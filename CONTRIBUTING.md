@@ -36,7 +36,7 @@ The server is intentionally passive. It never writes to the directories it watch
 | `session/` | `Store` — thread-safe ring buffer; `Turn`, `Meta`, `Plan`, `Diff` types |
 | `claude/` | Parser for `~/.claude/projects/<encoded-cwd>/*.jsonl` |
 | `codex/` | Parser for `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
-| `watcher/` | File watcher, plan watcher, diff watcher |
+| `watcher/` | File watcher, plan watcher, on-request differ, transcript turn loader |
 | `tools/` | MCP tool registration and handlers |
 | `mcpb/` | Claude Desktop bundle manifest and build assets |
 

@@ -37,7 +37,7 @@ The first page also carries `total_usage`, the main chain's running token total 
 
 With every section flag off, `session_get` returns only these fields: the cheap call for a monitoring loop. Subagent work shows as movement in `subagents[].usage` and `subagents[].last_active` while `total_usage` and `last_active` stay flat; the latest activity anywhere is the max of `last_active` and every `subagents[].last_active`.
 
-With `tools`, every turn carries `tool_calls`, in call order and empty when the turn made none. Each entry has `id` (the tool-use id), `name`, `input` (the tool's raw input object, verbatim from the transcript), `is_error` (from the matching tool result; `false` while the call is still running) and `timestamp` (when the call was emitted). Scoped with `subagent`, the same holds for Agent-tool subagents and workflow agents. The session keeps at most `--depth` turns and each subagent at least 200 ([reference](reference.md)); raise `--depth` to keep long runs complete.
+With `tools`, every turn carries `tool_calls`, in call order and empty when the turn made none. Each entry has `id` (the tool-use id), `name`, `input` (the tool's raw input object, verbatim from the transcript), `is_error` (from the matching tool result; `false` while the call is still running) and `timestamp` (when the call was emitted). Scoped with `subagent`, the same holds for Agent-tool subagents and workflow agents. The session and each subagent keep `--depth` turns in memory ([reference](reference.md)); a larger `n` re-reads the transcript, so long runs stay complete at the cost of a slower call.
 
 ## `session_events`
 

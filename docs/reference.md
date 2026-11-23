@@ -7,29 +7,30 @@ Flags, environment variables, the control server, hot reload, the Claude Desktop
 ## Flags
 
 ```bash
-peek-mcp start --port 4242 --depth 200
+peek-mcp start --port 4242 --depth 20
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--transport` | `http` | Transport: `http` or `stdio` |
 | `--port` | `4242` | HTTP port (http transport only); also serves `GET /healthz` — a JSON identity probe (`version`, `claudeHome`, `codexHome`, `controlPort`, `ready`) for supervisors that need to tell instances apart; `ready` turns true once the initial session load completes |
-| `--depth` | `200` | Ring buffer depth per session (max turns kept); each subagent keeps the larger of this and 200 |
+| `--depth` | `20` | Turns kept in memory per session and per subagent. A request for more turns (`session_get` `n`, the API's `n`, the dashboard's "load older turns") re-reads that session's transcript — slower, but the memory stays bounded |
 | `--claude-home` | `~/.claude` | Override Claude Code session root |
 | `--codex-home` | `~/.codex` | Override Codex session root |
 | `--cowork-home` | `~/Library/Application Support/Claude` (macOS), empty elsewhere | Claude Desktop Cowork data root; empty disables |
 | `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
-| `--poll-interval` | `1s` | How often to recompute the live uncommitted diff |
-| `--poll-window` | `1h` | Only poll repos whose session was active within this window |
 | `--state-dir` | `~/.peek/state` | State directory for diff pins/snapshots and plan revisions (empty disables persistence) |
 | `--state-retention-days` | `90` | Days to keep per-session state before GC removes it (0 disables) |
 | `--watch-window-days` | `14` (http), `3` (stdio) | How far back peek ingests transcripts and watches directories for live activity (0 = everything). A stdio instance serves one session and defaults to 3 days unless the flag or `PEEK_WATCH_WINDOW_DAYS` is set. macOS holds one fd per watched directory and file, so cold projects outside the window are neither read nor watched; a cold project turning active is picked up within 5 minutes, and a directory that aged out of the window is unwatched at the same rescan. Directories named `tool-results` are never watched |
 | `--cache-keepalive-sec` | `0` (http), `3600` (stdio) | Seconds an instance stays loaded after its last tool call. At zero it goes cold: it closes its file watchers, writes its session store to `instances/<id>.store` in the state dir and frees the memory; the next tool call loads the store back and reads only what changed. `0` keeps the instance loaded from start, as before. Only tool calls count — the dashboard of a cold instance lists no sessions |
 | `--snapshot-retention-days` | `14` | Days to keep diff snapshots before GC removes them; session dirs and plans follow `--state-retention-days` (0 disables) |
-| `--diff-cache-sessions` | `25` | How many sessions' diff snapshots to keep in memory (LRU); the rest are read from disk on demand (0 disables caching) |
 | `--control-port` | `42442` | Control server start port (dashboard + JSON API + SSE); the default walks up to `42499` if taken, an explicitly set port (flag or `PEEK_CONTROL_PORT`) binds exactly or fails; `0` disables |
 | `--control-token` | — | Optional bearer token protecting the control server |
 | `--back-link` | — | URL of an external dashboard the control server nav links back to (empty hides the link) |
+
+Diffs are computed only when asked for (`session_get` `diff`/`uncommitted_diff`, the diff API, the dashboard's diff panels); peek runs no git command in the background. Output is capped at 5 MB, and git runs with `diff.autoRefreshIndex=false` so peek never rewrites a repository's index or takes `index.lock`. The last non-empty merge-base diff is kept in the state dir and served once the working tree is gone.
+
+The Go runtime runs with `GOGC=50` and a 256 MiB soft memory limit, so an instance's memory tracks its live heap. Set `GOGC` or `GOMEMLIMIT` in the environment to override either.
 
 ## Environment variables
 
@@ -43,14 +44,11 @@ Every flag has a corresponding environment variable that is used when the flag i
 | `PEEK_CLAUDE_HOME` | `--claude-home` |
 | `PEEK_CODEX_HOME` | `--codex-home` |
 | `PEEK_COWORK_HOME` | `--cowork-home` |
-| `PEEK_POLL_INTERVAL` | `--poll-interval` |
-| `PEEK_POLL_WINDOW` | `--poll-window` |
 | `PEEK_STATE_DIR` | `--state-dir` |
 | `PEEK_STATE_RETENTION_DAYS` | `--state-retention-days` |
 | `PEEK_WATCH_WINDOW_DAYS` | `--watch-window-days` |
 | `PEEK_CACHE_KEEPALIVE_SEC` | `--cache-keepalive-sec` |
 | `PEEK_SNAPSHOT_RETENTION_DAYS` | `--snapshot-retention-days` |
-| `PEEK_DIFF_CACHE_SESSIONS` | `--diff-cache-sessions` |
 | `PEEK_CONTROL_PORT` | `--control-port` |
 | `PEEK_CONTROL_TOKEN` | `--control-token` |
 | `PEEK_BACK_LINK` | `--back-link` |
@@ -58,7 +56,7 @@ Every flag has a corresponding environment variable that is used when the flag i
 
 ## Config file
 
-A global config file at `~/.peek/config.json` is shared by every peek instance and read once at startup. Precedence: explicit flag > `PEEK_*` environment variable > config file > default. Only the safe tuning keys are persistable: `back_link`, `depth`, `poll_interval`, `poll_window`, `state_retention_days`, `snapshot_retention_days`, `diff_cache_sessions`, `log_level`. The file is written by the dashboard's config editor (`/stats` page, `POST /api/config/{key}`); edits apply on the next restart — http-transport instances can restart from the dashboard, stdio instances are restarted by their MCP client. Keys pinned by a flag or environment variable show an "overridden" badge in the editor and win over the file after restart.
+A global config file at `~/.peek/config.json` is shared by every peek instance and read once at startup. Precedence: explicit flag > `PEEK_*` environment variable > config file > default. Only the safe tuning keys are persistable: `back_link`, `depth`, `state_retention_days`, `snapshot_retention_days`, `log_level`; keys from older versions (`poll_interval`, `poll_window`, `diff_cache_sessions`) are ignored. The file is written by the dashboard's config editor (`/stats` page, `POST /api/config/{key}`); edits apply on the next restart — http-transport instances can restart from the dashboard, stdio instances are restarted by their MCP client. Keys pinned by a flag or environment variable show an "overridden" badge in the editor and win over the file after restart.
 
 ## Control server (dashboard + JSON API)
 
@@ -106,9 +104,7 @@ peek detects whether this export is configured: at startup, on the `/stats` page
 
 ## Hot reload (live diff)
 
-To keep Claude Code grounded in your current work as you edit — a "hot reload" — peek-mcp keeps an up-to-date `git diff HEAD` for each active repo and writes it to `<gitDir>/peek-diff` (inside `.git/`, so it is never committed and resolves correctly inside linked worktrees). A `UserPromptSubmit` hook then injects that diff into context on every prompt. The hook needs only `git` and `cat` — no peek binary on `PATH`, no server call — so it works under both the HTTP and `.mcpb` deployments.
-
-The diff file is refreshed only by a loaded instance: an http instance, or a stdio instance within `--cache-keepalive-sec` of its last tool call. Several loaded instances share the work — one computes per interval, the others read the file. A setup with stdio instances only keeps hot reload by setting `PEEK_CACHE_KEEPALIVE_SEC=0`.
+To keep Claude Code grounded in your current work as you edit — a "hot reload" — a `UserPromptSubmit` hook injects the repo's `git diff HEAD` into context on every prompt. The hook runs git itself, capped at 5 MB and without touching the index — no peek binary on `PATH`, no server call, no running instance — so it works under both the HTTP and `.mcpb` deployments. Earlier versions had peek write the diff to `<gitDir>/peek-diff` for a hook to `cat`; peek no longer writes that file, so replace the old hook.
 
 Merge `hooks/settings.snippet.json` into your project `.claude/settings.json`:
 
@@ -116,7 +112,7 @@ Merge `hooks/settings.snippet.json` into your project `.claude/settings.json`:
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "cat \"$(git rev-parse --git-path peek-diff)\" 2>/dev/null" } ] }
+      { "hooks": [ { "type": "command", "command": "git -c diff.autoRefreshIndex=false diff --no-ext-diff HEAD 2>/dev/null | head -c 5242880" } ] }
     ]
   }
 }

@@ -42,8 +42,8 @@
     "depth": {
       "type": "number",
       "title": "Ring buffer depth",
-      "description": "Maximum turns kept per session.",
-      "default": 50,
+      "description": "Turns kept in memory per session and subagent; older turns are re-read from the transcript on request.",
+      "default": 20,
       "min": 1,
       "max": 500,
       "required": true
