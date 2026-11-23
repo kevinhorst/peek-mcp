@@ -18,6 +18,9 @@ import (
 	"github.com/kevinhorst/peek-mcp/state"
 )
 
+// gitWaitDelay bounds Wait after a cancelled diff: on Windows git.exe is a launcher, and killing it leaves the real git holding the pipes open.
+const gitWaitDelay = 5 * time.Second
+
 // pinWindow bounds first-turn pinning to live sessions, so the startup backfill of old transcripts runs no git.
 const pinWindow = time.Hour
 
@@ -274,6 +277,13 @@ func (d *Differ) UncommittedDiff(ctx context.Context, id session.Id) (content st
 	return output, true
 }
 
+// abandonGit stops a diff peek no longer reads: closing stdout makes the real git's next write fail, so it exits and releases stderr.
+func abandonGit(cancel context.CancelFunc, cmd *exec.Cmd, stdout io.Closer) {
+	cancel()
+	_ = stdout.Close()
+	_ = cmd.Wait()
+}
+
 func baseFromLocalDefault(ctx context.Context, cwd string) string {
 	for _, name := range []string{"main", "master"} {
 		if gitSucceeds(ctx, cwd, "rev-parse", "--verify", "--quiet", "refs/heads/"+name) {
@@ -344,6 +354,7 @@ func gitDiff(ctx context.Context, cwd string, args ...string) (string, error) {
 	cmd := exec.CommandContext(diffCtx, "git", cmdArgs...)
 	cmd.Dir = cwd
 	cmd.Stderr = &stderr
+	cmd.WaitDelay = gitWaitDelay
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", errors.Wrap(err, "gitDiff: Failed to open stdout")
@@ -356,14 +367,12 @@ func gitDiff(ctx context.Context, cwd string, args ...string) (string, error) {
 
 	output, err := io.ReadAll(io.LimitReader(stdout, state.MaxSnapshotBytes+1))
 	if err != nil {
-		cancel()
-		_ = cmd.Wait()
+		abandonGit(cancel, cmd, stdout)
 		return "", errors.Wrap(err, "gitDiff: Failed to read output")
 	}
 
 	if len(output) > state.MaxSnapshotBytes {
-		cancel()
-		_ = cmd.Wait()
+		abandonGit(cancel, cmd, stdout)
 		return state.Truncate(string(output)), nil
 	}
 

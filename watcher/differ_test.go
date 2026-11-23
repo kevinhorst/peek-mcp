@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -240,6 +241,26 @@ func TestGitDiff(t *testing.T) {
 		require.NoError(t, err)
 		assert.LessOrEqual(t, len(output), state.MaxSnapshotBytes+64)
 		assert.Contains(t, output, "snapshot truncated at 5 MB")
+	})
+
+	// launcher-child-holding-pipes-released
+	t.Run("launcher-child-holding-pipes-released", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("the fake launcher is a shell script")
+		}
+
+		// A git that, like git.exe on Windows, only launches the process writing the diff: killing it leaves the child holding both pipes.
+		launcherDir := t.TempDir()
+		launcher := "#!/bin/sh\n/usr/bin/yes 0123456789 &\nwait\n"
+		require.NoError(t, os.WriteFile(filepath.Join(launcherDir, "git"), []byte(launcher), 0o755))
+		t.Setenv("PATH", launcherDir)
+		startedAt := time.Now()
+
+		output, err := gitDiff(ctx, t.TempDir(), "HEAD")
+
+		require.NoError(t, err)
+		assert.Contains(t, output, "snapshot truncated at 5 MB")
+		assert.Less(t, time.Since(startedAt), gitWaitDelay, "closing stdout ends the child; WaitDelay never has to fire")
 	})
 
 	// stat-dirty-index-untouched
