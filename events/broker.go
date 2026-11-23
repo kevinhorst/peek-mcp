@@ -8,13 +8,11 @@ import (
 type Type string
 
 const (
-	TypeSessionCreated         Type = "session_created"
-	TypeTurnAdded              Type = "turn_added"
-	TypeEventAdded             Type = "event_added"
-	TypeUsageUpdated           Type = "usage_updated"
-	TypePlanUpdated            Type = "plan_updated"
-	TypeDiffUpdated            Type = "diff_updated"
-	TypeUncommittedDiffUpdated Type = "uncommitted_diff_updated"
+	TypeSessionCreated Type = "session_created"
+	TypeTurnAdded      Type = "turn_added"
+	TypeEventAdded     Type = "event_added"
+	TypeUsageUpdated   Type = "usage_updated"
+	TypePlanUpdated    Type = "plan_updated"
 )
 
 type Event struct {
