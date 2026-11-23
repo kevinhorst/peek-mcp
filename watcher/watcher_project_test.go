@@ -16,7 +16,7 @@ func TestReadNewLines_ProjectLabel(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "cowork.jsonl")
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	newParser := func() Parser { return claude.NewParser() }
 	w := New(session.AgentClaude, dir, 0, newParser, store)
 	w.Project = "cowork"
@@ -38,7 +38,7 @@ func TestReadNewLines_LegacyProjectFromCwd(t *testing.T) {
 	fileLegacy := filepath.Join(dir, "legacy.jsonl")
 	fileRepo := filepath.Join(dir, "repo.jsonl")
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	newParser := func() Parser { return claude.NewParser() }
 	w := New(session.AgentClaude, dir, 0, newParser, store)
 

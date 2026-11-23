@@ -32,7 +32,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// spawned-event-on-parent
 	t.Run("spawned-event-on-parent", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -59,7 +59,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// duplicate-read-no-second-event
 	t.Run("duplicate-read-no-second-event", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -96,7 +96,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// workflow-spawned-event-on-parent
 	t.Run("workflow-spawned-event-on-parent", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -124,7 +124,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// workflow-label-from-manifest
 	t.Run("workflow-label-from-manifest", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -150,7 +150,7 @@ func TestReadSubagentMeta(t *testing.T) {
 	// meta-description-wins-over-manifest
 	t.Run("meta-description-wins-over-manifest", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -195,7 +195,7 @@ func TestReadJournal(t *testing.T) {
 	// result-record-event-on-parent
 	t.Run("result-record-event-on-parent", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -223,7 +223,7 @@ func TestReadJournal(t *testing.T) {
 	// incremental-second-read
 	t.Run("incremental-second-read", func(t *testing.T) {
 		projectDir := t.TempDir()
-		store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		turn := &session.Turn{
 			Role:      session.RoleUser,
 			Text:      "start",
@@ -267,7 +267,7 @@ func appendFile(t *testing.T, path, body string) {
 
 func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
 	projectDir := t.TempDir()
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	w := claudeWatcher(projectDir, store)
 
 	// On-disk layout as left behind by a finished session: the subagent dir
@@ -294,7 +294,7 @@ func TestWalkAndWatch_ColdBackfillSubagents(t *testing.T) {
 
 func TestWalkAndWatch_ColdBackfillWorkflowSubagents(t *testing.T) {
 	projectDir := t.TempDir()
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	w := claudeWatcher(projectDir, store)
 
 	// On-disk layout as left behind by a finished workflow run: the nested
@@ -336,7 +336,7 @@ func TestWalkAndWatch_ColdBackfillWorkflowSubagents(t *testing.T) {
 
 func TestWalkAndWatch_WorkflowSubagentToolCalls(t *testing.T) {
 	projectDir := t.TempDir()
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	w := claudeWatcher(projectDir, store)
 
 	transcript := filepath.Join(projectDir, "parent-sess.jsonl")
@@ -370,7 +370,7 @@ func TestWalkAndWatch_WorkflowSubagentToolCalls(t *testing.T) {
 
 func TestWalkAndWatch_NewDirBackfill(t *testing.T) {
 	root := t.TempDir()
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	store := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	w := claudeWatcher(root, store)
 
 	// A dir already populated with a transcript before we start watching it

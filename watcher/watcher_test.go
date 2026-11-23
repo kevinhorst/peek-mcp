@@ -56,7 +56,7 @@ func TestWalkAndWatch_Horizon(t *testing.T) {
 	stale := time.Now().Add(-48 * time.Hour)
 	require.NoError(t, os.Chtimes(oldFile, stale, stale))
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
 	w := New(session.AgentCodex, dir, 24*time.Hour, newParser, store)
 	fsWatcher, err := fsnotify.NewWatcher()
@@ -78,7 +78,7 @@ func TestWalkAndWatch_Horizon(t *testing.T) {
 	assert.Len(t, resumed.Turns(10), 1)
 
 	// zero-horizon-ingests-everything
-	allStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	allStore := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	allWatcher := New(session.AgentCodex, dir, 0, newParser, allStore)
 	allWatcher.walkAndWatch(fsWatcher, dir)
 	_, ok = allStore.GetById("sess-old")
@@ -105,7 +105,7 @@ func TestWalkAndWatch_WatchPruning(t *testing.T) {
 	deepFile := filepath.Join(deepDir, "rollout-deep.jsonl")
 	appendLine(t, deepFile, `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-deep","cwd":"/project"}}`)
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
 	w := New(session.AgentCodex, dir, 24*time.Hour, newParser, store)
 	fsWatcher, err := fsnotify.NewWatcher()
@@ -139,7 +139,7 @@ func TestWalkAndWatch_WatchPruning(t *testing.T) {
 	assert.True(t, ok)
 
 	// zero-horizon-watches-everything
-	allStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	allStore := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	allWatcher := New(session.AgentCodex, dir, 0, newParser, allStore)
 	allFsWatcher, err := fsnotify.NewWatcher()
 	require.NoError(t, err)
@@ -157,7 +157,7 @@ func TestWalkAndWatch_ToolResults(t *testing.T) {
 	subagentsDir := filepath.Join(sessionDir, "subagents")
 	require.NoError(t, os.MkdirAll(subagentsDir, 0o755))
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
 	w := New(session.AgentCodex, dir, 0, newParser, store)
 	fsWatcher, err := fsnotify.NewWatcher()
@@ -204,7 +204,7 @@ func TestWalkAndWatch_Expiry(t *testing.T) {
 	require.NoError(t, os.Chtimes(neverFile, stale, stale))
 	require.NoError(t, os.Chtimes(neverDir, stale, stale))
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
 	w := New(session.AgentCodex, dir, 24*time.Hour, newParser, store)
 	fsWatcher, err := fsnotify.NewWatcher()
@@ -260,7 +260,7 @@ func TestWalkAndWatch_Expiry(t *testing.T) {
 	require.NoError(t, os.Chtimes(coldFile, stale, stale))
 	require.NoError(t, os.Chtimes(coldSubDir, stale, stale))
 	require.NoError(t, os.Chtimes(coldAgentDir, stale, stale))
-	coldStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	coldStore := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	coldWatcher := New(session.AgentCodex, coldAgentDir, 24*time.Hour, newParser, coldStore)
 	coldFsWatcher, err := fsnotify.NewWatcher()
 	require.NoError(t, err)
@@ -271,7 +271,7 @@ func TestWalkAndWatch_Expiry(t *testing.T) {
 	assert.NotContains(t, coldFsWatcher.WatchList(), coldSubDir)
 
 	// horizon-zero-never-expires
-	allStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	allStore := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	allWatcher := New(session.AgentCodex, dir, 0, newParser, allStore)
 	allFsWatcher, err := fsnotify.NewWatcher()
 	require.NoError(t, err)
@@ -288,7 +288,7 @@ func TestWalkAndWatch_AddFailure(t *testing.T) {
 	transcript := filepath.Join(subDir, "rollout-fresh.jsonl")
 	appendLine(t, transcript, `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-fresh","cwd":"/project"}}`)
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
 	w := New(session.AgentCodex, dir, 0, newParser, store)
 	fsWatcher, err := fsnotify.NewWatcher()
@@ -316,7 +316,7 @@ func TestRun_Loaded(t *testing.T) {
 	// loaded-after-transcripts-ingested
 	dir := t.TempDir()
 	appendLine(t, filepath.Join(dir, "rollout-fresh.jsonl"), `{"timestamp":"2026-08-30T20:00:00.000Z","type":"session_meta","payload":{"id":"sess-fresh","cwd":"/project"}}`)
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	tests = append(tests, &testCase{
 		_id:              "loaded-after-transcripts-ingested",
 		_expectedSession: true,
@@ -326,7 +326,7 @@ func TestRun_Loaded(t *testing.T) {
 	})
 
 	// missing-root-still-signals-loaded
-	missingStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	missingStore := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	tests = append(tests, &testCase{
 		_id:              "missing-root-still-signals-loaded",
 		_expectedSession: false,
@@ -385,7 +385,7 @@ func TestEventBatch_Coalesce(t *testing.T) {
 
 func TestProcessBatch(t *testing.T) {
 	dir := t.TempDir()
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
 	w := New(session.AgentCodex, dir, 0, newParser, store)
 	fsWatcher, err := fsnotify.NewWatcher()
@@ -417,7 +417,7 @@ func TestProcessBatch(t *testing.T) {
 	assert.Len(t, sess.Turns(10), 1)
 
 	// meta-path-in-dirty-set-one-spawned-event
-	claudeStore := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+	claudeStore := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 	parent := &session.Turn{
 		Role:      session.RoleUser,
 		Text:      "start",
@@ -444,7 +444,7 @@ func TestReadNewLines_PerFileParserState(t *testing.T) {
 	fileA := filepath.Join(dir, "rollout-a.jsonl")
 	fileB := filepath.Join(dir, "rollout-b.jsonl")
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	newParser := func() Parser { return codex.NewParser() }
 	w := New(session.AgentCodex, dir, 0, newParser, store)
 
@@ -496,7 +496,7 @@ func TestWatcher_FileStates(t *testing.T) {
 	// states-cover-transcript-meta-journal
 	t.Run("states-cover-transcript-meta-journal", func(t *testing.T) {
 		dir := t.TempDir()
-		w := claudeWatcher(dir, session.NewStore(10, 25, events.NewBroker(), session.AgentClaude))
+		w := claudeWatcher(dir, session.NewStore(10, events.NewBroker(), session.AgentClaude))
 
 		transcriptPath := filepath.Join(dir, "s.jsonl")
 		appendLine(t, transcriptPath, toolUseLine)
@@ -525,12 +525,12 @@ func TestWatcher_FileStates(t *testing.T) {
 		dir := t.TempDir()
 		transcriptPath := filepath.Join(dir, "s.jsonl")
 		appendLine(t, transcriptPath, `{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:00:00.000Z","isSidechain":false,"promptId":"p1","message":{"role":"user","content":[{"type":"text","text":"before snapshot"}]}}`)
-		original := claudeWatcher(dir, session.NewStore(10, 25, events.NewBroker(), session.AgentClaude))
+		original := claudeWatcher(dir, session.NewStore(10, events.NewBroker(), session.AgentClaude))
 		require.NoError(t, original.readNewLines(transcriptPath))
 		states, err := original.FileStates()
 		require.NoError(t, err)
 
-		restoredStore := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		restoredStore := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		restored := claudeWatcher(dir, restoredStore)
 		require.NoError(t, restored.RestoreFiles(states))
 		appendLine(t, transcriptPath, `{"type":"user","sessionId":"s","timestamp":"2026-04-05T15:01:00.000Z","isSidechain":false,"promptId":"p2","message":{"role":"user","content":[{"type":"text","text":"after snapshot"}]}}`)
@@ -548,13 +548,13 @@ func TestWatcher_FileStates(t *testing.T) {
 		dir := t.TempDir()
 		transcriptPath := filepath.Join(dir, "s.jsonl")
 		appendLine(t, transcriptPath, toolUseLine)
-		uninterruptedStore := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		uninterruptedStore := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		uninterrupted := claudeWatcher(dir, uninterruptedStore)
 		require.NoError(t, uninterrupted.readNewLines(transcriptPath))
 		states, err := uninterrupted.FileStates()
 		require.NoError(t, err)
 
-		restoredStore := session.NewStore(10, 25, events.NewBroker(), session.AgentClaude)
+		restoredStore := session.NewStore(10, events.NewBroker(), session.AgentClaude)
 		restored := claudeWatcher(dir, restoredStore)
 		require.NoError(t, restored.RestoreFiles(states))
 		appendLine(t, transcriptPath, denialLine)
@@ -571,7 +571,7 @@ func TestWatcher_FileStates(t *testing.T) {
 	// foreign-paths-ignored
 	t.Run("foreign-paths-ignored", func(t *testing.T) {
 		dir := t.TempDir()
-		w := claudeWatcher(dir, session.NewStore(10, 25, events.NewBroker(), session.AgentClaude))
+		w := claudeWatcher(dir, session.NewStore(10, events.NewBroker(), session.AgentClaude))
 		states := map[string]session.FileState{
 			filepath.Join(t.TempDir(), "other.jsonl"):    {Offset: 10},
 			filepath.Join(dir+"-sibling", "other.jsonl"): {Offset: 20},
@@ -586,7 +586,7 @@ func TestWatcher_FileStates(t *testing.T) {
 	// corrupt-parser-state-errors
 	t.Run("corrupt-parser-state-errors", func(t *testing.T) {
 		dir := t.TempDir()
-		w := claudeWatcher(dir, session.NewStore(10, 25, events.NewBroker(), session.AgentClaude))
+		w := claudeWatcher(dir, session.NewStore(10, events.NewBroker(), session.AgentClaude))
 		states := map[string]session.FileState{
 			filepath.Join(dir, "s.jsonl"): {Offset: 10, Parser: []byte("garbage")},
 		}

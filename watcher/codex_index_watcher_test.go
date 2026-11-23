@@ -18,7 +18,7 @@ func provideIndexWatcher(t *testing.T, indexContent string) (*CodexIndexWatcher,
 		require.NoError(t, os.WriteFile(indexPath, []byte(indexContent), 0644))
 	}
 
-	store := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	store := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	return NewCodexIndexWatcher(codexHome, store), store
 }
 
@@ -121,7 +121,7 @@ func TestCodexIndexWatcher_Loaded(t *testing.T) {
 	})
 
 	// home-missing-signals-immediately
-	missingStore := session.NewStore(10, 25, events.NewBroker(), session.AgentCodex)
+	missingStore := session.NewStore(10, events.NewBroker(), session.AgentCodex)
 	tests = append(tests, &testCase{
 		_id:               "home-missing-signals-immediately",
 		_expectedSessions: 0,

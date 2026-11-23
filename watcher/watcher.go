@@ -197,7 +197,6 @@ func (w *Watcher) Run(ctx context.Context) error {
 
 	// Add root directories and backfill existing files
 	w.walkAndWatch(watcher, w.agentDir)
-	w.store.SeedDiffCache()
 	close(w.loaded)
 
 	var rescan <-chan time.Time
