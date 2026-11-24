@@ -21,8 +21,10 @@ const (
 	diffSnapshotFile = "diff.snapshot"
 	planDir          = "plan"
 	planLatestFile   = "latest.md"
+	sessionMetaFile  = "meta.json"
 	telemetryFile    = "telemetry.json"
 	instancesDir     = "instances"
+	indexLockFile    = "index.lock"
 
 	draftDiffSuffix     = ".draft.diff"
 	diffSuffix          = ".diff"
@@ -260,6 +262,60 @@ func (d *Dir) ReadTelemetry(agent, sessionId string) (string, error) {
 
 func (d *Dir) WriteTelemetry(agent, sessionId, content string) error {
 	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), telemetryFile), content)
+}
+
+// ReadSessionMeta reads one session's summary record.
+func (d *Dir) ReadSessionMeta(agent, sessionId string) ([]byte, bool) {
+	data, err := os.ReadFile(filepath.Join(d.sessionDir(agent, sessionId), sessionMetaFile))
+	if err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
+// ReadSessionMetas reads every session summary record of an agent, one file per session dir.
+func (d *Dir) ReadSessionMetas(agent string) [][]byte {
+	sessionDirs, err := os.ReadDir(filepath.Join(d.root, sanitize(agent)))
+	if err != nil {
+		return nil
+	}
+
+	records := make([][]byte, 0, len(sessionDirs))
+	for _, sessionDir := range sessionDirs {
+		data, err := os.ReadFile(filepath.Join(d.root, sanitize(agent), sessionDir.Name(), sessionMetaFile))
+		if err != nil {
+			continue
+		}
+		records = append(records, data)
+	}
+	return records
+}
+
+// WriteSessionMeta replaces one session's summary record atomically.
+func (d *Dir) WriteSessionMeta(agent, sessionId string, data []byte) error {
+	return d.writeFile(filepath.Join(d.sessionDir(agent, sessionId), sessionMetaFile), string(data))
+}
+
+// AcquireIndexLock claims the machine-wide index backfill; a lock older than staleAfter is taken over. The release func removes it.
+func (d *Dir) AcquireIndexLock(staleAfter time.Duration) (func(), bool) {
+	path := filepath.Join(d.root, indexLockFile)
+	if err := os.MkdirAll(d.root, dirPerm); err != nil {
+		return nil, false
+	}
+
+	info, err := os.Stat(path)
+	isStale := err == nil && time.Since(info.ModTime()) > staleAfter
+	if isStale {
+		os.Remove(path)
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, false
+	}
+	fmt.Fprintf(file, "%d\n", os.Getpid())
+	file.Close()
+	return func() { os.Remove(path) }, true
 }
 
 func (d *Dir) WriteInstance(id, content string) error {
