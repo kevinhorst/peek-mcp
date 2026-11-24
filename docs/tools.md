@@ -65,10 +65,11 @@ A background Agent-tool subagent's `subagent_result` is its launch acknowledgeme
 
 A skill's runs of the last 14 days, read from the [session index](reference.md#session-index) — never a transcript, never a warm-up, whatever the instance's watch window. A run is one invocation of the skill by the main agent; it lasts until the main agent's next skill invocation, across prompts and turn ends (unlike a `breakdown` skill window, which closes at the turn end). A skill a subagent invokes stays inside the run that spawned the subagent.
 
-Two answers:
+Three answers:
 
-- **List** (no `session_id`): `total` (runs in the index) and `runs`, newest first, cut to `limit`, one short row each — `session_id`, `title` (60 characters), `started_at`, `seconds` (to the run's last main-agent or subagent activity), `agents` (subagent count) and `args` (80 characters). No usage: the list is for picking the comparable run.
-- **Detail** (`session_id` from the list): that session's runs of the skill with their cost — `args` (500 characters), `source` (`slash` or `tool`), `started_at`, `ended_at`, `seconds`, `root` (the main agent's `model` of its first turn in the run, `requests` — each streamed chunk of one request counted once —, `peak_context`, the largest context a single request sent: input, cache writes and cache reads, and `usage`) and `agents` (the subagents first active from the run's start to the next main-agent invocation, the open run taking every later one, summed per `agent_type` and `model`: `count`, `requests`, the largest `peak_context`, summed `seconds`, `last_active`, `usage`).
+- **List** (no `session_id`, no `by`): `total` (runs in the index) and `runs`, newest first, cut to `limit`, one short row each — `session_id`, `title` (60 characters), `started_at`, `seconds` (to the run's last main-agent or subagent activity), `agents` (subagent count) and `args` (80 characters). No usage: the list is for picking the comparable run.
+- **By agent type** (`by: "agent_type"`): `runs` (the skill's runs in the window) and `agent_types`, one row per agent type and model sorted by both — `agent_type`, `model`, `runs` (how many runs had it), `count_median` (its count per run, over the runs that had it) and `per_agent` (one agent's usage: per run the row's usage ÷ its count, each field the median across runs). Medians are upper medians. `session_id` wins when both are given; any other `by` value is an error.
+- **Detail** (`session_id` from the list): that session's runs of the skill with their cost — `args` (500 characters), `source` (`slash` or `tool`), `started_at`, `ended_at` (the run's last main-agent or subagent activity; the open run's is its last activity so far), `seconds`, `root` (the main agent's `model` of its first turn in the run, `requests` — each streamed chunk of one request counted once —, `peak_context`, the largest context a single request sent: input, cache writes and cache reads, and `usage`) and `agents` (the subagents first active from the run's start to the next main-agent invocation, the open run taking every later one, summed per `agent_type` and `model`: `count`, `requests`, the largest `peak_context`, summed `seconds`, `last_active`, `usage`).
 
 Claude sessions only.
 
@@ -77,6 +78,7 @@ Claude sessions only.
 | `skill` | string | yes | Skill name as invoked, without the slash; a plugin-namespaced invocation (`plugin:<skill>`) matches too |
 | `limit` | number | no | List rows (default 20); at least 1 |
 | `session_id` | string | no | A session id from the list: answer with that session's runs of the skill and their cost |
+| `by` | string | no | `agent_type`: answer with every agent type and model across the window's runs — runs, median count per run, median usage of one agent; `session_id` wins |
 
 ## `session_list`
 
