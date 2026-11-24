@@ -15,6 +15,7 @@ import (
 
 	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/codex"
+	"github.com/kevinhorst/peek-mcp/index"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/tools"
@@ -27,6 +28,7 @@ type warmDeps struct {
 	codexHome   string
 	coworkHome  string
 	differ      *watcher.Differ
+	indexer     *index.Indexer
 	invocations *tools.InvocationCounter
 	stateDir    *state.Dir
 	store       *session.Store
@@ -160,20 +162,26 @@ func startWarmSet(ctx context.Context, deps *warmDeps, window time.Duration) *wa
 	}
 
 	if deps.codexHome != "" {
-		index := watcher.NewCodexIndexWatcher(deps.codexHome, deps.store)
-		loads = append(loads, index.Loaded())
-		set.group.Go(func() { runWatcher(warmCtx, index.Run, "codex index watcher") })
+		codexIndex := watcher.NewCodexIndexWatcher(deps.codexHome, deps.store)
+		loads = append(loads, codexIndex.Loaded())
+		set.group.Go(func() { runWatcher(warmCtx, codexIndex.Run, "codex index watcher") })
 	}
 
 	set.group.Go(func() { reportLoaded(warmCtx, deps, loads, startedAt) })
+	if deps.indexer != nil {
+		set.group.Go(func() { runIndexer(warmCtx, deps) })
+	}
 	return set
 }
 
-// stop ends the warm period: watchers closed, store written to the instance's snapshot file and dropped from memory.
+// stop ends the warm period: watchers closed, live summaries and the store written out, the store dropped from memory.
 func (s *warmSet) stop(deps *warmDeps) {
 	s.cancel()
 	s.group.Wait()
 
+	if deps.indexer != nil {
+		deps.indexer.PersistLive()
+	}
 	deps.writeSnapshot(s.watchers)
 	deps.store.Reset()
 	debug.FreeOSMemory()
@@ -185,6 +193,18 @@ func newParserByAgent() map[session.Agent]func() watcher.Parser {
 		session.AgentClaude: func() watcher.Parser { return claude.NewParser() },
 		session.AgentCodex:  func() watcher.Parser { return codex.NewParser() },
 	}
+}
+
+// runIndexer waits for the warm period's initial load, records the live sessions, then backfills the index window's older transcripts.
+func runIndexer(ctx context.Context, deps *warmDeps) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-deps.store.Ready():
+	}
+
+	deps.indexer.PersistLive()
+	deps.indexer.Backfill(ctx)
 }
 
 func reportLoaded(ctx context.Context, deps *warmDeps, loads []<-chan struct{}, startedAt time.Time) {

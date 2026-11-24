@@ -19,9 +19,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/claude"
 	"github.com/kevinhorst/peek-mcp/config"
 	"github.com/kevinhorst/peek-mcp/control"
 	"github.com/kevinhorst/peek-mcp/events"
+	"github.com/kevinhorst/peek-mcp/index"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/telemetry"
@@ -112,6 +114,10 @@ var startCmd = &cobra.Command{
 		}
 		differ := watcher.NewDiffer(broker, store, stateDir)
 		loader := watcher.NewTurnLoader(newParserByAgent())
+		var indexer *index.Indexer
+		if claudeHome != "" {
+			indexer = index.NewIndexer(loader, filepath.Join(claudeHome, claude.ProjectsDir), stateDir, store)
+		}
 
 		info := tools.InstanceInfo{
 			PID:       os.Getpid(),
@@ -129,6 +135,7 @@ var startCmd = &cobra.Command{
 			codexHome:   codexHome,
 			coworkHome:  coworkHome,
 			differ:      differ,
+			indexer:     indexer,
 			invocations: invocations,
 			stateDir:    stateDir,
 			store:       store,
@@ -242,6 +249,7 @@ var startCmd = &cobra.Command{
 			invocations,
 			detector,
 			differ,
+			indexer,
 			lifecycle,
 			loader,
 			srv,
