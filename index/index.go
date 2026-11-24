@@ -17,8 +17,8 @@ import (
 	"github.com/kevinhorst/peek-mcp/watcher"
 )
 
-// Window is how far back the index answers: thirty days of session summaries, whatever the transcript watch window.
-const Window = 30 * 24 * time.Hour
+// Window is how far back the index answers: fourteen days of session summaries, whatever the transcript watch window.
+const Window = 14 * 24 * time.Hour
 
 // backfillLockStale hands a dead backfiller's lock to the next instance.
 const backfillLockStale = 30 * time.Minute

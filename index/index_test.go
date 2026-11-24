@@ -113,9 +113,9 @@ func TestIndexer_Backfill(t *testing.T) {
 
 	// outside-window-skipped
 	t.Run("outside-window-skipped", func(t *testing.T) {
-		fortyDaysAgo := time.Now().Add(-40 * 24 * time.Hour)
-		fixture := provideTranscriptFixture(t, fortyDaysAgo)
-		require.NoError(t, os.Chtimes(fixture.parentPath, fortyDaysAgo, fortyDaysAgo))
+		twentyDaysAgo := time.Now().Add(-20 * 24 * time.Hour)
+		fixture := provideTranscriptFixture(t, twentyDaysAgo)
+		require.NoError(t, os.Chtimes(fixture.parentPath, twentyDaysAgo, twentyDaysAgo))
 		indexer := provideIndexer(fixture.projectsDir, state.NewDir(t.TempDir()), provideEmptyStore())
 
 		indexer.Backfill(t.Context())
@@ -167,7 +167,7 @@ func TestRunsOf(t *testing.T) {
 	records := []*Record{
 		{SessionId: "a", Runs: []*Run{run("railroad-review", 2*time.Hour), run("qq", time.Hour)}},
 		{SessionId: "b", Runs: []*Run{run("plugin:railroad-review", time.Hour)}},
-		{SessionId: "c", Runs: []*Run{run("railroad-review", 31*24*time.Hour)}},
+		{SessionId: "c", Runs: []*Run{run("railroad-review", 15*24*time.Hour)}},
 	}
 
 	runs := RunsOf(records, "railroad-review", now)
