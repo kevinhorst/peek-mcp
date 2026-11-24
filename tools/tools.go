@@ -226,7 +226,7 @@ func Register(
 	server.AddTool(sessionEvents, counted(counter, "session_events", awaitReady(eventsHandler, lifecycle, store, readyTimeout)))
 
 	skillRuns := mcp.NewTool("skill_runs",
-		mcp.WithDescription("A skill's runs of the last 30 days from peek's session index, never a transcript read. Without session_id: one short row per run, newest first — session_id, title, started_at, seconds, agent count, args cut to 80 characters — and total. With session_id: that session's runs of the skill with their cost — the main agent's model, requests, peak_context (the largest context one request sent) and token usage, and the subagents summed per agent type and model. A run is one invocation by the main agent and lasts until its next skill invocation. Claude sessions only."),
+		mcp.WithDescription("A skill's runs of the last 14 days from peek's session index, never a transcript read. Without session_id: one short row per run, newest first — session_id, title, started_at, seconds, agent count, args cut to 80 characters — and total. With session_id: that session's runs of the skill with their cost — the main agent's model, requests, peak_context (the largest context one request sent) and token usage, and the subagents summed per agent type and model. A run is one invocation by the main agent and lasts until its next skill invocation. Claude sessions only."),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("skill",
 			mcp.Required(),
