@@ -63,7 +63,7 @@ A background Agent-tool subagent's `subagent_result` is its launch acknowledgeme
 
 ## `skill_runs`
 
-A skill's runs of the last 30 days, read from the [session index](reference.md#session-index) — never a transcript, never a warm-up, whatever the instance's watch window. A run is one invocation of the skill by the main agent; it lasts until the main agent's next skill invocation, across prompts and turn ends (unlike a `breakdown` skill window, which closes at the turn end). A skill a subagent invokes stays inside the run that spawned the subagent.
+A skill's runs of the last 14 days, read from the [session index](reference.md#session-index) — never a transcript, never a warm-up, whatever the instance's watch window. A run is one invocation of the skill by the main agent; it lasts until the main agent's next skill invocation, across prompts and turn ends (unlike a `breakdown` skill window, which closes at the turn end). A skill a subagent invokes stays inside the run that spawned the subagent.
 
 Two answers:
 
