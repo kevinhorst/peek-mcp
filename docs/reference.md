@@ -102,6 +102,14 @@ The endpoint base must match the control server port (`--control-port`, default 
 
 peek detects whether this export is configured: at startup, on the `/stats` page, and in the `session_events` `time.telemetry` block, the status reads `receiving` (metrics arrived for the session), `configured` (settings.json points at the actually bound control port with `http/json`), `misconfigured` (enabled but wrong endpoint/protocol/port — the detail says what was expected), or `not_configured` (no telemetry env in settings.json — it may still be enabled via shell env, which peek cannot see). The check compares against the port the server actually bound after any port walk.
 
+## Session index
+
+Transcripts are parsed for the watch window only (`--watch-window-days`, 3 days for stdio). The session index answers further back without them: one summary per Claude session — title, cwd, times, the main agent's token usage, and every skill run with its main-agent and per-agent-type cost — in `<state dir>/claude/<session>/meta.json`, covering 30 days. `skill_runs` reads only these files.
+
+- **Live sessions:** a warm instance writes the summary of every session it holds that changed, once its initial load completes, on each `skill_runs` call and when it goes cold.
+- **Older sessions:** after the initial load, one instance per machine (lock file `<state dir>/index.lock`, taken over after 30 minutes) parses each transcript of the last 30 days that is outside the store and whose summary is missing or was built from a different file size or modification time — the parent transcript and everything under its `subagents/` dir, into a throwaway store — and writes its summary. A transcript is parsed once; an unchanged one is only stat-ed again.
+- Summaries follow `--state-retention-days` like the rest of the state dir.
+
 ## Hot reload (live diff)
 
 To keep Claude Code grounded in your current work as you edit — a "hot reload" — a `UserPromptSubmit` hook injects the repo's `git diff HEAD` into context on every prompt. The hook runs git itself, capped at 5 MB and without touching the index — no peek binary on `PATH`, no server call, no running instance — so it works under both the HTTP and `.mcpb` deployments. Earlier versions had peek write the diff to `<gitDir>/peek-diff` for a hook to `cat`; peek no longer writes that file, so replace the old hook.

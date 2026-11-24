@@ -50,6 +50,7 @@ Returns the typed event stream of a session (plan lifecycle, permission denials/
 | `agent` | string | no | Agent: `claude` or `codex`. Required when `id` and `title` are omitted |
 | `revisions` | boolean | no | Include plan revision diffs (default `false`; they dominate response size) |
 | `breakdown` | boolean | no | Include per-skill and per-subagent time and token usage (default `false`; Claude sessions only). A skill window spans from its invocation to the next user prompt or next skill; skill usage counts main-loop tokens only — subagent tokens are listed per subagent and never enter the session's `usage` totals |
+| `details` | boolean | no | Include the lists: `touched_files` (and, with `breakdown`, each subagent's `touched_files`) and `permissions.requests` (default `false`: counters only — on a session with many subagents these lists are most of the response) |
 | `subagent` | string | no | Subagent id: scope events (by actor) and the `breakdown` stats to that agent. Valid ids are listed in every response's `subagent_ids` field |
 | `request_id` | string | no | Pagination request ID from a previous response |
 | `json` | boolean | no | Return the full typed response as structuredContent, unpaginated — sections are real JSON objects instead of chunked strings (default `false`: paginated JSON text block) |
@@ -62,20 +63,20 @@ A background Agent-tool subagent's `subagent_result` is its launch acknowledgeme
 
 ## `skill_runs`
 
-Returns a skill's past runs across all sessions, newest first, so an agent can estimate what the skill's next run costs before it starts it. A run is one invocation of the skill by the main agent; it lasts until the main agent's next skill invocation, across prompts and turn ends (unlike a `breakdown` skill window, which closes at the turn end). A skill a subagent invokes stays inside the run that spawned the subagent.
+A skill's runs of the last 30 days, read from the [session index](reference.md#session-index) — never a transcript, never a warm-up, whatever the instance's watch window. A run is one invocation of the skill by the main agent; it lasts until the main agent's next skill invocation, across prompts and turn ends (unlike a `breakdown` skill window, which closes at the turn end). A skill a subagent invokes stays inside the run that spawned the subagent.
 
-Each run carries `session_id`, `title`, `cwd`, `skill` (as invoked, a plugin namespace included), `args`, `source` (`slash` or `tool`), `started_at`, `ended_at` (the run's last main-agent or subagent activity, so the idle gap before the next invocation never counts) and `seconds`, plus:
+Two answers:
 
-- `root` — the main agent's `model` (of its first turn in the run), `requests` (model requests, each streamed chunk of one request counted once), `peak_context` (the largest context a single request sent: input, cache writes and cache reads) and `usage` (token totals).
-- `agents` — the subagents first active from the run's start to the next main-agent invocation (the open run takes every later one), summed per `agent_type` and `model`: `count`, `requests`, `peak_context` (the largest of any of them), `seconds` (summed active spans), `last_active` and `usage`.
+- **List** (no `session_id`): `total` (runs in the index) and `runs`, newest first, cut to `limit`, one short row each — `session_id`, `title` (60 characters), `started_at`, `seconds` (to the run's last main-agent or subagent activity), `agents` (subagent count) and `args` (80 characters). No usage: the list is for picking the comparable run.
+- **Detail** (`session_id` from the list): that session's runs of the skill with their cost — `args` (500 characters), `source` (`slash` or `tool`), `started_at`, `ended_at`, `seconds`, `root` (the main agent's `model` of its first turn in the run, `requests` — each streamed chunk of one request counted once —, `peak_context`, the largest context a single request sent: input, cache writes and cache reads, and `usage`) and `agents` (the subagents first active from the run's start to the next main-agent invocation, the open run taking every later one, summed per `agent_type` and `model`: `count`, `requests`, the largest `peak_context`, summed `seconds`, `last_active`, `usage`).
 
-No turns, events or file lists. The result's `total` is the number of runs the watch window holds; `runs` is cut to `limit`. Claude sessions only.
+Claude sessions only.
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `skill` | string | yes | Skill name as invoked, without the slash; a plugin-namespaced invocation (`plugin:<skill>`) matches too |
-| `limit` | number | no | Number of runs to return (default 5); at least 1 |
-| `window_days` | number | no | Widen this instance's watch window to this many days before searching; at least 1. The wider window stays until the instance exits, and the call waits while the added days load. A stdio instance starts with 3 days |
+| `limit` | number | no | List rows (default 20); at least 1 |
+| `session_id` | string | no | A session id from the list: answer with that session's runs of the skill and their cost |
 
 ## `session_list`
 
