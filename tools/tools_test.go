@@ -1222,6 +1222,35 @@ func TestSkillRuns_Detail(t *testing.T) {
 	assert.Equal(t, "plugin:railroad-review", payload.Runs[0].Skill, "a namespaced invocation matches")
 }
 
+func TestSkillRuns_ByAgentType(t *testing.T) {
+	handler := provideSkillRunsHandler(t)
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"by": "agent_type", "skill": "railroad-review"}))
+	require.NoError(t, err)
+	payload, ok := result.StructuredContent.(*skillRunsByAgentTypeResult)
+	require.True(t, ok)
+	assert.Equal(t, 2, payload.Runs)
+	require.Len(t, payload.AgentTypes, 1)
+	agentType := payload.AgentTypes[0]
+	assert.Equal(t, "railroad-lane-tests", agentType.AgentType)
+	assert.Equal(t, "claude-opus-5-5", agentType.Model)
+	assert.Equal(t, 1, agentType.Runs)
+	assert.Equal(t, 1, agentType.CountMedian)
+	assert.Equal(t, 500, agentType.PerAgent.CacheCreationInputTokens)
+	assert.Equal(t, 40, agentType.PerAgent.OutputTokens)
+
+	// an unknown by is an error
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"by": "model", "skill": "railroad-review"}))
+	require.NoError(t, err)
+	assert.Equal(t, errSkillRunsByInvalid.Error(), errorText(t, result))
+
+	// session_id wins over by
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"by": "agent_type", "session_id": "old", "skill": "railroad-review"}))
+	require.NoError(t, err)
+	_, ok = result.StructuredContent.(*skillRunsDetail)
+	assert.True(t, ok)
+}
+
 func TestRegister_ReadOnlyHint(t *testing.T) {
 	srv := server.NewMCPServer("peek-mcp", "test")
 	lifecycle := NewLifecycle(

@@ -12,6 +12,8 @@ const (
 	listArgsRunes    = 80
 	listTitleRunes   = 60
 	detailArgsRunes  = 500
+
+	skillRunsByAgentType = "agent_type"
 )
 
 // skillRunRow is one run in the list: enough to pick the comparable run, nothing to cost it.
@@ -38,6 +40,16 @@ func newSkillRunRow(sessionRun *index.SessionRun) *skillRunRow {
 type skillRunsResult struct {
 	Runs  []*skillRunRow `json:"runs"`
 	Total int            `json:"total"`
+}
+
+// skillRunsByAgentTypeResult is the per-type summary over every run of the window.
+type skillRunsByAgentTypeResult struct {
+	AgentTypes []*index.AgentTypeMedian `json:"agent_types"`
+	Runs       int                      `json:"runs"`
+}
+
+func newSkillRunsByAgentType(runs []*index.SessionRun) *skillRunsByAgentTypeResult {
+	return &skillRunsByAgentTypeResult{AgentTypes: index.AgentTypeMedians(runs), Runs: len(runs)}
 }
 
 // skillRunsDetail is one session's runs of the skill with every cost field.

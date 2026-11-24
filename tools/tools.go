@@ -25,6 +25,7 @@ var (
 	errIndexUnavailable       = errors.New("the session index needs a claude home and a state dir")
 	errSkillMissing           = errors.New("skill parameter is required")
 	errSkillRunsLimitInvalid  = errors.New("limit must be at least 1")
+	errSkillRunsByInvalid     = errors.New(`by must be "agent_type"`)
 	errWindowDaysInvalid      = errors.New("window_days must be at least 1")
 )
 
@@ -237,6 +238,9 @@ func Register(
 		),
 		mcp.WithString("session_id",
 			mcp.Description("A session id from the list: returns that session's runs of the skill with their cost instead of the list."),
+		),
+		mcp.WithString("by",
+			mcp.Description("\"agent_type\": instead of the list, every agent type and model across the skill's runs of the window — in how many runs, the median count per run and the median token usage of one agent. session_id wins when both are given."),
 		),
 	)
 	server.AddTool(skillRuns, counted(counter, "skill_runs", skillRunsHandler(indexer, store)))
@@ -487,6 +491,15 @@ func skillRunsHandler(indexer *index.Indexer, s *session.Store) server.ToolHandl
 		sessionId := strings.TrimSpace(request.GetString("session_id", ""))
 		if sessionId != "" {
 			return respondWithStructured(newSkillRunsDetail(runs, session.Id(sessionId)))
+		}
+
+		// by
+		switch strings.TrimSpace(request.GetString("by", "")) {
+		case "":
+		case skillRunsByAgentType:
+			return respondWithStructured(newSkillRunsByAgentType(runs))
+		default:
+			return mcp.NewToolResultError(errSkillRunsByInvalid.Error()), nil
 		}
 
 		rows := make([]*skillRunRow, 0, min(limit, len(runs)))
