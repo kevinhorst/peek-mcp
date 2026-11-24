@@ -342,22 +342,27 @@ func (w *Watcher) walkAndWatch(watcher *fsnotify.Watcher, root string) {
 	}
 
 	for _, path := range subagentPaths {
-		if isWorkflowJournalPath(path) {
-			err = w.readJournal(path)
-			if err != nil {
-				slog.Warn("walkAndWatch: readJournal", "err", err)
-			}
-			continue
+		w.readSubagentFile(path)
+	}
+}
+
+// readSubagentFile reads one file under a session's subagents dir by its kind: workflow journal, agent transcript or agent meta.
+func (w *Watcher) readSubagentFile(path string) {
+	if isWorkflowJournalPath(path) {
+		err := w.readJournal(path)
+		if err != nil {
+			slog.Warn("Watcher.readSubagentFile: readJournal", "err", err)
 		}
-		if strings.HasSuffix(path, jsonlSuffix) {
-			err = w.readNewLines(path)
-			if err != nil {
-				slog.Warn("walkAndWatch: readNewLines", "err", err)
-			}
+		return
+	}
+	if strings.HasSuffix(path, jsonlSuffix) {
+		err := w.readNewLines(path)
+		if err != nil {
+			slog.Warn("Watcher.readSubagentFile: readNewLines", "err", err)
 		}
-		if isSubagentMetaPath(path) {
-			w.readSubagentMeta(path)
-		}
+	}
+	if isSubagentMetaPath(path) {
+		w.readSubagentMeta(path)
 	}
 }
 
