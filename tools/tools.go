@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kevinhorst/peek-mcp/claude"
+	"github.com/kevinhorst/peek-mcp/index"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/telemetry"
 	"github.com/kevinhorst/peek-mcp/watcher"
@@ -21,6 +22,7 @@ import (
 var (
 	errInitialLoadPending     = errors.New("initial session load still in progress; retry shortly")
 	errSessionSelectorMissing = errors.New("id or title parameter is required")
+	errIndexUnavailable       = errors.New("the session index needs a claude home and a state dir")
 	errSkillMissing           = errors.New("skill parameter is required")
 	errSkillRunsLimitInvalid  = errors.New("limit must be at least 1")
 	errWindowDaysInvalid      = errors.New("window_days must be at least 1")
@@ -103,6 +105,7 @@ func Register(
 	counter *InvocationCounter,
 	detector *telemetry.Detector,
 	differ *watcher.Differ,
+	indexer *index.Indexer,
 	lifecycle *Lifecycle,
 	loader *watcher.TurnLoader,
 	server *server.MCPServer,
@@ -205,6 +208,9 @@ func Register(
 		mcp.WithBoolean("breakdown",
 			mcp.Description("Include per-skill and per-subagent time and token usage (default false; Claude sessions only)"),
 		),
+		mcp.WithBoolean("details",
+			mcp.Description("Include the touched-file lists (session and, with breakdown, per subagent) and the permission request list (default false: counters only; these lists dominate response size)"),
+		),
 		mcp.WithString("subagent",
 			mcp.Description("Subagent id: scope events and breakdown to that agent. Valid ids are listed in every response's subagent_ids field."),
 		),
@@ -220,22 +226,20 @@ func Register(
 	server.AddTool(sessionEvents, counted(counter, "session_events", awaitReady(eventsHandler, lifecycle, store, readyTimeout)))
 
 	skillRuns := mcp.NewTool("skill_runs",
-		mcp.WithDescription("Returns a skill's past runs across all sessions, newest first, to estimate what its next run costs. A run is one invocation of the skill by the main agent; it lasts until the main agent's next skill invocation. Each run carries the main agent's model, request count, largest single-request context (peak_context) and token usage, and its subagents summed per agent type and model: count, requests, the largest peak_context of any of them, summed seconds and token usage. No turns, events or file lists. Claude sessions only; covers the instance's watch window."),
+		mcp.WithDescription("A skill's runs of the last 30 days from peek's session index, never a transcript read. Without session_id: one short row per run, newest first — session_id, title, started_at, seconds, agent count, args cut to 80 characters — and total. With session_id: that session's runs of the skill with their cost — the main agent's model, requests, peak_context (the largest context one request sent) and token usage, and the subagents summed per agent type and model. A run is one invocation by the main agent and lasts until its next skill invocation. Claude sessions only."),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("skill",
 			mcp.Required(),
 			mcp.Description("Skill name as invoked, without the slash (e.g. \"fdesign\"); a plugin-namespaced invocation (\"plugin:fdesign\") matches too."),
 		),
 		mcp.WithNumber("limit",
-			mcp.Description("Number of runs to return (default 5); total reports how many runs the window holds."),
+			mcp.Description("Rows in the list (default 20); total reports how many runs the index holds."),
 		),
-		mcp.WithNumber(windowDaysParam,
-			mcp.Description("Widen this instance's watch window to this many days before searching (stdio instances start with 3). The wider window stays until the instance exits, and the call waits while the added days load. Omit to search the current window."),
+		mcp.WithString("session_id",
+			mcp.Description("A session id from the list: returns that session's runs of the skill with their cost instead of the list."),
 		),
 	)
-	skillRuns.Meta = withMaxResultSize()
-	runsHandler := awaitReady(skillRunsHandler(store), lifecycle, store, readyTimeout)
-	server.AddTool(skillRuns, counted(counter, "skill_runs", widened(runsHandler, lifecycle)))
+	server.AddTool(skillRuns, counted(counter, "skill_runs", skillRunsHandler(indexer, store)))
 }
 
 func sessionGetHandler(
@@ -455,8 +459,13 @@ func sessionListHandler(s *session.Store) server.ToolHandlerFunc {
 	}
 }
 
-func skillRunsHandler(s *session.Store) server.ToolHandlerFunc {
+// skillRunsHandler answers from the index alone: a warm instance writes its live sessions first, a cold one is never warmed for it.
+func skillRunsHandler(indexer *index.Indexer, s *session.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if indexer == nil {
+			return mcp.NewToolResultError(errIndexUnavailable.Error()), nil
+		}
+
 		// skill
 		skill := strings.TrimSpace(request.GetString("skill", ""))
 		if skill == "" {
@@ -469,16 +478,38 @@ func skillRunsHandler(s *session.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(errSkillRunsLimitInvalid.Error()), nil
 		}
 
-		var runs []*skillRunView
-		s.WithSessions(nil, func(sessions []*session.Session) {
-			runs = newSkillRunViews(sessions, skill)
-		})
-
-		result := &skillRunsResult{
-			Runs:  runs[:min(limit, len(runs))],
-			Total: len(runs),
+		if isStoreReady(s) {
+			indexer.PersistLive()
 		}
+		runs := index.RunsOf(indexer.Records(), skill, time.Now())
+
+		// session_id
+		sessionId := strings.TrimSpace(request.GetString("session_id", ""))
+		if sessionId != "" {
+			return respondWithStructured(newSkillRunsDetail(runs, session.Id(sessionId)))
+		}
+
+		rows := make([]*skillRunRow, 0, min(limit, len(runs)))
+		for _, run := range runs[:min(limit, len(runs))] {
+			rows = append(rows, newSkillRunRow(run))
+		}
+		result := &skillRunsResult{Runs: rows, Total: len(runs)}
 		return respondWithStructured(result)
+	}
+}
+
+func dropSubagentTouchedFiles(views []*SubagentStatView) {
+	for _, view := range views {
+		view.TouchedFiles = nil
+	}
+}
+
+func isStoreReady(s *session.Store) bool {
+	select {
+	case <-s.Ready():
+		return true
+	default:
+		return false
 	}
 }
 
@@ -563,11 +594,20 @@ func sessionEventsHandler(detector *telemetry.Detector, s *session.Store, pageSt
 		if firstPage.Time != nil {
 			firstPage.Time.Telemetry = NewTelemetryTimeView(currentSession, detector, telemetryStore, s.StateDir)
 		}
+		withDetails := boolArgFromRequest(request, "details", false)
 		firstPage.Permissions = newPermissionsView(currentSession, telemetryStore, s.StateDir)
-		firstPage.TouchedFiles = newTouchedFileViews(currentSession.TouchedFiles)
+		if firstPage.Permissions != nil && !withDetails {
+			firstPage.Permissions.Requests = nil
+		}
+		if withDetails {
+			firstPage.TouchedFiles = newTouchedFileViews(currentSession.TouchedFiles)
+		}
 		if boolArgFromRequest(request, "breakdown", false) {
 			firstPage.Skills = newSkillStatViews(currentSession)
 			firstPage.Subagents = NewSubagentStatViews(currentSession)
+			if !withDetails {
+				dropSubagentTouchedFiles(firstPage.Subagents)
+			}
 			if subagentId != "" {
 				firstPage.Skills = nil
 				stats := firstPage.Subagents[:0]

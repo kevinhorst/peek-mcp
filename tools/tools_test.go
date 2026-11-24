@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kevinhorst/peek-mcp/events"
+	"github.com/kevinhorst/peek-mcp/index"
 	"github.com/kevinhorst/peek-mcp/session"
 	"github.com/kevinhorst/peek-mcp/state"
 	"github.com/kevinhorst/peek-mcp/telemetry"
@@ -659,6 +660,37 @@ func TestSessionEvents_Subagent(t *testing.T) {
 	assert.Equal(t, []string{"ag1"}, payload.SubagentIds)
 }
 
+func TestSessionEvents_DetailsOptIn(t *testing.T) {
+	store := provideSubagentStore()
+	s1, _ := store.GetById("s1")
+	s1.AddFileTouch(&session.FileTouch{Path: "/project/a.go"})
+	s1.AddSubagentTurn(&session.Turn{
+		FileTouches: []*session.FileTouch{{Path: "/project/b.go"}},
+		Meta:        &session.Meta{SessionId: "s1"},
+		SubagentId:  "ag1",
+	})
+	pageStore := &PageStore[*sessionEventsResult]{PagesByRequestId: make(map[string]<-chan *sessionEventsResult)}
+	handler := sessionEventsHandler(nil, store, pageStore, nil)
+
+	// counters-only-by-default
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"breakdown": true, "id": "s1", "json": true}))
+	require.NoError(t, err)
+	payload, ok := result.StructuredContent.(*sessionEventsResult)
+	require.True(t, ok)
+	assert.Empty(t, payload.TouchedFiles)
+	require.Len(t, payload.Subagents, 1)
+	assert.Empty(t, payload.Subagents[0].TouchedFiles)
+
+	// details-include-file-lists
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"breakdown": true, "details": true, "id": "s1", "json": true}))
+	require.NoError(t, err)
+	payload, ok = result.StructuredContent.(*sessionEventsResult)
+	require.True(t, ok)
+	assert.Len(t, payload.TouchedFiles, 1)
+	require.Len(t, payload.Subagents, 1)
+	assert.Len(t, payload.Subagents[0].TouchedFiles, 1)
+}
+
 func TestSessionEvents_SubagentIdsAlwaysPresent(t *testing.T) {
 	store := provideSubagentStore()
 	pageStore := &PageStore[*sessionEventsResult]{PagesByRequestId: make(map[string]<-chan *sessionEventsResult)}
@@ -999,9 +1031,17 @@ func TestSnapshot_ToolOutputEqual(t *testing.T) {
 	}
 }
 
+// provideSkillRunsHandler serves skill_runs from a fresh state dir through a ready store; the index is filled from the store on the call.
+func provideSkillRunsHandler(t *testing.T) server.ToolHandlerFunc {
+	store := provideSkillRunsStore()
+	store.MarkReady()
+	indexer := index.NewIndexer(nil, t.TempDir(), state.NewDir(t.TempDir()), store)
+	return skillRunsHandler(indexer, store)
+}
+
 func provideSkillRunsStore() *session.Store {
 	s := session.NewStore(10, events.NewBroker(), session.AgentClaude)
-	start := time.Date(2026, 11, 23, 15, 0, 0, 0, time.UTC)
+	start := time.Now().Add(-5 * time.Hour).Truncate(time.Minute)
 	at := func(minutes int) time.Time {
 		return start.Add(time.Duration(minutes) * time.Minute)
 	}
@@ -1057,7 +1097,7 @@ func TestSkillRuns(t *testing.T) {
 		_expectedRuns:  []session.Id{"new", "old"},
 		_expectedTotal: 2,
 		args:           map[string]any{"skill": "railroad-review"},
-		handler:        skillRunsHandler(provideSkillRunsStore()),
+		handler:        provideSkillRunsHandler(t),
 	})
 
 	// limit-cuts-runs-keeps-total
@@ -1066,7 +1106,7 @@ func TestSkillRuns(t *testing.T) {
 		_expectedRuns:  []session.Id{"new"},
 		_expectedTotal: 2,
 		args:           map[string]any{"limit": float64(1), "skill": "railroad-review"},
-		handler:        skillRunsHandler(provideSkillRunsStore()),
+		handler:        provideSkillRunsHandler(t),
 	})
 
 	// unknown-skill-no-runs
@@ -1075,7 +1115,7 @@ func TestSkillRuns(t *testing.T) {
 		_expectedRuns:  []session.Id{},
 		_expectedTotal: 0,
 		args:           map[string]any{"skill": "review"},
-		handler:        skillRunsHandler(provideSkillRunsStore()),
+		handler:        provideSkillRunsHandler(t),
 	})
 
 	// skill-missing
@@ -1083,7 +1123,7 @@ func TestSkillRuns(t *testing.T) {
 		_id:            "skill-missing",
 		_expectedError: errSkillMissing.Error(),
 		args:           map[string]any{"skill": "  "},
-		handler:        skillRunsHandler(provideSkillRunsStore()),
+		handler:        provideSkillRunsHandler(t),
 	})
 
 	// limit-invalid
@@ -1091,7 +1131,15 @@ func TestSkillRuns(t *testing.T) {
 		_id:            "limit-invalid",
 		_expectedError: errSkillRunsLimitInvalid.Error(),
 		args:           map[string]any{"limit": float64(0), "skill": "railroad-review"},
-		handler:        skillRunsHandler(provideSkillRunsStore()),
+		handler:        provideSkillRunsHandler(t),
+	})
+
+	// no-index
+	tests = append(tests, &testCase{
+		_id:            "no-index",
+		_expectedError: errIndexUnavailable.Error(),
+		args:           map[string]any{"skill": "railroad-review"},
+		handler:        skillRunsHandler(nil, provideSkillRunsStore()),
 	})
 
 	// Run tests
@@ -1117,20 +1165,39 @@ func TestSkillRuns(t *testing.T) {
 	}
 }
 
-func TestSkillRuns_RunShape(t *testing.T) {
-	handler := skillRunsHandler(provideSkillRunsStore())
+func TestSkillRuns_ListRow(t *testing.T) {
+	handler := provideSkillRunsHandler(t)
 
 	result, err := handler(context.Background(), requestWithArgs(map[string]any{"skill": "railroad-review"}))
 	require.NoError(t, err)
 	payload, ok := result.StructuredContent.(*skillRunsResult)
 	require.True(t, ok)
 	require.Len(t, payload.Runs, 2)
-	run := payload.Runs[1]
+
+	row := payload.Runs[1]
+	assert.Equal(t, session.Id("old"), row.SessionId)
+	assert.Equal(t, "go", row.Args)
+	assert.Equal(t, 1, row.Agents)
+	assert.Equal(t, 20*60, row.Seconds, "the run ends at its last subagent activity, not at the next invocation")
+
+	data, err := json.Marshal(payload)
+	require.NoError(t, err)
+	assert.Less(t, len(data), 600, "a list row carries no usage")
+}
+
+func TestSkillRuns_Detail(t *testing.T) {
+	handler := provideSkillRunsHandler(t)
+
+	result, err := handler(context.Background(), requestWithArgs(map[string]any{"session_id": "old", "skill": "railroad-review"}))
+	require.NoError(t, err)
+	payload, ok := result.StructuredContent.(*skillRunsDetail)
+	require.True(t, ok)
+	require.Len(t, payload.Runs, 1)
+	run := payload.Runs[0]
 
 	// root
 	assert.Equal(t, "railroad-review", run.Skill)
 	assert.Equal(t, "go", run.Args)
-	assert.Equal(t, "/project", run.CWD)
 	assert.Equal(t, "claude-opus-5-5", run.Root.Model)
 	assert.Equal(t, 1, run.Root.Requests)
 	assert.Equal(t, 2010, run.Root.PeakContext)
@@ -1146,8 +1213,13 @@ func TestSkillRuns_RunShape(t *testing.T) {
 	// the run ends at its last subagent activity, not at the next invocation
 	assert.Equal(t, 20*60, run.Seconds)
 
-	// a namespaced invocation matches
-	assert.Equal(t, "plugin:railroad-review", payload.Runs[0].Skill)
+	// another session's run is not in the detail
+	result, err = handler(context.Background(), requestWithArgs(map[string]any{"session_id": "new", "skill": "railroad-review"}))
+	require.NoError(t, err)
+	payload, ok = result.StructuredContent.(*skillRunsDetail)
+	require.True(t, ok)
+	require.Len(t, payload.Runs, 1)
+	assert.Equal(t, "plugin:railroad-review", payload.Runs[0].Skill, "a namespaced invocation matches")
 }
 
 func TestRegister_ReadOnlyHint(t *testing.T) {
@@ -1165,6 +1237,7 @@ func TestRegister_ReadOnlyHint(t *testing.T) {
 		NewInvocationCounter(InstanceInfo{}, nil),
 		telemetry.NewDetector(0, ""),
 		watcher.NewDiffer(nil, store, nil),
+		nil,
 		lifecycle,
 		nil,
 		srv,

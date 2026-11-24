@@ -1,99 +1,71 @@
 package tools
 
 import (
-	"cmp"
-	"slices"
-	"strings"
 	"time"
 
+	"github.com/kevinhorst/peek-mcp/index"
 	"github.com/kevinhorst/peek-mcp/session"
 )
 
-const defaultSkillRuns = 5
+const (
+	defaultSkillRuns = 20
+	listArgsRunes    = 80
+	listTitleRunes   = 60
+	detailArgsRunes  = 500
+)
 
-// skillNamespaceSeparator joins a plugin's name and its skill's name, as in "plugin:skill".
-const skillNamespaceSeparator = ":"
-
-type skillRunRootView struct {
-	session.ContextLoad
-	Model string         `json:"model,omitempty"`
-	Usage *session.Usage `json:"usage"`
+// skillRunRow is one run in the list: enough to pick the comparable run, nothing to cost it.
+type skillRunRow struct {
+	Agents    int        `json:"agents"`
+	Args      string     `json:"args,omitempty"`
+	Seconds   int        `json:"seconds"`
+	SessionId session.Id `json:"session_id"`
+	StartedAt time.Time  `json:"started_at"`
+	Title     string     `json:"title,omitempty"`
 }
 
-type skillRunView struct {
-	Agents    []*session.AgentTypeUsage `json:"agents,omitempty"`
-	Args      string                    `json:"args,omitempty"`
-	CWD       string                    `json:"cwd,omitempty"`
-	EndedAt   time.Time                 `json:"ended_at"`
-	Root      *skillRunRootView         `json:"root"`
-	Seconds   int                       `json:"seconds"`
-	SessionId session.Id                `json:"session_id"`
-	Skill     string                    `json:"skill"`
-	Source    string                    `json:"source,omitempty"`
-	StartedAt time.Time                 `json:"started_at"`
-	Title     string                    `json:"title,omitempty"`
-}
-
-// newSkillRunView ends the run at its last root or subagent activity, so the idle gap before the next invocation never counts.
-func newSkillRunView(currentSession *session.Session, run *session.SkillRun) *skillRunView {
-	agents := currentSession.SkillRunAgents(run)
-	endedAt := run.LastActive
-	for _, agentType := range agents {
-		if agentType.LastActive.After(endedAt) {
-			endedAt = agentType.LastActive
-		}
-	}
-
-	usage := run.Usage
-	root := &skillRunRootView{
-		ContextLoad: run.ContextLoad,
-		Model:       run.Model,
-		Usage:       &usage,
-	}
-	return &skillRunView{
-		Agents:    agents,
-		Args:      run.Args,
-		CWD:       currentSession.Meta.CWD,
-		EndedAt:   endedAt,
-		Root:      root,
-		Seconds:   int(endedAt.Sub(run.StartedAt).Seconds()),
-		SessionId: currentSession.Meta.SessionId,
-		Skill:     run.Skill,
-		Source:    run.Source,
-		StartedAt: run.StartedAt,
-		Title:     currentSession.Title,
+func newSkillRunRow(sessionRun *index.SessionRun) *skillRunRow {
+	return &skillRunRow{
+		Agents:    sessionRun.Run.AgentCount(),
+		Args:      truncateRunes(sessionRun.Run.Args, listArgsRunes),
+		Seconds:   sessionRun.Run.Seconds,
+		SessionId: sessionRun.Record.SessionId,
+		StartedAt: sessionRun.Run.StartedAt,
+		Title:     truncateRunes(sessionRun.Record.Title, listTitleRunes),
 	}
 }
 
 type skillRunsResult struct {
-	Runs  []*skillRunView `json:"runs"`
-	Total int             `json:"total"`
+	Runs  []*skillRunRow `json:"runs"`
+	Total int            `json:"total"`
 }
 
-func compareSkillRunsNewestFirst(left, right *skillRunView) int {
-	return cmp.Compare(right.StartedAt.UnixNano(), left.StartedAt.UnixNano())
+// skillRunsDetail is one session's runs of the skill with every cost field.
+type skillRunsDetail struct {
+	Runs      []*index.Run `json:"runs"`
+	SessionId session.Id   `json:"session_id"`
+	Title     string       `json:"title,omitempty"`
 }
 
-// isSkillMatch accepts the skill's own name and its plugin-namespaced form.
-func isSkillMatch(invoked, wanted string) bool {
-	if invoked == wanted {
-		return true
-	}
-	return strings.HasSuffix(invoked, skillNamespaceSeparator+wanted)
-}
-
-// newSkillRunViews lists every run of the skill across the sessions, newest first.
-func newSkillRunViews(sessions []*session.Session, skill string) []*skillRunView {
-	views := make([]*skillRunView, 0)
-	for _, currentSession := range sessions {
-		for _, run := range currentSession.SkillRuns {
-			if !isSkillMatch(run.Skill, skill) {
-				continue
-			}
-
-			views = append(views, newSkillRunView(currentSession, run))
+func newSkillRunsDetail(sessionRuns []*index.SessionRun, sessionId session.Id) *skillRunsDetail {
+	detail := &skillRunsDetail{Runs: make([]*index.Run, 0), SessionId: sessionId}
+	for _, sessionRun := range sessionRuns {
+		if sessionRun.Record.SessionId != sessionId {
+			continue
 		}
+
+		run := *sessionRun.Run
+		run.Args = truncateRunes(run.Args, detailArgsRunes)
+		detail.Runs = append(detail.Runs, &run)
+		detail.Title = sessionRun.Record.Title
 	}
-	slices.SortFunc(views, compareSkillRunsNewestFirst)
-	return views
+	return detail
+}
+
+func truncateRunes(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }
